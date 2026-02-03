@@ -13,6 +13,9 @@ private:
     TSharedRef<class SDockTab> SpawnAgentTab(const class FSpawnTabArgs& SpawnTabArgs);
     void RegisterTab();
     void UnregisterTab();
+    void RegisterMenus();
+    void OpenAgentTab();
 
     static const FName AgentTabName;
+    bool bMenusRegistered = false;
 };

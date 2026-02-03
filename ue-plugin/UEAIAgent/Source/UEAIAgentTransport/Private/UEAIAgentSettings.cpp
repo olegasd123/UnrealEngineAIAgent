@@ -7,8 +7,12 @@ UUEAIAgentSettings::UUEAIAgentSettings()
 {
 }
 
+FName UUEAIAgentSettings::GetContainerName() const
+{
+    return TEXT("Project");
+}
+
 FName UUEAIAgentSettings::GetCategoryName() const
 {
     return TEXT("Plugins");
 }
-

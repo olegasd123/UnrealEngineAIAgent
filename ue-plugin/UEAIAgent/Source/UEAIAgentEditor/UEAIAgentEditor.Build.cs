@@ -20,6 +20,7 @@ public class UEAIAgentEditor : ModuleRules
                 "Engine",
                 "Slate",
                 "SlateCore",
+                "ToolMenus",
                 "UnrealEd",
                 "UEAIAgentTools",
                 "UEAIAgentContext",
@@ -28,4 +29,3 @@ public class UEAIAgentEditor : ModuleRules
         );
     }
 }
-

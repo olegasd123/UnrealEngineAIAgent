@@ -11,7 +11,7 @@ enum class EUEAIAgentProvider : uint8
     Gemini UMETA(DisplayName = "Gemini")
 };
 
-UCLASS(Config = EditorPerProjectUserSettings, DefaultConfig, meta = (DisplayName = "UE AI Agent"))
+UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "UE AI Agent"))
 class UEAIAGENTTRANSPORT_API UUEAIAgentSettings : public UDeveloperSettings
 {
     GENERATED_BODY()
@@ -19,6 +19,7 @@ class UEAIAGENTTRANSPORT_API UUEAIAgentSettings : public UDeveloperSettings
 public:
     UUEAIAgentSettings();
 
+    virtual FName GetContainerName() const override;
     virtual FName GetCategoryName() const override;
 
     UPROPERTY(Config, EditAnywhere, Category = "Connection", meta = (DisplayName = "Agent Host"))
@@ -30,4 +31,3 @@ public:
     UPROPERTY(Config, EditAnywhere, Category = "Provider", meta = (DisplayName = "Default Provider"))
     EUEAIAgentProvider DefaultProvider;
 };
-

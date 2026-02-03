@@ -21,10 +21,8 @@ public class UEAIAgentContext : ModuleRules
                 "UnrealEd",
                 "Json",
                 "JsonUtilities",
-                "Landscape",
-                "PCG"
+                "Landscape"
             }
         );
     }
 }
-

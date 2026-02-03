@@ -19,10 +19,8 @@ public class UEAIAgentTools : ModuleRules
                 "CoreUObject",
                 "Engine",
                 "UnrealEd",
-                "Landscape",
-                "PCG"
+                "Landscape"
             }
         );
     }
 }
-

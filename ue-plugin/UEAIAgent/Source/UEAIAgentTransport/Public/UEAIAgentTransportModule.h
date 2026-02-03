@@ -7,7 +7,7 @@
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
 
-class FUEAIAgentTransportModule : public IModuleInterface
+class UEAIAGENTTRANSPORT_API FUEAIAgentTransportModule : public IModuleInterface
 {
 public:
     static FUEAIAgentTransportModule& Get()

@@ -8,8 +8,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SHorizontalBox.h"
-#include "Widgets/Layout/SVerticalBox.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
 void SUEAIAgentPanel::Construct(const FArguments& InArgs)
