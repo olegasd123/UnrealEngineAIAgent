@@ -1,0 +1,228 @@
+# Unreal Engine AI Agent - V1 Architecture
+
+## 1) Goals
+
+- Target: Unreal Engine 5.7
+- Platforms: Windows + macOS
+- Run local-first: all orchestration runs on user machine
+- Model providers in V1: OpenAI GPT + Google Gemini
+- User gives API credentials
+- Two modes:
+  - Chat mode: suggest and optionally run small actions
+  - Agent mode: plan + execute multi-step tasks
+- V1 capabilities:
+  - Scene/Actor edits
+  - Landscape edits
+  - PCG graph generation/edit
+
+## 2) High-Level Design
+
+```text
++-------------------------+       localhost       +--------------------------+
+| Unreal Editor 5.7       | <-------------------> | Agent Core Service       |
+| Plugin (C++ Editor)     |  JSON RPC over HTTP   | (local process)          |
+|                         |                       |                          |
+| - Chat/Agent UI panel   |                       | - Planner/Executor       |
+| - Tool Executor         |                       | - LLM adapters           |
+| - Preview & Approval UI |                       | - Safety policy engine   |
+| - UE Context Scanner    |                       | - Task memory/log store  |
++-------------------------+                       +--------------------------+
+```
+
+Reason: keep UE plugin focused on editor actions; keep LLM/provider logic in a local service for easier updates and multi-provider support.
+
+## 3) Main Components
+
+### A) Unreal Plugin (`UEAIAgent`)
+
+Editor-only plugin with these modules:
+
+1. `UEAIAgentEditor` (main)
+   - Dockable panel (chat + agent tabs)
+   - Session state and command dispatch
+2. `UEAIAgentTools`
+   - Safe wrappers around UE editor APIs
+   - Action execution with transactions (undo/redo support)
+3. `UEAIAgentContext`
+   - Scene snapshot, selected actors, landscape info, PCG assets
+   - Schema conversion to compact JSON
+4. `UEAIAgentTransport`
+   - HTTP client for localhost Agent Core
+
+Key Unreal APIs (V1 focus):
+- `FScopedTransaction` for undo-safe operations
+- `GEditor`, `UEditorActorSubsystem`, `ULandscape*` APIs
+- Asset tools for PCG asset creation/edit
+- Optional Python bridge later (not required in V1)
+
+### B) Agent Core Service (local)
+
+Recommended stack: TypeScript (Node.js) or Rust.  
+For speed of iteration, V1 can use TypeScript.
+
+Subsystems:
+1. `Planner`
+   - Converts prompt + UE context into step plan
+   - Chooses tools and execution order
+2. `Executor`
+   - Calls UE plugin tool endpoints
+   - Handles retries and partial failure
+3. `Provider Adapters`
+   - OpenAI adapter
+   - Gemini adapter
+   - Unified model interface
+4. `Policy/Safety`
+   - Allowed action checks
+   - Risk scoring (low/medium/high)
+   - Mode rules (chat vs agent)
+5. `Memory/Logs`
+   - Local task history
+   - Plan + action logs + errors
+   - No cloud storage by default
+
+### C) Local Data Storage
+
+- SQLite (or LiteFS-free local DB) for:
+  - task history
+  - settings (provider/model)
+  - credential metadata (not secrets)
+- Secrets:
+  - OS keychain (Windows Credential Manager / macOS Keychain)
+  - never store API keys in plain text files
+
+## 4) Execution Modes
+
+## Chat mode
+
+- User asks a task
+- Agent returns:
+  - short plan
+  - proposed actions
+  - expected changes
+- User can run one action or all
+
+## Agent mode
+
+- Agent builds multi-step plan
+- Auto-executes low-risk steps
+- Stops for approval on medium/high-risk steps
+- Always writes execution log
+
+## 5) Tool Contract (Agent Core <-> UE Plugin)
+
+Use JSON RPC style commands over localhost:
+
+- `context.getSceneSummary`
+- `context.getSelection`
+- `scene.createActor`
+- `scene.modifyActor`
+- `scene.deleteActor`
+- `landscape.sculpt`
+- `landscape.paintLayer`
+- `pcg.createGraph`
+- `pcg.addNode`
+- `pcg.connectNodes`
+- `pcg.setNodeParam`
+- `session.beginTransaction`
+- `session.commitTransaction`
+- `session.rollbackTransaction`
+
+Each command returns:
+- `status`: success | error | needs_approval
+- `diffSummary`: user-readable change
+- `undoToken`: transaction link if created
+
+## 6) Safety Model
+
+Rules:
+- All write actions must be wrapped in transactions
+- Preview before apply (actor count, assets touched, landscape area)
+- Scope guard:
+  - selected actors only (default)
+  - selected level only (default)
+- Deny by default for destructive bulk actions unless approved
+
+Risk examples:
+- Low: rename actor, move selected actor
+- Medium: create many actors, large PCG graph edit
+- High: delete actors in level, broad landscape sculpt/paint
+
+## 7) Context Strategy (Token-Efficient)
+
+Do not send full project data.
+Send only:
+- current level name
+- selected actors + key components
+- nearby actors (optional radius)
+- targeted landscape data (bounds/layers)
+- targeted PCG asset/subgraph
+
+Use "fetch-more" pattern:
+- model asks for more context only when needed
+
+## 8) Provider Abstraction
+
+Common interface:
+
+```ts
+interface LlmProvider {
+  planTask(input: PlanInput): Promise<PlanOutput>;
+  decideNextAction(input: ActionInput): Promise<ActionDecision>;
+}
+```
+
+Provider configs:
+- `provider`: `openai` | `gemini`
+- `model`: user-selected
+- `temperature`, `max_tokens`
+
+Switch provider without changing UE plugin.
+
+## 9) Cross-Platform Runtime
+
+Windows + macOS:
+- UE plugin binary per platform
+- Agent Core packaged as local executable/service
+- Startup:
+  1) Plugin checks service
+  2) Start if not running
+  3) Health check endpoint `/health`
+
+Default localhost port configurable (ex: `127.0.0.1:4317`).
+
+## 10) V1 Milestones
+
+### Milestone 1: Skeleton
+- UE plugin panel + transport + ping
+- Agent Core with health endpoint
+- Settings + provider credential flow
+
+### Milestone 2: Scene/Actor tools
+- create/move/rotate/scale/edit components
+- preview + transaction + undo
+
+### Milestone 3: Landscape tools
+- sculpt in bounded area
+- paint one layer in bounded area
+- safety limits for brush size/strength
+
+### Milestone 4: PCG tools
+- create graph
+- add/connect common nodes
+- set key parameters
+
+### Milestone 5: Agent mode
+- planner/executor loop
+- approvals by risk
+- full local logs + replay summary
+
+## 11) Out of Scope for V1
+
+- Local LLM inference
+- Multiplayer/editor collaboration sync
+- Runtime (in-game) agent actions
+- Full C++ code generation pipeline
+
+---
+
+This architecture is ready for implementation planning and repo scaffolding.
