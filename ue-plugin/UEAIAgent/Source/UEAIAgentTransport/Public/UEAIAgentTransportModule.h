@@ -25,8 +25,15 @@ public:
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
     void PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
+    bool HasPlannedMoveAction() const;
+    bool PopPlannedMoveAction(TArray<FString>& OutActorNames, FVector& OutDeltaLocation) const;
+    FString GetPlannedMovePreviewText() const;
 
 private:
     FString BuildHealthUrl() const;
     FString BuildPlanUrl() const;
+
+    mutable bool bHasPlannedMoveAction = false;
+    mutable TArray<FString> PlannedActorNames;
+    mutable FVector PlannedDeltaLocation = FVector::ZeroVector;
 };

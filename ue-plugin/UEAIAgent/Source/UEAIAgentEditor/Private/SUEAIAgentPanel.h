@@ -19,7 +19,7 @@ public:
 private:
     FReply OnCheckHealthClicked();
     FReply OnPlanFromSelectionClicked();
-    FReply OnRunSceneModifyActorClicked();
+    FReply OnApplyPlannedActionClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
     void HandlePlanResult(bool bOk, const FString& Message);
     TArray<FString> CollectSelectedActorNames() const;

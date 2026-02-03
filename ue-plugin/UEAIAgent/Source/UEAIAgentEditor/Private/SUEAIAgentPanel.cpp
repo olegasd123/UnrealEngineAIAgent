@@ -29,7 +29,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         [
             SAssignNew(PromptInput, SEditableTextBox)
             .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
-            .Text(FText::FromString(TEXT("Align selected actors on X axis with 150 units spacing")))
+            .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
         ]
         + SVerticalBox::Slot()
         .AutoHeight()
@@ -67,8 +67,8 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .WidthOverride(240.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Run scene.modifyActor (+X)")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnRunSceneModifyActorClicked)
+                    .Text(FText::FromString(TEXT("Apply Planned Action")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
                 ]
             ]
         ]
@@ -122,17 +122,34 @@ FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
     return FReply::Handled();
 }
 
-FReply SUEAIAgentPanel::OnRunSceneModifyActorClicked()
+FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
 {
     if (!PlanText.IsValid())
     {
         return FReply::Handled();
     }
 
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!Transport.HasPlannedMoveAction())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned executable action. Use 'Plan With Selection' first.")));
+        return FReply::Handled();
+    }
+
     FUEAIAgentModifyActorParams Params;
-    Params.ActorNames = CollectSelectedActorNames();
-    Params.DeltaLocation = FVector(100.0f, 0.0f, 0.0f);
-    Params.bUseSelectionIfActorNamesEmpty = true;
+    if (!Transport.PopPlannedMoveAction(Params.ActorNames, Params.DeltaLocation))
+    {
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nCould not read planned action.")));
+        return FReply::Handled();
+    }
+
+    if (Params.ActorNames.IsEmpty())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nPlan has no target actors. Select actors and plan again.")));
+        return FReply::Handled();
+    }
+
+    Params.bUseSelectionIfActorNamesEmpty = false;
 
     FString ResultMessage;
     const bool bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
@@ -160,8 +177,14 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
         return;
     }
 
-    const FString Prefix = bOk ? TEXT("Plan: ok\n") : TEXT("Plan: error\n");
-    PlanText->SetText(FText::FromString(Prefix + Message));
+    if (!bOk)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
+        return;
+    }
+
+    const FString PreviewText = FUEAIAgentTransportModule::Get().GetPlannedMovePreviewText();
+    PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewText));
 }
 
 TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const

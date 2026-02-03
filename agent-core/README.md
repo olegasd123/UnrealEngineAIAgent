@@ -5,7 +5,8 @@ Local service that plans and executes UE editor actions.
 ## Scope in scaffold
 
 - health endpoint
-- basic command endpoint
+- task planning endpoint (`/v1/task/plan`)
+- simple prompt parser for move actions (example: `move +250 on x`)
 - provider adapter interface
 
 ## Run

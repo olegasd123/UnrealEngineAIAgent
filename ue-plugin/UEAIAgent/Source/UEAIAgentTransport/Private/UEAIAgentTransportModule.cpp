@@ -97,6 +97,10 @@ void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Cal
 
 void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const
 {
+    bHasPlannedMoveAction = false;
+    PlannedActorNames.Empty();
+    PlannedDeltaLocation = FVector::ZeroVector;
+
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
     Root->SetStringField(TEXT("mode"), TEXT("chat"));
@@ -121,9 +125,9 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
     Request->SetContentAsString(RequestBody);
 
     Request->OnProcessRequestComplete().BindLambda(
-        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, SelectedActors](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -180,6 +184,57 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                     }
                 }
 
+                const TArray<TSharedPtr<FJsonValue>>* Actions = nullptr;
+                if ((*PlanObj)->TryGetArrayField(TEXT("actions"), Actions) && Actions)
+                {
+                    for (const TSharedPtr<FJsonValue>& ActionValue : *Actions)
+                    {
+                        if (!ActionValue.IsValid())
+                        {
+                            continue;
+                        }
+
+                        const TSharedPtr<FJsonObject> ActionObj = ActionValue->AsObject();
+                        if (!ActionObj.IsValid())
+                        {
+                            continue;
+                        }
+
+                        FString Command;
+                        if (!ActionObj->TryGetStringField(TEXT("command"), Command) || Command != TEXT("scene.modifyActor"))
+                        {
+                            continue;
+                        }
+
+                        const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
+                        const TSharedPtr<FJsonObject>* DeltaObj = nullptr;
+                        if (!ActionObj->TryGetObjectField(TEXT("params"), ParamsObj) || !ParamsObj || !ParamsObj->IsValid())
+                        {
+                            continue;
+                        }
+
+                        if (!(*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaObj) || !DeltaObj || !DeltaObj->IsValid())
+                        {
+                            continue;
+                        }
+
+                        double X = 0.0;
+                        double Y = 0.0;
+                        double Z = 0.0;
+                        if (!(*DeltaObj)->TryGetNumberField(TEXT("x"), X) ||
+                            !(*DeltaObj)->TryGetNumberField(TEXT("y"), Y) ||
+                            !(*DeltaObj)->TryGetNumberField(TEXT("z"), Z))
+                        {
+                            continue;
+                        }
+
+                        bHasPlannedMoveAction = true;
+                        PlannedActorNames = SelectedActors;
+                        PlannedDeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                        break;
+                    }
+                }
+
                 const FString FinalMessage = StepsText.IsEmpty()
                     ? Summary
                     : FString::Printf(TEXT("%s\n%s"), *Summary, *StepsText);
@@ -188,6 +243,43 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
         });
 
     Request->ProcessRequest();
+}
+
+bool FUEAIAgentTransportModule::HasPlannedMoveAction() const
+{
+    return bHasPlannedMoveAction;
+}
+
+bool FUEAIAgentTransportModule::PopPlannedMoveAction(TArray<FString>& OutActorNames, FVector& OutDeltaLocation) const
+{
+    if (!bHasPlannedMoveAction)
+    {
+        return false;
+    }
+
+    OutActorNames = PlannedActorNames;
+    OutDeltaLocation = PlannedDeltaLocation;
+
+    bHasPlannedMoveAction = false;
+    PlannedActorNames.Empty();
+    PlannedDeltaLocation = FVector::ZeroVector;
+
+    return true;
+}
+
+FString FUEAIAgentTransportModule::GetPlannedMovePreviewText() const
+{
+    if (!bHasPlannedMoveAction)
+    {
+        return TEXT("No executable scene.modifyActor action in current plan.");
+    }
+
+    return FString::Printf(
+        TEXT("Preview -> scene.modifyActor on %d actor(s), Delta: X=%.2f Y=%.2f Z=%.2f"),
+        PlannedActorNames.Num(),
+        PlannedDeltaLocation.X,
+        PlannedDeltaLocation.Y,
+        PlannedDeltaLocation.Z);
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)

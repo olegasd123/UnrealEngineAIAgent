@@ -25,6 +25,35 @@
           "items": {
             "type": "string"
           }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "command",
+              "params",
+              "risk"
+            ],
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "risk": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -35,4 +64,3 @@
   },
   "additionalProperties": false
 }
-
