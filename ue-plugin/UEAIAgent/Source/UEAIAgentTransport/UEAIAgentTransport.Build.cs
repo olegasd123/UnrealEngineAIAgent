@@ -18,6 +18,7 @@ public class UEAIAgentTransport : ModuleRules
             {
                 "CoreUObject",
                 "Engine",
+                "DeveloperSettings",
                 "HTTP",
                 "Json",
                 "JsonUtilities"
@@ -25,4 +26,3 @@ public class UEAIAgentTransport : ModuleRules
         );
     }
 }
-

@@ -4,6 +4,7 @@
 #include "Widgets/SCompoundWidget.h"
 
 class STextBlock;
+class SEditableTextBox;
 
 class SUEAIAgentPanel : public SCompoundWidget
 {
@@ -17,8 +18,12 @@ public:
 
 private:
     FReply OnCheckHealthClicked();
+    FReply OnPlanFromSelectionClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
+    void HandlePlanResult(bool bOk, const FString& Message);
+    TArray<FString> CollectSelectedActorNames() const;
 
     TSharedPtr<STextBlock> StatusText;
+    TSharedPtr<SEditableTextBox> PromptInput;
+    TSharedPtr<STextBlock> PlanText;
 };
-

@@ -15,3 +15,7 @@ npm install
 npm run dev
 ```
 
+Optional environment:
+- `AGENT_HOST` (default `127.0.0.1`)
+- `AGENT_PORT` (default `4317`)
+- `AGENT_PROVIDER` (`openai` or `gemini`, default `openai`)

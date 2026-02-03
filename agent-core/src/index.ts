@@ -4,7 +4,8 @@ import { TaskRequestSchema } from "./contracts.js";
 import { config } from "./config.js";
 import { MockProvider } from "./providers/mockProvider.js";
 
-const provider = new MockProvider();
+const providerName = process.env.AGENT_PROVIDER === "gemini" ? "gemini" : "openai";
+const provider = new MockProvider(providerName);
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -43,4 +44,3 @@ server.listen(config.port, config.host, () => {
   // eslint-disable-next-line no-console
   console.log(`Agent Core listening on http://${config.host}:${config.port}`);
 });
-

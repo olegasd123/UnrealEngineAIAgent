@@ -1,9 +1,12 @@
 #include "UEAIAgentTransportModule.h"
 
+#include "UEAIAgentSettings.h"
 #include "Async/Async.h"
 #include "Dom/JsonObject.h"
 #include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
+#include "Serialization/JsonWriter.h"
 #include "Serialization/JsonSerializer.h"
 #include "Modules/ModuleManager.h"
 
@@ -21,7 +24,18 @@ void FUEAIAgentTransportModule::ShutdownModule()
 
 FString FUEAIAgentTransportModule::BuildHealthUrl() const
 {
-    return TEXT("http://127.0.0.1:4317/health");
+    const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
+    const FString Host = Settings ? Settings->AgentHost : TEXT("127.0.0.1");
+    const int32 Port = Settings ? Settings->AgentPort : 4317;
+    return FString::Printf(TEXT("http://%s:%d/health"), *Host, Port);
+}
+
+FString FUEAIAgentTransportModule::BuildPlanUrl() const
+{
+    const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
+    const FString Host = Settings ? Settings->AgentHost : TEXT("127.0.0.1");
+    const int32 Port = Settings ? Settings->AgentPort : 4317;
+    return FString::Printf(TEXT("http://%s:%d/v1/task/plan"), *Host, Port);
 }
 
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
@@ -75,6 +89,101 @@ void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Cal
                     ? TEXT("Connected.")
                     : FString::Printf(TEXT("Connected. Provider: %s"), *Provider);
                 Callback.ExecuteIfBound(true, Message);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const
+{
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("prompt"), Prompt);
+    Root->SetStringField(TEXT("mode"), TEXT("chat"));
+
+    TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+    TArray<TSharedPtr<FJsonValue>> SelectionValues;
+    for (const FString& ActorName : SelectedActors)
+    {
+        SelectionValues.Add(MakeShared<FJsonValueString>(ActorName));
+    }
+    Context->SetArrayField(TEXT("selection"), SelectionValues);
+    Root->SetObjectField(TEXT("context"), Context);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildPlanUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(
+                        false,
+                        FString::Printf(TEXT("Plan request failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Plan response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned an error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* PlanObj = nullptr;
+                if (!ResponseJson->TryGetObjectField(TEXT("plan"), PlanObj) || !PlanObj || !PlanObj->IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Plan response misses 'plan' object."));
+                    return;
+                }
+
+                FString Summary;
+                (*PlanObj)->TryGetStringField(TEXT("summary"), Summary);
+
+                FString StepsText;
+                const TArray<TSharedPtr<FJsonValue>>* Steps = nullptr;
+                if ((*PlanObj)->TryGetArrayField(TEXT("steps"), Steps) && Steps)
+                {
+                    for (int32 StepIndex = 0; StepIndex < Steps->Num(); ++StepIndex)
+                    {
+                        FString StepValue;
+                        if ((*Steps)[StepIndex].IsValid() && (*Steps)[StepIndex]->TryGetString(StepValue))
+                        {
+                            StepsText += FString::Printf(TEXT("%d. %s\n"), StepIndex + 1, *StepValue);
+                        }
+                    }
+                }
+
+                const FString FinalMessage = StepsText.IsEmpty()
+                    ? Summary
+                    : FString::Printf(TEXT("%s\n%s"), *Summary, *StepsText);
+                Callback.ExecuteIfBound(true, FinalMessage);
             });
         });
 
