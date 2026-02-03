@@ -1,0 +1,31 @@
+using UnrealBuildTool;
+
+public class UEAIAgentEditor : ModuleRules
+{
+    public UEAIAgentEditor(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+        PublicDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "Core"
+            }
+        );
+
+        PrivateDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "CoreUObject",
+                "Engine",
+                "Slate",
+                "SlateCore",
+                "UnrealEd",
+                "UEAIAgentTools",
+                "UEAIAgentContext",
+                "UEAIAgentTransport"
+            }
+        );
+    }
+}
+

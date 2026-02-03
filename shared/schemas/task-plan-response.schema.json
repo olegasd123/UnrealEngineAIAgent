@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ue-ai-agent.local/schemas/task-plan-response.schema.json",
+  "title": "TaskPlanResponse",
+  "type": "object",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "plan": {
+      "type": "object",
+      "required": [
+        "summary",
+        "steps"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
+
