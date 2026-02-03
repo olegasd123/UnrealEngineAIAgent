@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "Engine/Selection.h"
 #include "GameFramework/Actor.h"
+#include "UEAIAgentSceneTools.h"
 #include "UEAIAgentTransportModule.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
@@ -50,6 +51,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SHorizontalBox::Slot()
             .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
             [
                 SNew(SBox)
                 .WidthOverride(220.0f)
@@ -57,6 +59,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     SNew(SButton)
                     .Text(FText::FromString(TEXT("Plan With Selection")))
                     .OnClicked(this, &SUEAIAgentPanel::OnPlanFromSelectionClicked)
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SBox)
+                .WidthOverride(240.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Run scene.modifyActor (+X)")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRunSceneModifyActorClicked)
                 ]
             ]
         ]
@@ -106,6 +119,26 @@ FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
         Prompt,
         SelectedActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
+
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRunSceneModifyActorClicked()
+{
+    if (!PlanText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    FUEAIAgentModifyActorParams Params;
+    Params.ActorNames = CollectSelectedActorNames();
+    Params.DeltaLocation = FVector(100.0f, 0.0f, 0.0f);
+    Params.bUseSelectionIfActorNamesEmpty = true;
+
+    FString ResultMessage;
+    const bool bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
+    const FString Prefix = bOk ? TEXT("Execute: ok\n") : TEXT("Execute: error\n");
+    PlanText->SetText(FText::FromString(Prefix + ResultMessage));
 
     return FReply::Handled();
 }
