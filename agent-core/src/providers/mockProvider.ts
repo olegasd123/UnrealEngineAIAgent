@@ -1,4 +1,4 @@
-import type { LlmProvider, PlanInput, PlanOutput } from "./types.js";
+import type { LlmProvider, PlanAction, PlanInput, PlanOutput } from "./types.js";
 
 function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: number } | null {
   const lower = prompt.toLowerCase();
@@ -44,6 +44,61 @@ function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: nu
   return { x, y, z };
 }
 
+function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: number; roll: number } | null {
+  const lower = prompt.toLowerCase();
+  if (!/(rotate|turn)/.test(lower)) {
+    return null;
+  }
+
+  let pitch = 0;
+  let yaw = 0;
+  let roll = 0;
+  let foundAny = false;
+
+  const patternValueFirst = /([+-]?\d+(?:\.\d+)?)\s*(?:deg|degree|degrees)?\s*(?:on|around)?\s*(yaw|pitch|roll)\b/gi;
+  for (const match of lower.matchAll(patternValueFirst)) {
+    const value = Number(match[1]);
+    const axis = match[2];
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    foundAny = true;
+    if (axis === "yaw") yaw += value;
+    if (axis === "pitch") pitch += value;
+    if (axis === "roll") roll += value;
+  }
+
+  const patternAxisFirst = /\b(yaw|pitch|roll)\s*(?:by)?\s*([+-]?\d+(?:\.\d+)?)/gi;
+  for (const match of lower.matchAll(patternAxisFirst)) {
+    const axis = match[1];
+    const value = Number(match[2]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    foundAny = true;
+    if (axis === "yaw") yaw += value;
+    if (axis === "pitch") pitch += value;
+    if (axis === "roll") roll += value;
+  }
+
+  if (!foundAny) {
+    const genericRotate = /\b(?:rotate|turn)\s*([+-]?\d+(?:\.\d+)?)/i.exec(lower);
+    if (genericRotate) {
+      const value = Number(genericRotate[1]);
+      if (Number.isFinite(value)) {
+        yaw = value;
+        foundAny = true;
+      }
+    }
+  }
+
+  if (!foundAny) {
+    return null;
+  }
+
+  return { pitch, yaw, roll };
+}
+
 export class MockProvider implements LlmProvider {
   public readonly name: "openai" | "gemini";
 
@@ -55,26 +110,41 @@ export class MockProvider implements LlmProvider {
     const selection = Array.isArray((input.context as { selection?: unknown }).selection)
       ? ((input.context as { selection: unknown[] }).selection as unknown[])
       : [];
-    const delta = parseMoveDeltaFromPrompt(input.prompt);
+    const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
+    const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
 
-    if (delta) {
+    if (moveDelta || rotateDelta) {
+      const actions: PlanAction[] = [];
+      if (moveDelta) {
+        actions.push({
+          command: "scene.modifyActor" as const,
+          params: {
+            target: "selection" as const,
+            deltaLocation: moveDelta
+          },
+          risk: "low" as const
+        });
+      }
+
+      if (rotateDelta) {
+        actions.push({
+          command: "scene.modifyActor" as const,
+          params: {
+            target: "selection" as const,
+            deltaRotation: rotateDelta
+          },
+          risk: "low" as const
+        });
+      }
+
       return {
         summary: `Planned actor move for prompt: ${input.prompt} (selected: ${selection.length})`,
         steps: [
-          "Preview parsed movement action",
+          "Preview parsed actions",
           "Wait for user approval",
-          "Apply scene.modifyActor with transaction (undo-safe)"
+          "Apply approved scene.modifyActor actions with transaction (undo-safe)"
         ],
-        actions: [
-          {
-            command: "scene.modifyActor",
-            params: {
-              target: "selection",
-              deltaLocation: delta
-            },
-            risk: "low"
-          }
-        ]
+        actions
       };
     }
 

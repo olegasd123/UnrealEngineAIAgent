@@ -9,6 +9,6 @@ Settings path in UE:
 
 Quick validation in editor tab:
 - `Check Local Agent` for localhost health check
-- `Plan With Selection` to parse prompt into planned actions
-- check preview text in panel
-- `Apply Planned Action` to execute `scene.modifyActor` with Undo support
+- `Plan With Selection` to parse prompt into planned actions (move/rotate)
+- review and toggle action approvals
+- `Apply Planned Actions` to execute approved `scene.modifyActor` actions with Undo support

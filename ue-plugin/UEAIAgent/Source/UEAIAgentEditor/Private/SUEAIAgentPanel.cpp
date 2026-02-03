@@ -6,6 +6,7 @@
 #include "UEAIAgentSceneTools.h"
 #include "UEAIAgentTransportModule.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -67,8 +68,43 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .WidthOverride(240.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Apply Planned Action")))
+                    .Text(FText::FromString(TEXT("Apply Planned Actions")))
                     .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
+                ]
+            ]
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 12.0f, 0.0f)
+            [
+                SAssignNew(ActionCheck0, SCheckBox)
+                .IsChecked(ECheckBoxState::Checked)
+                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
+                {
+                    HandleActionApprovalChanged(0, NewState);
+                })
+                [
+                    SAssignNew(ActionText0, STextBlock)
+                    .Text(FText::FromString(TEXT("Action 1: none")))
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SAssignNew(ActionCheck1, SCheckBox)
+                .IsChecked(ECheckBoxState::Checked)
+                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
+                {
+                    HandleActionApprovalChanged(1, NewState);
+                })
+                [
+                    SAssignNew(ActionText1, STextBlock)
+                    .Text(FText::FromString(TEXT("Action 2: none")))
                 ]
             ]
         ]
@@ -81,6 +117,8 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Text(FText::FromString(TEXT("Plan: not requested")))
         ]
     ];
+
+    UpdateActionApprovalUi();
 }
 
 FReply SUEAIAgentPanel::OnCheckHealthClicked()
@@ -130,31 +168,49 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     }
 
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-    if (!Transport.HasPlannedMoveAction())
+    if (Transport.GetPlannedActionCount() == 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned executable action. Use 'Plan With Selection' first.")));
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned actions. Use 'Plan With Selection' first.")));
         return FReply::Handled();
     }
 
-    FUEAIAgentModifyActorParams Params;
-    if (!Transport.PopPlannedMoveAction(Params.ActorNames, Params.DeltaLocation))
+    TArray<FUEAIAgentPlannedSceneModifyAction> ApprovedActions;
+    if (!Transport.PopApprovedPlannedActions(ApprovedActions))
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nCould not read planned action.")));
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo approved actions to execute.")));
+        UpdateActionApprovalUi();
         return FReply::Handled();
     }
 
-    if (Params.ActorNames.IsEmpty())
+    FString ExecuteSummary;
+    int32 SuccessCount = 0;
+    for (const FUEAIAgentPlannedSceneModifyAction& PlannedAction : ApprovedActions)
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nPlan has no target actors. Select actors and plan again.")));
-        return FReply::Handled();
+        FUEAIAgentModifyActorParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.DeltaLocation = PlannedAction.DeltaLocation;
+        Params.DeltaRotation = PlannedAction.DeltaRotation;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+
+        if (Params.ActorNames.IsEmpty())
+        {
+            ExecuteSummary += TEXT("- Skipped action with no target actors.\n");
+            continue;
+        }
+
+        FString ResultMessage;
+        const bool bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
+        if (bOk)
+        {
+            ++SuccessCount;
+        }
+
+        ExecuteSummary += FString::Printf(TEXT("- %s\n"), *ResultMessage);
     }
 
-    Params.bUseSelectionIfActorNamesEmpty = false;
-
-    FString ResultMessage;
-    const bool bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
-    const FString Prefix = bOk ? TEXT("Execute: ok\n") : TEXT("Execute: error\n");
-    PlanText->SetText(FText::FromString(Prefix + ResultMessage));
+    UpdateActionApprovalUi();
+    const FString Prefix = SuccessCount > 0 ? TEXT("Execute: ok\n") : TEXT("Execute: error\n");
+    PlanText->SetText(FText::FromString(Prefix + ExecuteSummary));
 
     return FReply::Handled();
 }
@@ -183,8 +239,57 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
         return;
     }
 
-    const FString PreviewText = FUEAIAgentTransportModule::Get().GetPlannedMovePreviewText();
-    PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewText));
+    UpdateActionApprovalUi();
+
+    FString PreviewSummary;
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const int32 ActionCount = Transport.GetPlannedActionCount();
+    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+    {
+        PreviewSummary += Transport.GetPlannedActionPreviewText(ActionIndex) + TEXT("\n");
+    }
+
+    if (PreviewSummary.IsEmpty())
+    {
+        PreviewSummary = TEXT("No executable actions were parsed.");
+    }
+
+    PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
+}
+
+void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState)
+{
+    FUEAIAgentTransportModule::Get().SetPlannedActionApproved(ActionIndex, NewState == ECheckBoxState::Checked);
+}
+
+void SUEAIAgentPanel::UpdateActionApprovalUi()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const int32 ActionCount = Transport.GetPlannedActionCount();
+
+    const auto UpdateRow = [&Transport, ActionCount](int32 ActionIndex, const TSharedPtr<SCheckBox>& CheckBox, const TSharedPtr<STextBlock>& TextBlock)
+    {
+        if (!CheckBox.IsValid() || !TextBlock.IsValid())
+        {
+            return;
+        }
+
+        const bool bVisible = ActionIndex < ActionCount;
+        CheckBox->SetVisibility(bVisible ? EVisibility::Visible : EVisibility::Collapsed);
+        TextBlock->SetVisibility(bVisible ? EVisibility::Visible : EVisibility::Collapsed);
+        if (!bVisible)
+        {
+            TextBlock->SetText(FText::FromString(FString::Printf(TEXT("Action %d: none"), ActionIndex + 1)));
+            CheckBox->SetIsChecked(ECheckBoxState::Unchecked);
+            return;
+        }
+
+        TextBlock->SetText(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)));
+        CheckBox->SetIsChecked(Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
+    };
+
+    UpdateRow(0, ActionCheck0, ActionText0);
+    UpdateRow(1, ActionCheck1, ActionText1);
 }
 
 TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const

@@ -97,15 +97,20 @@ bool FUEAIAgentSceneTools::SceneModifyActor(const FUEAIAgentModifyActorParams& P
         Actor->Modify();
         const FVector NewLocation = Actor->GetActorLocation() + Params.DeltaLocation;
         Actor->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
+        const FRotator NewRotation = Actor->GetActorRotation() + Params.DeltaRotation;
+        Actor->SetActorRotation(NewRotation, ETeleportType::None);
         ++UpdatedCount;
     }
 
     OutMessage = FString::Printf(
-        TEXT("scene.modifyActor applied to %d actor(s). Delta: X=%.2f Y=%.2f Z=%.2f"),
+        TEXT("scene.modifyActor applied to %d actor(s). DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
         UpdatedCount,
         Params.DeltaLocation.X,
         Params.DeltaLocation.Y,
-        Params.DeltaLocation.Z);
+        Params.DeltaLocation.Z,
+        Params.DeltaRotation.Pitch,
+        Params.DeltaRotation.Yaw,
+        Params.DeltaRotation.Roll);
 
     return UpdatedCount > 0;
 }

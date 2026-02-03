@@ -8,10 +8,15 @@ export interface SceneModifyActorAction {
   command: "scene.modifyActor";
   params: {
     target: "selection";
-    deltaLocation: {
+    deltaLocation?: {
       x: number;
       y: number;
       z: number;
+    };
+    deltaRotation?: {
+      pitch: number;
+      yaw: number;
+      roll: number;
     };
   };
   risk: "low" | "medium" | "high";

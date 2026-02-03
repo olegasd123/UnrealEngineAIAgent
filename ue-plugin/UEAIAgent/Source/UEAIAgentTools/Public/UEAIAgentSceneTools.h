@@ -6,6 +6,7 @@ struct FUEAIAgentModifyActorParams
 {
     TArray<FString> ActorNames;
     FVector DeltaLocation = FVector::ZeroVector;
+    FRotator DeltaRotation = FRotator::ZeroRotator;
     bool bUseSelectionIfActorNamesEmpty = true;
 };
 

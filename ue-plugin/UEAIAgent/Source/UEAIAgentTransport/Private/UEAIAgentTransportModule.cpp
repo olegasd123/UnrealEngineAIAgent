@@ -97,9 +97,7 @@ void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Cal
 
 void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const
 {
-    bHasPlannedMoveAction = false;
-    PlannedActorNames.Empty();
-    PlannedDeltaLocation = FVector::ZeroVector;
+    PlannedActions.Empty();
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
@@ -207,31 +205,55 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                         }
 
                         const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
-                        const TSharedPtr<FJsonObject>* DeltaObj = nullptr;
                         if (!ActionObj->TryGetObjectField(TEXT("params"), ParamsObj) || !ParamsObj || !ParamsObj->IsValid())
                         {
                             continue;
                         }
 
-                        if (!(*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaObj) || !DeltaObj || !DeltaObj->IsValid())
+                        FUEAIAgentPlannedSceneModifyAction ParsedAction;
+                        ParsedAction.ActorNames = SelectedActors;
+
+                        bool bHasAnyDelta = false;
+
+                        const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
+                        if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
+                            DeltaLocationObj && DeltaLocationObj->IsValid())
                         {
-                            continue;
+                            double X = 0.0;
+                            double Y = 0.0;
+                            double Z = 0.0;
+                            if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                                (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                            {
+                                ParsedAction.DeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                bHasAnyDelta = true;
+                            }
                         }
 
-                        double X = 0.0;
-                        double Y = 0.0;
-                        double Z = 0.0;
-                        if (!(*DeltaObj)->TryGetNumberField(TEXT("x"), X) ||
-                            !(*DeltaObj)->TryGetNumberField(TEXT("y"), Y) ||
-                            !(*DeltaObj)->TryGetNumberField(TEXT("z"), Z))
+                        const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
+                        if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
+                            DeltaRotationObj && DeltaRotationObj->IsValid())
                         {
-                            continue;
+                            double Pitch = 0.0;
+                            double Yaw = 0.0;
+                            double Roll = 0.0;
+                            if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                                (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                                (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                            {
+                                ParsedAction.DeltaRotation = FRotator(
+                                    static_cast<float>(Pitch),
+                                    static_cast<float>(Yaw),
+                                    static_cast<float>(Roll));
+                                bHasAnyDelta = true;
+                            }
                         }
 
-                        bHasPlannedMoveAction = true;
-                        PlannedActorNames = SelectedActors;
-                        PlannedDeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                        break;
+                        if (bHasAnyDelta)
+                        {
+                            PlannedActions.Add(ParsedAction);
+                        }
                     }
                 }
 
@@ -245,41 +267,64 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
     Request->ProcessRequest();
 }
 
-bool FUEAIAgentTransportModule::HasPlannedMoveAction() const
+int32 FUEAIAgentTransportModule::GetPlannedActionCount() const
 {
-    return bHasPlannedMoveAction;
+    return PlannedActions.Num();
 }
 
-bool FUEAIAgentTransportModule::PopPlannedMoveAction(TArray<FString>& OutActorNames, FVector& OutDeltaLocation) const
+FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex) const
 {
-    if (!bHasPlannedMoveAction)
+    if (!PlannedActions.IsValidIndex(ActionIndex))
+    {
+        return TEXT("Invalid action index.");
+    }
+
+    const FUEAIAgentPlannedSceneModifyAction& Action = PlannedActions[ActionIndex];
+    return FString::Printf(
+        TEXT("Action %d -> scene.modifyActor on %d actor(s), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
+        ActionIndex + 1,
+        Action.ActorNames.Num(),
+        Action.DeltaLocation.X,
+        Action.DeltaLocation.Y,
+        Action.DeltaLocation.Z,
+        Action.DeltaRotation.Pitch,
+        Action.DeltaRotation.Yaw,
+        Action.DeltaRotation.Roll);
+}
+
+bool FUEAIAgentTransportModule::IsPlannedActionApproved(int32 ActionIndex) const
+{
+    if (!PlannedActions.IsValidIndex(ActionIndex))
     {
         return false;
     }
 
-    OutActorNames = PlannedActorNames;
-    OutDeltaLocation = PlannedDeltaLocation;
-
-    bHasPlannedMoveAction = false;
-    PlannedActorNames.Empty();
-    PlannedDeltaLocation = FVector::ZeroVector;
-
-    return true;
+    return PlannedActions[ActionIndex].bApproved;
 }
 
-FString FUEAIAgentTransportModule::GetPlannedMovePreviewText() const
+void FUEAIAgentTransportModule::SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const
 {
-    if (!bHasPlannedMoveAction)
+    if (!PlannedActions.IsValidIndex(ActionIndex))
     {
-        return TEXT("No executable scene.modifyActor action in current plan.");
+        return;
     }
 
-    return FString::Printf(
-        TEXT("Preview -> scene.modifyActor on %d actor(s), Delta: X=%.2f Y=%.2f Z=%.2f"),
-        PlannedActorNames.Num(),
-        PlannedDeltaLocation.X,
-        PlannedDeltaLocation.Y,
-        PlannedDeltaLocation.Z);
+    PlannedActions[ActionIndex].bApproved = bApproved;
+}
+
+bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneModifyAction>& OutActions) const
+{
+    OutActions.Empty();
+    for (const FUEAIAgentPlannedSceneModifyAction& Action : PlannedActions)
+    {
+        if (Action.bApproved)
+        {
+            OutActions.Add(Action);
+        }
+    }
+
+    PlannedActions.Empty();
+    return OutActions.Num() > 0;
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)

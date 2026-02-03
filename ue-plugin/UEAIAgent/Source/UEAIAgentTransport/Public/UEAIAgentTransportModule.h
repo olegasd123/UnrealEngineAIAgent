@@ -7,6 +7,14 @@
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
 
+struct FUEAIAgentPlannedSceneModifyAction
+{
+    TArray<FString> ActorNames;
+    FVector DeltaLocation = FVector::ZeroVector;
+    FRotator DeltaRotation = FRotator::ZeroRotator;
+    bool bApproved = true;
+};
+
 class UEAIAGENTTRANSPORT_API FUEAIAgentTransportModule : public IModuleInterface
 {
 public:
@@ -25,15 +33,15 @@ public:
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
     void PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
-    bool HasPlannedMoveAction() const;
-    bool PopPlannedMoveAction(TArray<FString>& OutActorNames, FVector& OutDeltaLocation) const;
-    FString GetPlannedMovePreviewText() const;
+    int32 GetPlannedActionCount() const;
+    FString GetPlannedActionPreviewText(int32 ActionIndex) const;
+    bool IsPlannedActionApproved(int32 ActionIndex) const;
+    void SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const;
+    bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneModifyAction>& OutActions) const;
 
 private:
     FString BuildHealthUrl() const;
     FString BuildPlanUrl() const;
 
-    mutable bool bHasPlannedMoveAction = false;
-    mutable TArray<FString> PlannedActorNames;
-    mutable FVector PlannedDeltaLocation = FVector::ZeroVector;
+    mutable TArray<FUEAIAgentPlannedSceneModifyAction> PlannedActions;
 };
