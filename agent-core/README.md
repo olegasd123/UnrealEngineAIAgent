@@ -30,3 +30,8 @@ Optional environment:
 - `GEMINI_BASE_URL` (optional)
 - `GEMINI_TEMPERATURE` (default `0.2`)
 - `GEMINI_MAX_TOKENS` (default `1200`)
+
+## Provider behavior
+
+- If API key exists for selected provider, Agent Core makes a real provider call.
+- If key is missing or call fails, Agent Core falls back to local rule-based planning.

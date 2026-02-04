@@ -13,6 +13,6 @@ export interface LlmProvider {
   name: ProviderName;
   model: string;
   hasApiKey: boolean;
-  adapter: "stub";
+  adapter: "stub" | "live";
   planTask(input: PlanInput): Promise<PlanOutput>;
 }

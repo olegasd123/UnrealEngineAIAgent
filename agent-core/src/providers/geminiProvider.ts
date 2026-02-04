@@ -1,28 +1,91 @@
 import type { ProviderRuntimeConfig } from "../config.js";
 import type { PlanOutput } from "../contracts.js";
+import { buildPlanPrompt, parsePlanOutput } from "./planJson.js";
 import { buildRuleBasedPlan } from "./ruleBasedPlanner.js";
 import type { LlmProvider, PlanInput } from "./types.js";
 
 export class GeminiProvider implements LlmProvider {
   public readonly name = "gemini";
-  public readonly adapter = "stub";
   public readonly model: string;
   public readonly hasApiKey: boolean;
+  public readonly adapter: "stub" | "live";
 
   constructor(private readonly runtime: ProviderRuntimeConfig) {
     this.model = runtime.model;
     this.hasApiKey = Boolean(runtime.apiKey);
+    this.adapter = this.hasApiKey ? "live" : "stub";
+  }
+
+  private getBaseUrl(): string {
+    return this.runtime.baseUrl?.replace(/\/+$/, "") ?? "https://generativelanguage.googleapis.com/v1beta";
+  }
+
+  private async requestPlan(input: PlanInput): Promise<PlanOutput> {
+    if (!this.runtime.apiKey) {
+      throw new Error("GEMINI_API_KEY is missing.");
+    }
+
+    const endpoint =
+      `${this.getBaseUrl()}/models/${encodeURIComponent(this.runtime.model)}:generateContent` +
+      `?key=${encodeURIComponent(this.runtime.apiKey)}`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: "You are a planning assistant for Unreal Editor actions." }]
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: buildPlanPrompt(input) }]
+          }
+        ],
+        generationConfig: {
+          temperature: this.runtime.temperature,
+          maxOutputTokens: this.runtime.maxTokens,
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Gemini request failed (${response.status}): ${body.slice(0, 250)}`);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content || typeof content !== "string") {
+      throw new Error("Gemini response did not include a JSON plan.");
+    }
+
+    return parsePlanOutput(content);
   }
 
   async planTask(input: PlanInput): Promise<PlanOutput> {
-    const basePlan = buildRuleBasedPlan(input);
-    const setupStep = this.hasApiKey
-      ? `Gemini adapter stub is active (model: ${this.model}).`
-      : "GEMINI_API_KEY is missing. Using local parser stub.";
+    if (!this.hasApiKey) {
+      const basePlan = buildRuleBasedPlan(input);
+      return {
+        ...basePlan,
+        steps: ["GEMINI_API_KEY is missing. Using local parser fallback.", ...basePlan.steps]
+      };
+    }
 
-    return {
-      ...basePlan,
-      steps: [setupStep, ...basePlan.steps]
-    };
+    try {
+      return await this.requestPlan(input);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown Gemini error";
+      const fallback = buildRuleBasedPlan(input);
+      return {
+        ...fallback,
+        steps: [`Gemini call failed. Using local fallback. Reason: ${reason}`, ...fallback.steps]
+      };
+    }
   }
 }
