@@ -26,7 +26,10 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === "GET" && req.url === "/health") {
+  const requestUrl = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
+  const pathname = requestUrl.pathname;
+
+  if (req.method === "GET" && pathname === "/health") {
     return sendJson(res, 200, {
       ok: true,
       provider: provider.name,
@@ -36,7 +39,27 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  if (req.method === "POST" && req.url === "/v1/task/plan") {
+  if (req.method === "GET" && pathname === "/v1/task/logs") {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "50");
+    const normalizedLimit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(50, Math.trunc(requestedLimit)))
+      : 50;
+
+    try {
+      const entries = await taskLogStore.readLastTaskPlanEntries(normalizedLimit);
+      return sendJson(res, 200, {
+        ok: true,
+        limit: normalizedLimit,
+        count: entries.length,
+        entries
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/task/plan") {
     const requestId = taskLogStore.createRequestId();
     const startedAt = Date.now();
     let rawBody = "";

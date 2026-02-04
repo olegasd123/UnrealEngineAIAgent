@@ -41,3 +41,4 @@ Optional environment:
 
 - Each `/v1/task/plan` request is appended to local JSONL log file.
 - Success and error entries include `requestId`, timestamp, provider info, and duration.
+- Read logs: `GET /v1/task/logs?limit=50` (max limit is 50, default is 50).

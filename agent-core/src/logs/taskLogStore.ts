@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -99,6 +99,39 @@ export class TaskLogStore {
       error: params.error
     };
     await this.append(entry);
+  }
+
+  public async readLastTaskPlanEntries(limit: number): Promise<TaskPlanLogEntry[]> {
+    const normalizedLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+
+    let content = "";
+    try {
+      content = await readFile(this.absolutePath, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+
+    const lines = content.split("\n");
+    const entries: TaskPlanLogEntry[] = [];
+    for (let i = lines.length - 1; i >= 0 && entries.length < normalizedLimit; i -= 1) {
+      const line = lines[i]?.trim();
+      if (!line) {
+        continue;
+      }
+
+      try {
+        entries.push(JSON.parse(line) as TaskPlanLogEntry);
+      } catch {
+        // Skip broken lines and keep reading.
+      }
+    }
+
+    entries.reverse();
+    return entries;
   }
 
   private async append(entry: TaskPlanLogEntry): Promise<void> {
