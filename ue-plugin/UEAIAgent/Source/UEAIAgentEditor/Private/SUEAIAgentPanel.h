@@ -11,6 +11,8 @@ class SVerticalBox;
 template<typename OptionType>
 class SComboBox;
 enum class ECheckBoxState : uint8;
+enum class EUEAIAgentRiskLevel : uint8;
+struct FUEAIAgentPlannedSceneAction;
 
 class SUEAIAgentPanel : public SCompoundWidget
 {
@@ -29,6 +31,8 @@ private:
     FReply OnTestApiKeyClicked();
     FReply OnRefreshProviderStatusClicked();
     FReply OnPlanFromSelectionClicked();
+    FReply OnRunAgentLoopClicked();
+    FReply OnResumeAgentLoopClicked();
     FReply OnApplyPlannedActionClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
     void HandleCredentialOperationResult(bool bOk, const FString& Message);
@@ -40,6 +44,9 @@ private:
     void HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();
+    bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
+    bool CanAutoExecuteRisk(EUEAIAgentRiskLevel Risk) const;
+    FString RunAgentLoop(bool bResumeOnly);
     TArray<FString> CollectSelectedActorNames() const;
 
     TSharedPtr<STextBlock> StatusText;
@@ -53,4 +60,6 @@ private:
     TSharedPtr<SVerticalBox> ActionListBox;
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;
+    bool bAgentModeEnabled = true;
+    int32 AgentMaxRetries = 2;
 };

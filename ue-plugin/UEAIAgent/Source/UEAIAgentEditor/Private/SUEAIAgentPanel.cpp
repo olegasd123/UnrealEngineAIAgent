@@ -154,6 +154,30 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SHorizontalBox::Slot()
             .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SBox)
+                .WidthOverride(200.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Run Agent Loop")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRunAgentLoopClicked)
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SBox)
+                .WidthOverride(220.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Resume Agent Loop")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
             [
                 SNew(SBox)
                 .WidthOverride(240.0f)
@@ -162,6 +186,21 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     .Text(FText::FromString(TEXT("Apply Planned Actions")))
                     .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
                 ]
+            ]
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SNew(SCheckBox)
+            .IsChecked(ECheckBoxState::Checked)
+            .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
+            {
+                bAgentModeEnabled = (NewState == ECheckBoxState::Checked);
+            })
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Agent mode: auto-run low risk actions, pause on medium/high")))
             ]
         ]
         + SVerticalBox::Slot()
@@ -216,6 +255,7 @@ FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
 
     FUEAIAgentTransportModule::Get().PlanTask(
         Prompt,
+        bAgentModeEnabled ? TEXT("agent") : TEXT("chat"),
         SelectedActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
@@ -312,43 +352,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     for (const FUEAIAgentPlannedSceneAction& PlannedAction : ApprovedActions)
     {
         FString ResultMessage;
-        bool bOk = false;
-
-        if (PlannedAction.Type == EUEAIAgentPlannedActionType::CreateActor)
-        {
-            FUEAIAgentCreateActorParams Params;
-            Params.ActorClass = PlannedAction.ActorClass;
-            Params.Location = PlannedAction.SpawnLocation;
-            Params.Rotation = PlannedAction.SpawnRotation;
-            Params.Count = PlannedAction.SpawnCount;
-            bOk = FUEAIAgentSceneTools::SceneCreateActor(Params, ResultMessage);
-        }
-        else if (PlannedAction.Type == EUEAIAgentPlannedActionType::DeleteActor)
-        {
-            FUEAIAgentDeleteActorParams Params;
-            Params.ActorNames = PlannedAction.ActorNames;
-            Params.bUseSelectionIfActorNamesEmpty = false;
-            if (Params.ActorNames.IsEmpty())
-            {
-                ExecuteSummary += TEXT("- Skipped delete action with no target actors.\n");
-                continue;
-            }
-            bOk = FUEAIAgentSceneTools::SceneDeleteActor(Params, ResultMessage);
-        }
-        else
-        {
-            FUEAIAgentModifyActorParams Params;
-            Params.ActorNames = PlannedAction.ActorNames;
-            Params.DeltaLocation = PlannedAction.DeltaLocation;
-            Params.DeltaRotation = PlannedAction.DeltaRotation;
-            Params.bUseSelectionIfActorNamesEmpty = false;
-            if (Params.ActorNames.IsEmpty())
-            {
-                ExecuteSummary += TEXT("- Skipped modify action with no target actors.\n");
-                continue;
-            }
-            bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
-        }
+        const bool bOk = ExecutePlannedAction(PlannedAction, ResultMessage);
 
         if (bOk)
         {
@@ -362,6 +366,36 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     const FString Prefix = SuccessCount > 0 ? TEXT("Execute: ok\n") : TEXT("Execute: error\n");
     PlanText->SetText(FText::FromString(Prefix + ExecuteSummary));
 
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRunAgentLoopClicked()
+{
+    if (!PlanText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    if (!bAgentModeEnabled)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: enable agent mode first.")));
+        return FReply::Handled();
+    }
+
+    const FString Summary = RunAgentLoop(false);
+    PlanText->SetText(FText::FromString(Summary));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
+{
+    if (!PlanText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    const FString Summary = RunAgentLoop(true);
+    PlanText->SetText(FText::FromString(Summary));
     return FReply::Handled();
 }
 
@@ -405,6 +439,131 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     }
 
     PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
+}
+
+bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const
+{
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::CreateActor)
+    {
+        FUEAIAgentCreateActorParams Params;
+        Params.ActorClass = PlannedAction.ActorClass;
+        Params.Location = PlannedAction.SpawnLocation;
+        Params.Rotation = PlannedAction.SpawnRotation;
+        Params.Count = PlannedAction.SpawnCount;
+        return FUEAIAgentSceneTools::SceneCreateActor(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::DeleteActor)
+    {
+        FUEAIAgentDeleteActorParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped delete action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneDeleteActor(Params, OutMessage);
+    }
+
+    FUEAIAgentModifyActorParams Params;
+    Params.ActorNames = PlannedAction.ActorNames;
+    Params.DeltaLocation = PlannedAction.DeltaLocation;
+    Params.DeltaRotation = PlannedAction.DeltaRotation;
+    Params.bUseSelectionIfActorNamesEmpty = false;
+    if (Params.ActorNames.IsEmpty())
+    {
+        OutMessage = TEXT("Skipped modify action with no target actors.");
+        return false;
+    }
+    return FUEAIAgentSceneTools::SceneModifyActor(Params, OutMessage);
+}
+
+bool SUEAIAgentPanel::CanAutoExecuteRisk(EUEAIAgentRiskLevel Risk) const
+{
+    return Risk == EUEAIAgentRiskLevel::Low;
+}
+
+FString SUEAIAgentPanel::RunAgentLoop(bool bResumeOnly)
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (Transport.GetPlannedActionCount() == 0)
+    {
+        return TEXT("Agent: no planned actions. Use 'Plan With Selection' first.");
+    }
+
+    FString Lines;
+    int32 AppliedCount = 0;
+
+    for (int32 ActionIndex = 0; ActionIndex < Transport.GetPlannedActionCount(); ++ActionIndex)
+    {
+        FUEAIAgentPlannedSceneAction PlannedAction;
+        if (!Transport.GetPendingAction(ActionIndex, PlannedAction))
+        {
+            continue;
+        }
+
+        const bool bNeedsApproval = !CanAutoExecuteRisk(PlannedAction.Risk) && !PlannedAction.bApproved;
+        if (bNeedsApproval)
+        {
+            Lines += FString::Printf(
+                TEXT("- Pause at action %d: risk requires approval. Check action and click Resume Agent Loop.\n"),
+                ActionIndex + 1);
+            break;
+        }
+
+        if (!bResumeOnly && !CanAutoExecuteRisk(PlannedAction.Risk) && PlannedAction.bApproved)
+        {
+            Lines += FString::Printf(
+                TEXT("- Pause at action %d: medium/high risk approved. Click Resume Agent Loop to continue.\n"),
+                ActionIndex + 1);
+            break;
+        }
+
+        bool bActionOk = false;
+        FString LastMessage;
+        int32 Attempt = 0;
+        const int32 MaxAttempts = FMath::Max(1, AgentMaxRetries + 1);
+        for (; Attempt < MaxAttempts; ++Attempt)
+        {
+            if (ExecutePlannedAction(PlannedAction, LastMessage))
+            {
+                bActionOk = true;
+                break;
+            }
+        }
+
+        Transport.UpdateActionResult(ActionIndex, bActionOk, Attempt + 1);
+        if (bActionOk)
+        {
+            AppliedCount += 1;
+            Lines += FString::Printf(TEXT("- Action %d succeeded: %s\n"), ActionIndex + 1, *LastMessage);
+        }
+        else
+        {
+            Lines += FString::Printf(TEXT("- Action %d failed after retries: %s\n"), ActionIndex + 1, *LastMessage);
+            break;
+        }
+    }
+
+    UpdateActionApprovalUi();
+
+    const int32 NextPending = Transport.GetNextPendingActionIndex();
+    if (Lines.IsEmpty())
+    {
+        Lines = TEXT("- No pending actions executed.");
+    }
+
+    if (NextPending == INDEX_NONE)
+    {
+        return FString::Printf(TEXT("Agent: completed (%d action(s) applied)\n%s"), AppliedCount, *Lines);
+    }
+
+    return FString::Printf(
+        TEXT("Agent: paused with pending action %d (%d action(s) applied)\n%s"),
+        NextPending + 1,
+        AppliedCount,
+        *Lines);
 }
 
 void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)

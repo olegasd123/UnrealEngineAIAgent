@@ -15,6 +15,20 @@ enum class EUEAIAgentPlannedActionType : uint8
     DeleteActor
 };
 
+enum class EUEAIAgentRiskLevel : uint8
+{
+    Low,
+    Medium,
+    High
+};
+
+enum class EUEAIAgentActionState : uint8
+{
+    Pending,
+    Succeeded,
+    Failed
+};
+
 struct FUEAIAgentPlannedSceneAction
 {
     EUEAIAgentPlannedActionType Type = EUEAIAgentPlannedActionType::ModifyActor;
@@ -32,6 +46,9 @@ struct FUEAIAgentPlannedSceneAction
     FRotator SpawnRotation = FRotator::ZeroRotator;
     int32 SpawnCount = 1;
 
+    EUEAIAgentRiskLevel Risk = EUEAIAgentRiskLevel::Low;
+    EUEAIAgentActionState State = EUEAIAgentActionState::Pending;
+    int32 AttemptCount = 0;
     bool bApproved = true;
 };
 
@@ -52,7 +69,7 @@ public:
     virtual void ShutdownModule() override;
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
-    void PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
+    void PlanTask(const FString& Prompt, const FString& Mode, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
     void SetProviderApiKey(const FString& Provider, const FString& ApiKey, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void DeleteProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void TestProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
@@ -62,6 +79,9 @@ public:
     bool IsPlannedActionApproved(int32 ActionIndex) const;
     void SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const;
     bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const;
+    bool GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
+    void UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const;
+    int32 GetNextPendingActionIndex() const;
 
 private:
     FString BuildBaseUrl() const;

@@ -12,6 +12,59 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEAIAgentTransport, Log, All);
 
+namespace
+{
+    EUEAIAgentRiskLevel ParseRiskLevel(const TSharedPtr<FJsonObject>& ActionObj)
+    {
+        if (!ActionObj.IsValid())
+        {
+            return EUEAIAgentRiskLevel::Low;
+        }
+
+        FString Risk;
+        if (!ActionObj->TryGetStringField(TEXT("risk"), Risk))
+        {
+            return EUEAIAgentRiskLevel::Low;
+        }
+
+        if (Risk.Equals(TEXT("high"), ESearchCase::IgnoreCase))
+        {
+            return EUEAIAgentRiskLevel::High;
+        }
+        if (Risk.Equals(TEXT("medium"), ESearchCase::IgnoreCase))
+        {
+            return EUEAIAgentRiskLevel::Medium;
+        }
+        return EUEAIAgentRiskLevel::Low;
+    }
+
+    FString ToRiskText(EUEAIAgentRiskLevel Risk)
+    {
+        if (Risk == EUEAIAgentRiskLevel::High)
+        {
+            return TEXT("high");
+        }
+        if (Risk == EUEAIAgentRiskLevel::Medium)
+        {
+            return TEXT("medium");
+        }
+        return TEXT("low");
+    }
+
+    FString ToStateText(EUEAIAgentActionState State)
+    {
+        if (State == EUEAIAgentActionState::Succeeded)
+        {
+            return TEXT("succeeded");
+        }
+        if (State == EUEAIAgentActionState::Failed)
+        {
+            return TEXT("failed");
+        }
+        return TEXT("pending");
+    }
+}
+
 void FUEAIAgentTransportModule::StartupModule()
 {
     UE_LOG(LogUEAIAgentTransport, Log, TEXT("UEAIAgentTransport started."));
@@ -117,13 +170,17 @@ void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Cal
     Request->ProcessRequest();
 }
 
-void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const
+void FUEAIAgentTransportModule::PlanTask(
+    const FString& Prompt,
+    const FString& Mode,
+    const TArray<FString>& SelectedActors,
+    const FOnUEAIAgentTaskPlanned& Callback) const
 {
     PlannedActions.Empty();
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
-    Root->SetStringField(TEXT("mode"), TEXT("chat"));
+    Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("chat") : Mode);
 
     TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
     TArray<TSharedPtr<FJsonValue>> SelectionValues;
@@ -243,6 +300,8 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                             FUEAIAgentPlannedSceneAction ParsedAction;
                             ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
                             ParsedAction.ActorNames = SelectedActors;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
 
                             bool bHasAnyDelta = false;
                             const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
@@ -298,6 +357,8 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                             FUEAIAgentPlannedSceneAction ParsedAction;
                             ParsedAction.Type = EUEAIAgentPlannedActionType::CreateActor;
                             ParsedAction.ActorClass = ActorClass;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
 
                             double Count = 1.0;
                             if ((*ParamsObj)->TryGetNumberField(TEXT("count"), Count))
@@ -353,6 +414,8 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                             FUEAIAgentPlannedSceneAction ParsedAction;
                             ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
                             ParsedAction.ActorNames = SelectedActors;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = false;
                             PlannedActions.Add(ParsedAction);
                         }
                     }
@@ -585,10 +648,15 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
     }
 
     const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
+    const FString Suffix = FString::Printf(
+        TEXT(" [risk=%s, state=%s, attempts=%d]"),
+        *ToRiskText(Action.Risk),
+        *ToStateText(Action.State),
+        Action.AttemptCount);
     if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
         return FString::Printf(
-            TEXT("Action %d -> scene.createActor count=%d class=%s, Location: X=%.2f Y=%.2f Z=%.2f, Rotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
+            TEXT("Action %d -> scene.createActor count=%d class=%s, Location: X=%.2f Y=%.2f Z=%.2f, Rotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
             ActionIndex + 1,
             Action.SpawnCount,
             *Action.ActorClass,
@@ -597,19 +665,21 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             Action.SpawnLocation.Z,
             Action.SpawnRotation.Pitch,
             Action.SpawnRotation.Yaw,
-            Action.SpawnRotation.Roll);
+            Action.SpawnRotation.Roll,
+            *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::DeleteActor)
     {
         return FString::Printf(
-            TEXT("Action %d -> scene.deleteActor on selection (%d actor(s))"),
+            TEXT("Action %d -> scene.deleteActor on selection (%d actor(s))%s"),
             ActionIndex + 1,
-            Action.ActorNames.Num());
+            Action.ActorNames.Num(),
+            *Suffix);
     }
 
     return FString::Printf(
-        TEXT("Action %d -> scene.modifyActor on %d actor(s), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
+        TEXT("Action %d -> scene.modifyActor on %d actor(s), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
         ActionIndex + 1,
         Action.ActorNames.Num(),
         Action.DeltaLocation.X,
@@ -617,7 +687,8 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
         Action.DeltaLocation.Z,
         Action.DeltaRotation.Pitch,
         Action.DeltaRotation.Yaw,
-        Action.DeltaRotation.Roll);
+        Action.DeltaRotation.Roll,
+        *Suffix);
 }
 
 bool FUEAIAgentTransportModule::IsPlannedActionApproved(int32 ActionIndex) const
@@ -653,6 +724,46 @@ bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlann
 
     PlannedActions.Empty();
     return OutActions.Num() > 0;
+}
+
+bool FUEAIAgentTransportModule::GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const
+{
+    if (!PlannedActions.IsValidIndex(ActionIndex))
+    {
+        return false;
+    }
+
+    const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
+    if (Action.State != EUEAIAgentActionState::Pending)
+    {
+        return false;
+    }
+
+    OutAction = Action;
+    return true;
+}
+
+void FUEAIAgentTransportModule::UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const
+{
+    if (!PlannedActions.IsValidIndex(ActionIndex))
+    {
+        return;
+    }
+
+    PlannedActions[ActionIndex].State = bSucceeded ? EUEAIAgentActionState::Succeeded : EUEAIAgentActionState::Failed;
+    PlannedActions[ActionIndex].AttemptCount = FMath::Max(0, AttemptCount);
+}
+
+int32 FUEAIAgentTransportModule::GetNextPendingActionIndex() const
+{
+    for (int32 Index = 0; Index < PlannedActions.Num(); ++Index)
+    {
+        if (PlannedActions[Index].State == EUEAIAgentActionState::Pending)
+        {
+            return Index;
+        }
+    }
+    return INDEX_NONE;
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)
