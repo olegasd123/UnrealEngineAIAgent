@@ -1,4 +1,5 @@
-import type { LlmProvider, PlanAction, PlanInput, PlanOutput } from "./types.js";
+import type { PlanAction, PlanOutput } from "../contracts.js";
+import type { LlmProvider, PlanInput } from "./types.js";
 
 function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: number } | null {
   const lower = prompt.toLowerCase();
@@ -117,23 +118,23 @@ export class MockProvider implements LlmProvider {
       const actions: PlanAction[] = [];
       if (moveDelta) {
         actions.push({
-          command: "scene.modifyActor" as const,
+          command: "scene.modifyActor",
           params: {
-            target: "selection" as const,
+            target: "selection",
             deltaLocation: moveDelta
           },
-          risk: "low" as const
+          risk: "low"
         });
       }
 
       if (rotateDelta) {
         actions.push({
-          command: "scene.modifyActor" as const,
+          command: "scene.modifyActor",
           params: {
-            target: "selection" as const,
+            target: "selection",
             deltaRotation: rotateDelta
           },
-          risk: "low" as const
+          risk: "low"
         });
       }
 

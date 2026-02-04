@@ -37,11 +37,53 @@
             ],
             "properties": {
               "command": {
-                "type": "string"
+                "type": "string",
+                "const": "scene.modifyActor"
               },
               "params": {
                 "type": "object",
-                "additionalProperties": true
+                "required": [
+                  "target"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "const": "selection"
+                  },
+                  "deltaLocation": {
+                    "type": "object",
+                    "required": [
+                      "x",
+                      "y",
+                      "z"
+                    ],
+                    "properties": {
+                      "x": { "type": "number" },
+                      "y": { "type": "number" },
+                      "z": { "type": "number" }
+                    },
+                    "additionalProperties": false
+                  },
+                  "deltaRotation": {
+                    "type": "object",
+                    "required": [
+                      "pitch",
+                      "yaw",
+                      "roll"
+                    ],
+                    "properties": {
+                      "pitch": { "type": "number" },
+                      "yaw": { "type": "number" },
+                      "roll": { "type": "number" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "anyOf": [
+                  { "required": ["deltaLocation"] },
+                  { "required": ["deltaRotation"] }
+                ],
+                "additionalProperties": false
               },
               "risk": {
                 "type": "string",

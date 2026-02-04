@@ -210,6 +210,12 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                             continue;
                         }
 
+                        FString Target;
+                        if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+                        {
+                            continue;
+                        }
+
                         FUEAIAgentPlannedSceneModifyAction ParsedAction;
                         ParsedAction.ActorNames = SelectedActors;
 

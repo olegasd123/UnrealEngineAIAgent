@@ -77,36 +77,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         .AutoHeight()
         .Padding(8.0f, 0.0f, 8.0f, 8.0f)
         [
-            SNew(SHorizontalBox)
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 12.0f, 0.0f)
-            [
-                SAssignNew(ActionCheck0, SCheckBox)
-                .IsChecked(ECheckBoxState::Checked)
-                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
-                {
-                    HandleActionApprovalChanged(0, NewState);
-                })
-                [
-                    SAssignNew(ActionText0, STextBlock)
-                    .Text(FText::FromString(TEXT("Action 1: none")))
-                ]
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                SAssignNew(ActionCheck1, SCheckBox)
-                .IsChecked(ECheckBoxState::Checked)
-                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
-                {
-                    HandleActionApprovalChanged(1, NewState);
-                })
-                [
-                    SAssignNew(ActionText1, STextBlock)
-                    .Text(FText::FromString(TEXT("Action 2: none")))
-                ]
-            ]
+            SAssignNew(ActionListBox, SVerticalBox)
         ]
         + SVerticalBox::Slot()
         .AutoHeight()
@@ -267,29 +238,81 @@ void SUEAIAgentPanel::UpdateActionApprovalUi()
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const int32 ActionCount = Transport.GetPlannedActionCount();
 
-    const auto UpdateRow = [&Transport, ActionCount](int32 ActionIndex, const TSharedPtr<SCheckBox>& CheckBox, const TSharedPtr<STextBlock>& TextBlock)
+    if (ActionChecks.Num() != ActionCount)
     {
-        if (!CheckBox.IsValid() || !TextBlock.IsValid())
+        RebuildActionApprovalUi();
+    }
+
+    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+    {
+        if (!ActionTexts.IsValidIndex(ActionIndex) || !ActionChecks.IsValidIndex(ActionIndex))
         {
-            return;
+            continue;
         }
 
-        const bool bVisible = ActionIndex < ActionCount;
-        CheckBox->SetVisibility(bVisible ? EVisibility::Visible : EVisibility::Collapsed);
-        TextBlock->SetVisibility(bVisible ? EVisibility::Visible : EVisibility::Collapsed);
-        if (!bVisible)
+        if (ActionTexts[ActionIndex].IsValid())
         {
-            TextBlock->SetText(FText::FromString(FString::Printf(TEXT("Action %d: none"), ActionIndex + 1)));
-            CheckBox->SetIsChecked(ECheckBoxState::Unchecked);
-            return;
+            ActionTexts[ActionIndex]->SetText(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)));
         }
+        if (ActionChecks[ActionIndex].IsValid())
+        {
+            ActionChecks[ActionIndex]->SetIsChecked(
+                Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
+        }
+    }
+}
 
-        TextBlock->SetText(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)));
-        CheckBox->SetIsChecked(Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
-    };
+void SUEAIAgentPanel::RebuildActionApprovalUi()
+{
+    ActionChecks.Empty();
+    ActionTexts.Empty();
 
-    UpdateRow(0, ActionCheck0, ActionText0);
-    UpdateRow(1, ActionCheck1, ActionText1);
+    if (!ActionListBox.IsValid())
+    {
+        return;
+    }
+
+    ActionListBox->ClearChildren();
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const int32 ActionCount = Transport.GetPlannedActionCount();
+    if (ActionCount == 0)
+    {
+        ActionListBox->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 0.0f, 0.0f, 4.0f)
+        [
+            SNew(STextBlock)
+            .Text(FText::FromString(TEXT("No planned actions.")))
+        ];
+        return;
+    }
+
+    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+    {
+        TSharedPtr<SCheckBox> RowCheckBox;
+        TSharedPtr<STextBlock> RowText;
+
+        ActionListBox->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 0.0f, 0.0f, 4.0f)
+        [
+            SAssignNew(RowCheckBox, SCheckBox)
+            .IsChecked(Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+            .OnCheckStateChanged_Lambda([this, ActionIndex](ECheckBoxState NewState)
+            {
+                HandleActionApprovalChanged(ActionIndex, NewState);
+            })
+            [
+                SAssignNew(RowText, STextBlock)
+                .AutoWrapText(true)
+                .Text(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)))
+            ]
+        ];
+
+        ActionChecks.Add(RowCheckBox);
+        ActionTexts.Add(RowText);
+    }
 }
 
 TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const

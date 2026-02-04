@@ -6,6 +6,7 @@
 class STextBlock;
 class SEditableTextBox;
 class SCheckBox;
+class SVerticalBox;
 enum class ECheckBoxState : uint8;
 
 class SUEAIAgentPanel : public SCompoundWidget
@@ -26,13 +27,13 @@ private:
     void HandlePlanResult(bool bOk, const FString& Message);
     void HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState);
     void UpdateActionApprovalUi();
+    void RebuildActionApprovalUi();
     TArray<FString> CollectSelectedActorNames() const;
 
     TSharedPtr<STextBlock> StatusText;
     TSharedPtr<SEditableTextBox> PromptInput;
     TSharedPtr<STextBlock> PlanText;
-    TSharedPtr<SCheckBox> ActionCheck0;
-    TSharedPtr<STextBlock> ActionText0;
-    TSharedPtr<SCheckBox> ActionCheck1;
-    TSharedPtr<STextBlock> ActionText1;
+    TSharedPtr<SVerticalBox> ActionListBox;
+    TArray<TSharedPtr<SCheckBox>> ActionChecks;
+    TArray<TSharedPtr<STextBlock>> ActionTexts;
 };

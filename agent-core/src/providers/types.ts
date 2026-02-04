@@ -1,34 +1,6 @@
-export interface PlanInput {
-  prompt: string;
-  mode: "chat" | "agent";
-  context: Record<string, unknown>;
-}
+import type { PlanOutput, TaskRequest } from "../contracts.js";
 
-export interface SceneModifyActorAction {
-  command: "scene.modifyActor";
-  params: {
-    target: "selection";
-    deltaLocation?: {
-      x: number;
-      y: number;
-      z: number;
-    };
-    deltaRotation?: {
-      pitch: number;
-      yaw: number;
-      roll: number;
-    };
-  };
-  risk: "low" | "medium" | "high";
-}
-
-export type PlanAction = SceneModifyActorAction;
-
-export interface PlanOutput {
-  summary: string;
-  steps: string[];
-  actions?: PlanAction[];
-}
+export type PlanInput = TaskRequest;
 
 export interface LlmProvider {
   name: "openai" | "gemini";
