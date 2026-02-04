@@ -32,6 +32,18 @@ Optional environment:
 - `GEMINI_TEMPERATURE` (default `0.2`)
 - `GEMINI_MAX_TOKENS` (default `1200`)
 
+## Credential management
+
+- Provider keys can be managed over local endpoints:
+  - `GET /v1/providers/status`
+  - `POST /v1/credentials/set`
+  - `POST /v1/credentials/delete`
+  - `POST /v1/credentials/test`
+- macOS stores keys in Keychain.
+- Windows stores keys in user-protected encrypted file (DPAPI via PowerShell).
+- Linux/other platforms store keys in `~/.ueaiagent/secrets` (local file fallback).
+- `OPENAI_API_KEY` and `GEMINI_API_KEY` env vars still work and have priority.
+
 ## Provider behavior
 
 - If API key exists for selected provider, Agent Core makes a real provider call.

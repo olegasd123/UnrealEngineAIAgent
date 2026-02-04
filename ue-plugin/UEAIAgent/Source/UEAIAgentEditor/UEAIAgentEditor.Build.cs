@@ -18,6 +18,7 @@ public class UEAIAgentEditor : ModuleRules
             {
                 "CoreUObject",
                 "Engine",
+                "InputCore",
                 "Slate",
                 "SlateCore",
                 "ToolMenus",

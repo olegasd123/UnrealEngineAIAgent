@@ -4,9 +4,11 @@
 #include "Engine/Selection.h"
 #include "GameFramework/Actor.h"
 #include "UEAIAgentSceneTools.h"
+#include "UEAIAgentSettings.h"
 #include "UEAIAgentTransportModule.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
@@ -14,6 +16,20 @@
 
 void SUEAIAgentPanel::Construct(const FArguments& InArgs)
 {
+    ProviderItems.Empty();
+    ProviderItems.Add(MakeShared<FString>(TEXT("OpenAI")));
+    ProviderItems.Add(MakeShared<FString>(TEXT("Gemini")));
+
+    const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
+    if (Settings && Settings->DefaultProvider == EUEAIAgentProvider::Gemini)
+    {
+        SelectedProviderItem = ProviderItems[1];
+    }
+    else
+    {
+        SelectedProviderItem = ProviderItems[0];
+    }
+
     ChildSlot
     [
         SNew(SVerticalBox)
@@ -23,6 +39,81 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         [
             SAssignNew(StatusText, STextBlock)
             .Text(FText::FromString(TEXT("Status: not checked")))
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SAssignNew(ProviderCombo, SComboBox<TSharedPtr<FString>>)
+                .OptionsSource(&ProviderItems)
+                .InitiallySelectedItem(SelectedProviderItem)
+                .OnGenerateWidget(this, &SUEAIAgentPanel::HandleProviderComboGenerateWidget)
+                .OnSelectionChanged(this, &SUEAIAgentPanel::HandleProviderComboSelectionChanged)
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([this]()
+                    {
+                        return FText::FromString(GetSelectedProviderLabel());
+                    })
+                ]
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            [
+                SAssignNew(ApiKeyInput, SEditableTextBox)
+                .HintText(FText::FromString(TEXT("Paste API key")))
+                .IsPassword(true)
+            ]
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Save API Key")))
+                .OnClicked(this, &SUEAIAgentPanel::OnSaveApiKeyClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Remove API Key")))
+                .OnClicked(this, &SUEAIAgentPanel::OnRemoveApiKeyClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Test Provider")))
+                .OnClicked(this, &SUEAIAgentPanel::OnTestApiKeyClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Refresh Provider Status")))
+                .OnClicked(this, &SUEAIAgentPanel::OnRefreshProviderStatusClicked)
+            ]
+        ]
+        + SVerticalBox::Slot()
+        .AutoHeight()
+        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        [
+            SAssignNew(CredentialText, STextBlock)
+            .AutoWrapText(true)
+            .Text(FText::FromString(TEXT("Provider keys: unknown. Click 'Refresh Provider Status'.")))
         ]
         + SVerticalBox::Slot()
         .AutoHeight()
@@ -128,6 +219,69 @@ FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
         SelectedActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnSaveApiKeyClicked()
+{
+    if (!ApiKeyInput.IsValid() || !CredentialText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    const FString ApiKey = ApiKeyInput->GetText().ToString().TrimStartAndEnd();
+    if (ApiKey.IsEmpty())
+    {
+        CredentialText->SetText(FText::FromString(TEXT("Credential: please enter an API key first.")));
+        return FReply::Handled();
+    }
+
+    CredentialText->SetText(FText::FromString(TEXT("Credential: saving key...")));
+    FUEAIAgentTransportModule::Get().SetProviderApiKey(
+        GetSelectedProviderCode(),
+        ApiKey,
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRemoveApiKeyClicked()
+{
+    if (!CredentialText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    CredentialText->SetText(FText::FromString(TEXT("Credential: removing key...")));
+    FUEAIAgentTransportModule::Get().DeleteProviderApiKey(
+        GetSelectedProviderCode(),
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnTestApiKeyClicked()
+{
+    if (!CredentialText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    CredentialText->SetText(FText::FromString(TEXT("Credential: testing provider...")));
+    FUEAIAgentTransportModule::Get().TestProviderApiKey(
+        GetSelectedProviderCode(),
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRefreshProviderStatusClicked()
+{
+    if (!CredentialText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    CredentialText->SetText(FText::FromString(TEXT("Credential: loading provider status...")));
+    FUEAIAgentTransportModule::Get().GetProviderStatus(
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
     return FReply::Handled();
 }
 
@@ -253,6 +407,17 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
 }
 
+void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)
+{
+    if (!CredentialText.IsValid())
+    {
+        return;
+    }
+
+    const FString Prefix = bOk ? TEXT("Credential: ok\n") : TEXT("Credential: error\n");
+    CredentialText->SetText(FText::FromString(Prefix + Message));
+}
+
 void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState)
 {
     FUEAIAgentTransportModule::Get().SetPlannedActionApproved(ActionIndex, NewState == ECheckBoxState::Checked);
@@ -358,4 +523,39 @@ TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const
     }
 
     return Names;
+}
+
+FString SUEAIAgentPanel::GetSelectedProviderCode() const
+{
+    if (!SelectedProviderItem.IsValid())
+    {
+        return TEXT("openai");
+    }
+
+    return SelectedProviderItem->Equals(TEXT("Gemini"), ESearchCase::IgnoreCase) ? TEXT("gemini") : TEXT("openai");
+}
+
+FString SUEAIAgentPanel::GetSelectedProviderLabel() const
+{
+    if (!SelectedProviderItem.IsValid())
+    {
+        return TEXT("OpenAI");
+    }
+
+    return *SelectedProviderItem;
+}
+
+TSharedRef<SWidget> SUEAIAgentPanel::HandleProviderComboGenerateWidget(TSharedPtr<FString> InItem) const
+{
+    return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
+}
+
+void SUEAIAgentPanel::HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+{
+    if (!NewValue.IsValid())
+    {
+        return;
+    }
+
+    SelectedProviderItem = NewValue;
 }

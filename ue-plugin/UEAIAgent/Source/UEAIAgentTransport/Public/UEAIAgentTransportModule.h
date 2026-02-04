@@ -6,6 +6,7 @@
 
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
+DECLARE_DELEGATE_TwoParams(FOnUEAIAgentCredentialOpFinished, bool, const FString&);
 
 enum class EUEAIAgentPlannedActionType : uint8
 {
@@ -52,6 +53,10 @@ public:
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
     void PlanTask(const FString& Prompt, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
+    void SetProviderApiKey(const FString& Provider, const FString& ApiKey, const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void DeleteProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void TestProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void GetProviderStatus(const FOnUEAIAgentCredentialOpFinished& Callback) const;
     int32 GetPlannedActionCount() const;
     FString GetPlannedActionPreviewText(int32 ActionIndex) const;
     bool IsPlannedActionApproved(int32 ActionIndex) const;
@@ -59,8 +64,13 @@ public:
     bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const;
 
 private:
+    FString BuildBaseUrl() const;
     FString BuildHealthUrl() const;
     FString BuildPlanUrl() const;
+    FString BuildProviderStatusUrl() const;
+    FString BuildCredentialsSetUrl() const;
+    FString BuildCredentialsDeleteUrl() const;
+    FString BuildCredentialsTestUrl() const;
 
     mutable TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
 };

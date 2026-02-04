@@ -22,20 +22,42 @@ void FUEAIAgentTransportModule::ShutdownModule()
     UE_LOG(LogUEAIAgentTransport, Log, TEXT("UEAIAgentTransport stopped."));
 }
 
-FString FUEAIAgentTransportModule::BuildHealthUrl() const
+FString FUEAIAgentTransportModule::BuildBaseUrl() const
 {
     const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
     const FString Host = Settings ? Settings->AgentHost : TEXT("127.0.0.1");
     const int32 Port = Settings ? Settings->AgentPort : 4317;
-    return FString::Printf(TEXT("http://%s:%d/health"), *Host, Port);
+    return FString::Printf(TEXT("http://%s:%d"), *Host, Port);
+}
+
+FString FUEAIAgentTransportModule::BuildHealthUrl() const
+{
+    return BuildBaseUrl() + TEXT("/health");
 }
 
 FString FUEAIAgentTransportModule::BuildPlanUrl() const
 {
-    const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
-    const FString Host = Settings ? Settings->AgentHost : TEXT("127.0.0.1");
-    const int32 Port = Settings ? Settings->AgentPort : 4317;
-    return FString::Printf(TEXT("http://%s:%d/v1/task/plan"), *Host, Port);
+    return BuildBaseUrl() + TEXT("/v1/task/plan");
+}
+
+FString FUEAIAgentTransportModule::BuildProviderStatusUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/providers/status");
+}
+
+FString FUEAIAgentTransportModule::BuildCredentialsSetUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/credentials/set");
+}
+
+FString FUEAIAgentTransportModule::BuildCredentialsDeleteUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/credentials/delete");
+}
+
+FString FUEAIAgentTransportModule::BuildCredentialsTestUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/credentials/test");
 }
 
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
@@ -340,6 +362,210 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                     ? Summary
                     : FString::Printf(TEXT("%s\n%s"), *Summary, *StepsText);
                 Callback.ExecuteIfBound(true, FinalMessage);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::SetProviderApiKey(
+    const FString& Provider,
+    const FString& ApiKey,
+    const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("provider"), Provider);
+    Root->SetStringField(TEXT("apiKey"), ApiKey);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildCredentialsSetUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Save key failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("API key saved."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::DeleteProviderApiKey(
+    const FString& Provider,
+    const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("provider"), Provider);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildCredentialsDeleteUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Delete key failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("API key removed."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::TestProviderApiKey(
+    const FString& Provider,
+    const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("provider"), Provider);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildCredentialsTestUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Test key failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Test response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                ResponseJson->TryGetBoolField(TEXT("ok"), bOk);
+                FString Message = bOk ? TEXT("Provider call succeeded.") : TEXT("Provider call failed.");
+                ResponseJson->TryGetStringField(TEXT("message"), Message);
+                Callback.ExecuteIfBound(bOk, Message);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::GetProviderStatus(const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildProviderStatusUrl());
+    Request->SetVerb(TEXT("GET"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Provider status failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Provider status response is not valid JSON."));
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* ProvidersObj = nullptr;
+                if (!ResponseJson->TryGetObjectField(TEXT("providers"), ProvidersObj) || !ProvidersObj || !ProvidersObj->IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Provider status misses providers object."));
+                    return;
+                }
+
+                auto BuildLine = [ProvidersObj](const FString& ProviderName) -> FString
+                {
+                    const TSharedPtr<FJsonObject>* ProviderObj = nullptr;
+                    if (!(*ProvidersObj)->TryGetObjectField(ProviderName, ProviderObj) || !ProviderObj || !ProviderObj->IsValid())
+                    {
+                        return FString::Printf(TEXT("%s: unknown"), *ProviderName);
+                    }
+
+                    bool bConfigured = false;
+                    (*ProviderObj)->TryGetBoolField(TEXT("configured"), bConfigured);
+                    FString Model;
+                    (*ProviderObj)->TryGetStringField(TEXT("model"), Model);
+
+                    if (Model.IsEmpty())
+                    {
+                        return FString::Printf(TEXT("%s: %s"), *ProviderName, bConfigured ? TEXT("configured") : TEXT("not configured"));
+                    }
+
+                    return FString::Printf(
+                        TEXT("%s: %s (%s)"),
+                        *ProviderName,
+                        bConfigured ? TEXT("configured") : TEXT("not configured"),
+                        *Model);
+                };
+
+                const FString Message = BuildLine(TEXT("openai")) + TEXT("\n") + BuildLine(TEXT("gemini"));
+                Callback.ExecuteIfBound(true, Message);
             });
         });
 

@@ -1,16 +1,28 @@
 import http from "node:http";
+import { z } from "zod";
 
 import { PlanOutputSchema, TaskRequestSchema } from "./contracts.js";
 import { config } from "./config.js";
+import { CredentialStore } from "./credentials/credentialStore.js";
 import { TaskLogStore } from "./logs/taskLogStore.js";
 import { createProvider } from "./providers/createProvider.js";
 
-const provider = createProvider({
-  selected: config.provider,
-  openai: config.providers.openai,
-  gemini: config.providers.gemini
-});
 const taskLogStore = new TaskLogStore(config.taskLogPath);
+const credentialStore = new CredentialStore();
+
+const ProviderSchema = z.enum(["openai", "gemini"]);
+const CredentialSetSchema = z.object({
+  provider: ProviderSchema,
+  apiKey: z.string().trim().min(1)
+});
+const CredentialDeleteSchema = z.object({
+  provider: ProviderSchema
+});
+const CredentialTestSchema = z.object({
+  provider: ProviderSchema.optional()
+});
+
+type ProviderName = z.infer<typeof ProviderSchema>;
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -25,18 +37,146 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function resolveProviderApiKey(provider: ProviderName): Promise<string | undefined> {
+  if (provider === "openai") {
+    return config.providers.openai.apiKey ?? (await credentialStore.get("openai"));
+  }
+  return config.providers.gemini.apiKey ?? (await credentialStore.get("gemini"));
+}
+
+async function resolveProvider(selected: ProviderName = config.provider) {
+  const openaiKey = await resolveProviderApiKey("openai");
+  const geminiKey = await resolveProviderApiKey("gemini");
+  return createProvider({
+    selected,
+    openai: {
+      ...config.providers.openai,
+      apiKey: openaiKey
+    },
+    gemini: {
+      ...config.providers.gemini,
+      apiKey: geminiKey
+    }
+  });
+}
+
+async function readProviderStatus() {
+  const [openaiKey, geminiKey] = await Promise.all([
+    resolveProviderApiKey("openai"),
+    resolveProviderApiKey("gemini")
+  ]);
+  return {
+    openai: {
+      configured: Boolean(openaiKey),
+      model: config.providers.openai.model
+    },
+    gemini: {
+      configured: Boolean(geminiKey),
+      model: config.providers.gemini.model
+    }
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
   const pathname = requestUrl.pathname;
 
   if (req.method === "GET" && pathname === "/health") {
-    return sendJson(res, 200, {
-      ok: true,
-      provider: provider.name,
-      model: provider.model,
-      adapter: provider.adapter,
-      providerConfigured: provider.hasApiKey
-    });
+    try {
+      const provider = await resolveProvider();
+      return sendJson(res, 200, {
+        ok: true,
+        provider: provider.name,
+        model: provider.model,
+        adapter: provider.adapter,
+        providerConfigured: provider.hasApiKey
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "GET" && pathname === "/v1/providers/status") {
+    try {
+      const status = await readProviderStatus();
+      return sendJson(res, 200, {
+        ok: true,
+        selectedProvider: config.provider,
+        providers: status
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/credentials/set") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = CredentialSetSchema.parse(JSON.parse(rawBody));
+      await credentialStore.set(parsed.provider, parsed.apiKey);
+      return sendJson(res, 200, { ok: true, provider: parsed.provider, configured: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/credentials/delete") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = CredentialDeleteSchema.parse(JSON.parse(rawBody));
+      await credentialStore.delete(parsed.provider);
+      return sendJson(res, 200, { ok: true, provider: parsed.provider, configured: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/credentials/test") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = CredentialTestSchema.parse(rawBody ? JSON.parse(rawBody) : {});
+      const providerName = parsed.provider ?? config.provider;
+      const provider = await resolveProvider(providerName);
+
+      if (!provider.hasApiKey) {
+        return sendJson(res, 200, {
+          ok: false,
+          provider: provider.name,
+          configured: false,
+          message: "API key is not configured."
+        });
+      }
+
+      const plan = await provider.planTask({
+        prompt: "Move selected actors +1 on X",
+        mode: "chat",
+        context: { selection: ["PreviewActor"] }
+      });
+      const firstStep = plan.steps[0] ?? "";
+      const looksLikeFallback = /using local fallback|api_key is missing|call failed/i.test(firstStep);
+      if (looksLikeFallback) {
+        return sendJson(res, 200, {
+          ok: false,
+          provider: provider.name,
+          configured: true,
+          message: firstStep
+        });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        provider: provider.name,
+        configured: true,
+        message: "Provider call succeeded."
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 200, { ok: false, error: message });
+    }
   }
 
   if (req.method === "GET" && pathname === "/v1/task/logs") {
@@ -63,8 +203,10 @@ const server = http.createServer(async (req, res) => {
     const requestId = taskLogStore.createRequestId();
     const startedAt = Date.now();
     let rawBody = "";
+    let provider: Awaited<ReturnType<typeof resolveProvider>> | undefined;
 
     try {
+      provider = await resolveProvider();
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
       const providerPlan = await provider.planTask(parsed);
@@ -88,13 +230,15 @@ const server = http.createServer(async (req, res) => {
       const message = error instanceof Error ? error.message : "Unknown error";
 
       try {
-        await taskLogStore.appendTaskPlanError({
-          requestId,
-          provider,
-          rawBody,
-          error: message,
-          durationMs: Date.now() - startedAt
-        });
+        if (provider) {
+          await taskLogStore.appendTaskPlanError({
+            requestId,
+            provider,
+            rawBody,
+            error: message,
+            durationMs: Date.now() - startedAt
+          });
+        }
       } catch (logError) {
         // eslint-disable-next-line no-console
         console.warn("Task log write failed:", logError);

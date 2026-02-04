@@ -9,6 +9,7 @@ Settings path in UE:
 
 Quick validation in editor tab:
 - `Check Local Agent` for localhost health check
+- provider key tools: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - `Plan With Selection` to parse prompt into planned actions (move/rotate)
 - review and toggle action approvals
 - `Apply Planned Actions` to execute approved `scene.modifyActor`, `scene.createActor`, and `scene.deleteActor` actions with Undo support
