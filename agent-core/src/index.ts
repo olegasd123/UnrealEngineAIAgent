@@ -2,10 +2,13 @@ import http from "node:http";
 
 import { PlanOutputSchema, TaskRequestSchema } from "./contracts.js";
 import { config } from "./config.js";
-import { MockProvider } from "./providers/mockProvider.js";
+import { createProvider } from "./providers/createProvider.js";
 
-const providerName = process.env.AGENT_PROVIDER === "gemini" ? "gemini" : "openai";
-const provider = new MockProvider(providerName);
+const provider = createProvider({
+  selected: config.provider,
+  openai: config.providers.openai,
+  gemini: config.providers.gemini
+});
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -22,7 +25,13 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
-    return sendJson(res, 200, { ok: true, provider: provider.name });
+    return sendJson(res, 200, {
+      ok: true,
+      provider: provider.name,
+      model: provider.model,
+      adapter: provider.adapter,
+      providerConfigured: provider.hasApiKey
+    });
   }
 
   if (req.method === "POST" && req.url === "/v1/task/plan") {

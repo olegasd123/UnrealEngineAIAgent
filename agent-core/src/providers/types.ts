@@ -1,8 +1,18 @@
 import type { PlanOutput, TaskRequest } from "../contracts.js";
+import type { ProviderName, ProviderRuntimeConfig } from "../config.js";
 
 export type PlanInput = TaskRequest;
 
+export interface ProviderFactoryConfig {
+  selected: ProviderName;
+  openai: ProviderRuntimeConfig;
+  gemini: ProviderRuntimeConfig;
+}
+
 export interface LlmProvider {
-  name: "openai" | "gemini";
+  name: ProviderName;
+  model: string;
+  hasApiKey: boolean;
+  adapter: "stub";
   planTask(input: PlanInput): Promise<PlanOutput>;
 }

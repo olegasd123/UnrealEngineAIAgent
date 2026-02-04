@@ -1,5 +1,5 @@
 import type { PlanAction, PlanOutput } from "../contracts.js";
-import type { LlmProvider, PlanInput } from "./types.js";
+import type { PlanInput } from "./types.js";
 
 function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: number } | null {
   const lower = prompt.toLowerCase();
@@ -19,6 +19,7 @@ function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: nu
     if (!Number.isFinite(value)) {
       continue;
     }
+
     foundAny = true;
     if (axis === "x") x += value;
     if (axis === "y") y += value;
@@ -32,6 +33,7 @@ function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: nu
     if (!Number.isFinite(value)) {
       continue;
     }
+
     foundAny = true;
     if (axis === "x") x += value;
     if (axis === "y") y += value;
@@ -63,6 +65,7 @@ function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: numbe
     if (!Number.isFinite(value)) {
       continue;
     }
+
     foundAny = true;
     if (axis === "yaw") yaw += value;
     if (axis === "pitch") pitch += value;
@@ -76,6 +79,7 @@ function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: numbe
     if (!Number.isFinite(value)) {
       continue;
     }
+
     foundAny = true;
     if (axis === "yaw") yaw += value;
     if (axis === "pitch") pitch += value;
@@ -100,63 +104,55 @@ function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: numbe
   return { pitch, yaw, roll };
 }
 
-export class MockProvider implements LlmProvider {
-  public readonly name: "openai" | "gemini";
+export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
+  const selection = Array.isArray((input.context as { selection?: unknown }).selection)
+    ? ((input.context as { selection: unknown[] }).selection as unknown[])
+    : [];
+  const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
+  const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
 
-  constructor(name: "openai" | "gemini") {
-    this.name = name;
-  }
+  if (moveDelta || rotateDelta) {
+    const actions: PlanAction[] = [];
+    if (moveDelta) {
+      actions.push({
+        command: "scene.modifyActor",
+        params: {
+          target: "selection",
+          deltaLocation: moveDelta
+        },
+        risk: "low"
+      });
+    }
 
-  async planTask(input: PlanInput): Promise<PlanOutput> {
-    const selection = Array.isArray((input.context as { selection?: unknown }).selection)
-      ? ((input.context as { selection: unknown[] }).selection as unknown[])
-      : [];
-    const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
-    const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
-
-    if (moveDelta || rotateDelta) {
-      const actions: PlanAction[] = [];
-      if (moveDelta) {
-        actions.push({
-          command: "scene.modifyActor",
-          params: {
-            target: "selection",
-            deltaLocation: moveDelta
-          },
-          risk: "low"
-        });
-      }
-
-      if (rotateDelta) {
-        actions.push({
-          command: "scene.modifyActor",
-          params: {
-            target: "selection",
-            deltaRotation: rotateDelta
-          },
-          risk: "low"
-        });
-      }
-
-      return {
-        summary: `Planned actor move for prompt: ${input.prompt} (selected: ${selection.length})`,
-        steps: [
-          "Preview parsed actions",
-          "Wait for user approval",
-          "Apply approved scene.modifyActor actions with transaction (undo-safe)"
-        ],
-        actions
-      };
+    if (rotateDelta) {
+      actions.push({
+        command: "scene.modifyActor",
+        params: {
+          target: "selection",
+          deltaRotation: rotateDelta
+        },
+        risk: "low"
+      });
     }
 
     return {
-      summary: `Draft plan for: ${input.prompt} (selected: ${selection.length})`,
+      summary: `Planned actor edit for prompt: ${input.prompt} (selected: ${selection.length})`,
       steps: [
-        "Collect scene context",
-        "Build action list",
-        "No executable action parsed from prompt yet"
+        "Preview parsed actions",
+        "Wait for user approval",
+        "Apply approved scene.modifyActor actions with transaction (undo-safe)"
       ],
-      actions: []
+      actions
     };
   }
+
+  return {
+    summary: `Draft plan for: ${input.prompt} (selected: ${selection.length})`,
+    steps: [
+      "Collect scene context",
+      "Build action list",
+      "No executable action parsed from prompt yet"
+    ],
+    actions: []
+  };
 }
