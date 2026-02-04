@@ -6,6 +6,7 @@ Local service that plans and executes UE editor actions.
 
 - health endpoint
 - task planning endpoint (`/v1/task/plan`)
+- agent session endpoints (`/v1/session/start|next|approve|resume`)
 - simple prompt parser for move/rotate actions (example: `move +250 on x and rotate yaw +45`)
 - provider adapter interface
 
@@ -54,3 +55,15 @@ Optional environment:
 - Each `/v1/task/plan` request is appended to local JSONL log file.
 - Success and error entries include `requestId`, timestamp, provider info, and duration.
 - Read logs: `GET /v1/task/logs?limit=50` (max limit is 50, default is 50).
+
+## Agent session orchestration
+
+- `POST /v1/session/start`: create a session from prompt/context and return first decision.
+- `POST /v1/session/next`: report execution result and get the next decision.
+- `POST /v1/session/approve`: approve/reject current pending action.
+- `POST /v1/session/resume`: request current next decision without sending result.
+- Decisions include statuses:
+  - `ready_to_execute`
+  - `awaiting_approval`
+  - `completed`
+  - `failed`

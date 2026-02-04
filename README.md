@@ -8,6 +8,7 @@ Local-first AI agent for Unreal Editor (UE 5.7).
 - `agent-core`: local orchestration service (TypeScript)
 - `shared`: shared schemas and contracts
 - local provider key management via Agent Core credentials endpoints
+- agent session orchestration endpoints in Agent Core (`start/next/approve/resume`)
 
 ## Vision
 

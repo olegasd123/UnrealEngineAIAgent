@@ -371,7 +371,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
 
 FReply SUEAIAgentPanel::OnRunAgentLoopClicked()
 {
-    if (!PlanText.IsValid())
+    if (!PromptInput.IsValid() || !PlanText.IsValid())
     {
         return FReply::Handled();
     }
@@ -382,8 +382,20 @@ FReply SUEAIAgentPanel::OnRunAgentLoopClicked()
         return FReply::Handled();
     }
 
-    const FString Summary = RunAgentLoop(false);
-    PlanText->SetText(FText::FromString(Summary));
+    const FString Prompt = PromptInput->GetText().ToString().TrimStartAndEnd();
+    if (Prompt.IsEmpty())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: please enter a prompt first.")));
+        return FReply::Handled();
+    }
+
+    const TArray<FString> SelectedActors = CollectSelectedActorNames();
+    PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
+    FUEAIAgentTransportModule::Get().StartSession(
+        Prompt,
+        TEXT("agent"),
+        SelectedActors,
+        FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
     return FReply::Handled();
 }
 
@@ -394,8 +406,30 @@ FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
         return FReply::Handled();
     }
 
-    const FString Summary = RunAgentLoop(true);
-    PlanText->SetText(FText::FromString(Summary));
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!Transport.HasActiveSession())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run Agent Loop first.")));
+        return FReply::Handled();
+    }
+
+    const bool bApproved = Transport.GetPlannedActionCount() > 0
+        ? Transport.IsPlannedActionApproved(0)
+        : true;
+    Transport.ApproveCurrentSessionAction(
+        bApproved,
+        FOnUEAIAgentSessionUpdated::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            if (!bOk)
+            {
+                HandleSessionUpdate(false, Message);
+                return;
+            }
+
+            FUEAIAgentTransportModule::Get().ResumeSession(
+                FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
+        }));
+
     return FReply::Handled();
 }
 
@@ -439,6 +473,50 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     }
 
     PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
+}
+
+void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
+{
+    if (!PlanText.IsValid())
+    {
+        return;
+    }
+
+    UpdateActionApprovalUi();
+    if (!bOk)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: error\n") + Message));
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (Transport.GetPlannedActionCount() <= 0)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        return;
+    }
+
+    FUEAIAgentPlannedSceneAction NextAction;
+    if (!Transport.GetPendingAction(0, NextAction))
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        return;
+    }
+
+    if (!NextAction.bApproved)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: awaiting approval\n") + Message));
+        return;
+    }
+
+    FString ExecuteMessage;
+    const bool bOkExecute = ExecutePlannedAction(NextAction, ExecuteMessage);
+    PlanText->SetText(FText::FromString(TEXT("Agent: executed action, syncing...\n") + ExecuteMessage));
+    Transport.NextSession(
+        true,
+        bOkExecute,
+        ExecuteMessage,
+        FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
 }
 
 bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const

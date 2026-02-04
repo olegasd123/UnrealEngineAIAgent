@@ -37,6 +37,7 @@ private:
     void HandleHealthResult(bool bOk, const FString& Message);
     void HandleCredentialOperationResult(bool bOk, const FString& Message);
     void HandlePlanResult(bool bOk, const FString& Message);
+    void HandleSessionUpdate(bool bOk, const FString& Message);
     void HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState);
     FString GetSelectedProviderCode() const;
     FString GetSelectedProviderLabel() const;

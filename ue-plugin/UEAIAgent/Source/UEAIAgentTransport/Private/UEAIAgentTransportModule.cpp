@@ -63,6 +63,161 @@ namespace
         }
         return TEXT("pending");
     }
+
+    bool ParsePlannedActionFromJson(
+        const TSharedPtr<FJsonObject>& ActionObj,
+        const TArray<FString>& SelectedActors,
+        FUEAIAgentPlannedSceneAction& OutAction)
+    {
+        if (!ActionObj.IsValid())
+        {
+            return false;
+        }
+
+        const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
+        if (!ActionObj->TryGetObjectField(TEXT("params"), ParamsObj) || !ParamsObj || !ParamsObj->IsValid())
+        {
+            return false;
+        }
+
+        FString Command;
+        if (!ActionObj->TryGetStringField(TEXT("command"), Command))
+        {
+            return false;
+        }
+
+        if (Command == TEXT("scene.modifyActor"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
+            ParsedAction.ActorNames = SelectedActors;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+
+            bool bHasAnyDelta = false;
+            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
+                DeltaLocationObj && DeltaLocationObj->IsValid())
+            {
+                double X = 0.0;
+                double Y = 0.0;
+                double Z = 0.0;
+                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                {
+                    ParsedAction.DeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                    bHasAnyDelta = true;
+                }
+            }
+
+            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
+                DeltaRotationObj && DeltaRotationObj->IsValid())
+            {
+                double Pitch = 0.0;
+                double Yaw = 0.0;
+                double Roll = 0.0;
+                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                {
+                    ParsedAction.DeltaRotation = FRotator(
+                        static_cast<float>(Pitch),
+                        static_cast<float>(Yaw),
+                        static_cast<float>(Roll));
+                    bHasAnyDelta = true;
+                }
+            }
+
+            if (!bHasAnyDelta)
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.createActor"))
+        {
+            FString ActorClass;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("actorClass"), ActorClass) || ActorClass.IsEmpty())
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::CreateActor;
+            ParsedAction.ActorClass = ActorClass;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+
+            double Count = 1.0;
+            if ((*ParamsObj)->TryGetNumberField(TEXT("count"), Count))
+            {
+                ParsedAction.SpawnCount = FMath::Clamp(FMath::RoundToInt(static_cast<float>(Count)), 1, 200);
+            }
+
+            const TSharedPtr<FJsonObject>* LocationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("location"), LocationObj) &&
+                LocationObj && LocationObj->IsValid())
+            {
+                double X = 0.0;
+                double Y = 0.0;
+                double Z = 0.0;
+                if ((*LocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                    (*LocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                    (*LocationObj)->TryGetNumberField(TEXT("z"), Z))
+                {
+                    ParsedAction.SpawnLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                }
+            }
+
+            const TSharedPtr<FJsonObject>* RotationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("rotation"), RotationObj) &&
+                RotationObj && RotationObj->IsValid())
+            {
+                double Pitch = 0.0;
+                double Yaw = 0.0;
+                double Roll = 0.0;
+                if ((*RotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                    (*RotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                    (*RotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                {
+                    ParsedAction.SpawnRotation = FRotator(
+                        static_cast<float>(Pitch),
+                        static_cast<float>(Yaw),
+                        static_cast<float>(Roll));
+                }
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.deleteActor"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
+            ParsedAction.ActorNames = SelectedActors;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        return false;
+    }
 }
 
 void FUEAIAgentTransportModule::StartupModule()
@@ -111,6 +266,26 @@ FString FUEAIAgentTransportModule::BuildCredentialsDeleteUrl() const
 FString FUEAIAgentTransportModule::BuildCredentialsTestUrl() const
 {
     return BuildBaseUrl() + TEXT("/v1/credentials/test");
+}
+
+FString FUEAIAgentTransportModule::BuildSessionStartUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/session/start");
+}
+
+FString FUEAIAgentTransportModule::BuildSessionNextUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/session/next");
+}
+
+FString FUEAIAgentTransportModule::BuildSessionApproveUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/session/approve");
+}
+
+FString FUEAIAgentTransportModule::BuildSessionResumeUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/session/resume");
 }
 
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
@@ -177,6 +352,9 @@ void FUEAIAgentTransportModule::PlanTask(
     const FOnUEAIAgentTaskPlanned& Callback) const
 {
     PlannedActions.Empty();
+    ActiveSessionId.Empty();
+    ActiveSessionActionIndex = INDEX_NONE;
+    ActiveSessionSelectedActors.Empty();
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
@@ -425,6 +603,303 @@ void FUEAIAgentTransportModule::PlanTask(
                     ? Summary
                     : FString::Printf(TEXT("%s\n%s"), *Summary, *StepsText);
                 Callback.ExecuteIfBound(true, FinalMessage);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+bool FUEAIAgentTransportModule::ParseSessionDecision(
+    const TSharedPtr<FJsonObject>& ResponseJson,
+    const TArray<FString>& SelectedActors,
+    FString& OutMessage) const
+{
+    if (!ResponseJson.IsValid())
+    {
+        OutMessage = TEXT("Session response is not valid JSON.");
+        return false;
+    }
+
+    bool bOk = false;
+    if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+    {
+        FString ErrorMessage = TEXT("Agent Core returned a session error.");
+        ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+        OutMessage = ErrorMessage;
+        return false;
+    }
+
+    const TSharedPtr<FJsonObject>* DecisionObj = nullptr;
+    if (!ResponseJson->TryGetObjectField(TEXT("decision"), DecisionObj) || !DecisionObj || !DecisionObj->IsValid())
+    {
+        OutMessage = TEXT("Session response misses decision object.");
+        return false;
+    }
+
+    FString SessionId;
+    if (!(*DecisionObj)->TryGetStringField(TEXT("sessionId"), SessionId) || SessionId.IsEmpty())
+    {
+        OutMessage = TEXT("Session decision misses sessionId.");
+        return false;
+    }
+
+    ActiveSessionId = SessionId;
+    ActiveSessionActionIndex = INDEX_NONE;
+    PlannedActions.Empty();
+
+    FString Status;
+    (*DecisionObj)->TryGetStringField(TEXT("status"), Status);
+    FString Summary;
+    (*DecisionObj)->TryGetStringField(TEXT("summary"), Summary);
+    FString Message;
+    (*DecisionObj)->TryGetStringField(TEXT("message"), Message);
+
+    double ActionIndex = -1.0;
+    (*DecisionObj)->TryGetNumberField(TEXT("nextActionIndex"), ActionIndex);
+    ActiveSessionActionIndex = ActionIndex >= 0.0 ? FMath::TruncToInt(ActionIndex) : INDEX_NONE;
+
+    const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
+    if ((*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid())
+    {
+        FUEAIAgentPlannedSceneAction ParsedAction;
+        if (ParsePlannedActionFromJson(*NextActionObj, SelectedActors, ParsedAction))
+        {
+            ParsedAction.bApproved = Status != TEXT("awaiting_approval");
+            PlannedActions.Add(ParsedAction);
+        }
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Session: %s\n%s\n%s"),
+        *Status,
+        Summary.IsEmpty() ? TEXT("No summary.") : *Summary,
+        Message.IsEmpty() ? TEXT("No message.") : *Message);
+    return true;
+}
+
+void FUEAIAgentTransportModule::StartSession(
+    const FString& Prompt,
+    const FString& Mode,
+    const TArray<FString>& SelectedActors,
+    const FOnUEAIAgentSessionUpdated& Callback) const
+{
+    PlannedActions.Empty();
+    ActiveSessionId.Empty();
+    ActiveSessionActionIndex = INDEX_NONE;
+    ActiveSessionSelectedActors = SelectedActors;
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("prompt"), Prompt);
+    Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("agent") : Mode);
+    Root->SetNumberField(TEXT("maxRetries"), 2);
+
+    TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+    TArray<TSharedPtr<FJsonValue>> SelectionValues;
+    for (const FString& ActorName : SelectedActors)
+    {
+        SelectionValues.Add(MakeShared<FJsonValueString>(ActorName));
+    }
+    Context->SetArrayField(TEXT("selection"), SelectionValues);
+    Root->SetObjectField(TEXT("context"), Context);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildSessionStartUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback, SelectedActors](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Session start response is not valid JSON."));
+                    return;
+                }
+
+                FString ParsedMessage;
+                const bool bParsed = ParseSessionDecision(ResponseJson, SelectedActors, ParsedMessage);
+                Callback.ExecuteIfBound(bParsed, ParsedMessage);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::NextSession(
+    bool bHasResult,
+    bool bResultOk,
+    const FString& ResultMessage,
+    const FOnUEAIAgentSessionUpdated& Callback) const
+{
+    if (ActiveSessionId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active session."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
+
+    if (bHasResult)
+    {
+        if (ActiveSessionActionIndex == INDEX_NONE)
+        {
+            Callback.ExecuteIfBound(false, TEXT("No active session action index."));
+            return;
+        }
+
+        TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
+        Result->SetBoolField(TEXT("ok"), bResultOk);
+        Result->SetStringField(TEXT("message"), ResultMessage);
+        Root->SetObjectField(TEXT("result"), Result);
+    }
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildSessionNextUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Session next response is not valid JSON."));
+                    return;
+                }
+
+                FString ParsedMessage;
+                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                Callback.ExecuteIfBound(bParsed, ParsedMessage);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
+    bool bApproved,
+    const FOnUEAIAgentSessionUpdated& Callback) const
+{
+    if (ActiveSessionId.IsEmpty() || ActiveSessionActionIndex == INDEX_NONE)
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active session action to approve."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
+    Root->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
+    Root->SetBoolField(TEXT("approved"), bApproved);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildSessionApproveUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Session approve response is not valid JSON."));
+                    return;
+                }
+
+                FString ParsedMessage;
+                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                Callback.ExecuteIfBound(bParsed, ParsedMessage);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::ResumeSession(const FOnUEAIAgentSessionUpdated& Callback) const
+{
+    if (ActiveSessionId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active session."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildSessionResumeUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Session resume response is not valid JSON."));
+                    return;
+                }
+
+                FString ParsedMessage;
+                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                Callback.ExecuteIfBound(bParsed, ParsedMessage);
             });
         });
 
@@ -764,6 +1239,11 @@ int32 FUEAIAgentTransportModule::GetNextPendingActionIndex() const
         }
     }
     return INDEX_NONE;
+}
+
+bool FUEAIAgentTransportModule::HasActiveSession() const
+{
+    return !ActiveSessionId.IsEmpty();
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)

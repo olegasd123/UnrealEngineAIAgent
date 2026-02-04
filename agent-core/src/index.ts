@@ -1,14 +1,23 @@
 import http from "node:http";
 import { z } from "zod";
 
-import { PlanOutputSchema, TaskRequestSchema } from "./contracts.js";
+import {
+  PlanOutputSchema,
+  SessionApproveRequestSchema,
+  SessionNextRequestSchema,
+  SessionResumeRequestSchema,
+  SessionStartRequestSchema,
+  TaskRequestSchema
+} from "./contracts.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
 import { TaskLogStore } from "./logs/taskLogStore.js";
 import { createProvider } from "./providers/createProvider.js";
+import { SessionStore } from "./sessions/sessionStore.js";
 
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const credentialStore = new CredentialStore();
+const sessionStore = new SessionStore();
 
 const ProviderSchema = z.enum(["openai", "gemini"]);
 const CredentialSetSchema = z.object({
@@ -196,6 +205,57 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/session/start") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
+      const provider = await resolveProvider();
+      const providerPlan = await provider.planTask(parsed);
+      const plan = PlanOutputSchema.parse(providerPlan);
+      const decision = sessionStore.create(parsed, plan);
+      return sendJson(res, 200, { ok: true, decision });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/session/next") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = SessionNextRequestSchema.parse(JSON.parse(rawBody));
+      const decision = sessionStore.next(parsed.sessionId, parsed.result);
+      return sendJson(res, 200, { ok: true, decision });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/session/approve") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = SessionApproveRequestSchema.parse(JSON.parse(rawBody));
+      const decision = sessionStore.approve(parsed.sessionId, parsed.actionIndex, parsed.approved);
+      return sendJson(res, 200, { ok: true, decision });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/session/resume") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = SessionResumeRequestSchema.parse(JSON.parse(rawBody));
+      const decision = sessionStore.resume(parsed.sessionId);
+      return sendJson(res, 200, { ok: true, decision });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
     }
   }
 

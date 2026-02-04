@@ -74,3 +74,33 @@ export const PlanOutputSchema = z.object({
 
 export type PlanAction = z.infer<typeof PlanActionUnionSchema>;
 export type PlanOutput = z.infer<typeof PlanOutputSchema>;
+
+export const SessionStartRequestSchema = TaskRequestSchema.extend({
+  maxRetries: z.number().int().min(0).max(10).default(2)
+});
+export type SessionStartRequest = z.infer<typeof SessionStartRequestSchema>;
+
+export const SessionResultSchema = z.object({
+  actionIndex: z.number().int().min(0),
+  ok: z.boolean(),
+  message: z.string().optional()
+});
+export type SessionResult = z.infer<typeof SessionResultSchema>;
+
+export const SessionNextRequestSchema = z.object({
+  sessionId: z.string().min(1),
+  result: SessionResultSchema.optional()
+});
+export type SessionNextRequest = z.infer<typeof SessionNextRequestSchema>;
+
+export const SessionApproveRequestSchema = z.object({
+  sessionId: z.string().min(1),
+  actionIndex: z.number().int().min(0),
+  approved: z.boolean()
+});
+export type SessionApproveRequest = z.infer<typeof SessionApproveRequestSchema>;
+
+export const SessionResumeRequestSchema = z.object({
+  sessionId: z.string().min(1)
+});
+export type SessionResumeRequest = z.infer<typeof SessionResumeRequestSchema>;

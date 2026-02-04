@@ -12,6 +12,6 @@ Quick validation in editor tab:
 - provider key tools: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - `Plan With Selection` to parse prompt into planned actions (move/rotate)
 - review and toggle action approvals
-- `Run Agent Loop` to auto-execute low-risk actions with retry
-- `Resume Agent Loop` to continue after approvals or pause
+- `Run Agent Loop` to start core session orchestration (`/v1/session/start`)
+- `Resume Agent Loop` to send approvals and continue (`/v1/session/approve` + `/v1/session/resume`)
 - `Apply Planned Actions` to execute approved `scene.modifyActor`, `scene.createActor`, and `scene.deleteActor` actions with Undo support

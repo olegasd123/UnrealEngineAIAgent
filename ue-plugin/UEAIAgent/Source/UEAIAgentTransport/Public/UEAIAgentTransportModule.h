@@ -7,6 +7,7 @@
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentCredentialOpFinished, bool, const FString&);
+DECLARE_DELEGATE_TwoParams(FOnUEAIAgentSessionUpdated, bool, const FString&);
 
 enum class EUEAIAgentPlannedActionType : uint8
 {
@@ -70,6 +71,10 @@ public:
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
     void PlanTask(const FString& Prompt, const FString& Mode, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
+    void StartSession(const FString& Prompt, const FString& Mode, const TArray<FString>& SelectedActors, const FOnUEAIAgentSessionUpdated& Callback) const;
+    void NextSession(bool bHasResult, bool bResultOk, const FString& ResultMessage, const FOnUEAIAgentSessionUpdated& Callback) const;
+    void ApproveCurrentSessionAction(bool bApproved, const FOnUEAIAgentSessionUpdated& Callback) const;
+    void ResumeSession(const FOnUEAIAgentSessionUpdated& Callback) const;
     void SetProviderApiKey(const FString& Provider, const FString& ApiKey, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void DeleteProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void TestProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
@@ -82,6 +87,7 @@ public:
     bool GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
     void UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const;
     int32 GetNextPendingActionIndex() const;
+    bool HasActiveSession() const;
 
 private:
     FString BuildBaseUrl() const;
@@ -91,6 +97,17 @@ private:
     FString BuildCredentialsSetUrl() const;
     FString BuildCredentialsDeleteUrl() const;
     FString BuildCredentialsTestUrl() const;
+    FString BuildSessionStartUrl() const;
+    FString BuildSessionNextUrl() const;
+    FString BuildSessionApproveUrl() const;
+    FString BuildSessionResumeUrl() const;
+    bool ParseSessionDecision(
+        const TSharedPtr<FJsonObject>& ResponseJson,
+        const TArray<FString>& SelectedActors,
+        FString& OutMessage) const;
 
     mutable TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
+    mutable FString ActiveSessionId;
+    mutable int32 ActiveSessionActionIndex = INDEX_NONE;
+    mutable TArray<FString> ActiveSessionSelectedActors;
 };
