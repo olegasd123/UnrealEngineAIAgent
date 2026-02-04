@@ -20,6 +20,7 @@ Optional environment:
 - `AGENT_HOST` (default `127.0.0.1`)
 - `AGENT_PORT` (default `4317`)
 - `AGENT_PROVIDER` (`openai` or `gemini`, default `openai`)
+- `AGENT_TASK_LOG_PATH` (default `data/task-log.jsonl`)
 - `OPENAI_API_KEY` (optional in stub mode)
 - `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (optional)
@@ -35,3 +36,8 @@ Optional environment:
 
 - If API key exists for selected provider, Agent Core makes a real provider call.
 - If key is missing or call fails, Agent Core falls back to local rule-based planning.
+
+## Task log store
+
+- Each `/v1/task/plan` request is appended to local JSONL log file.
+- Success and error entries include `requestId`, timestamp, provider info, and duration.
