@@ -145,7 +145,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         return FReply::Handled();
     }
 
-    TArray<FUEAIAgentPlannedSceneModifyAction> ApprovedActions;
+    TArray<FUEAIAgentPlannedSceneAction> ApprovedActions;
     if (!Transport.PopApprovedPlannedActions(ApprovedActions))
     {
         PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo approved actions to execute.")));
@@ -155,22 +155,47 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
 
     FString ExecuteSummary;
     int32 SuccessCount = 0;
-    for (const FUEAIAgentPlannedSceneModifyAction& PlannedAction : ApprovedActions)
+    for (const FUEAIAgentPlannedSceneAction& PlannedAction : ApprovedActions)
     {
-        FUEAIAgentModifyActorParams Params;
-        Params.ActorNames = PlannedAction.ActorNames;
-        Params.DeltaLocation = PlannedAction.DeltaLocation;
-        Params.DeltaRotation = PlannedAction.DeltaRotation;
-        Params.bUseSelectionIfActorNamesEmpty = false;
+        FString ResultMessage;
+        bool bOk = false;
 
-        if (Params.ActorNames.IsEmpty())
+        if (PlannedAction.Type == EUEAIAgentPlannedActionType::CreateActor)
         {
-            ExecuteSummary += TEXT("- Skipped action with no target actors.\n");
-            continue;
+            FUEAIAgentCreateActorParams Params;
+            Params.ActorClass = PlannedAction.ActorClass;
+            Params.Location = PlannedAction.SpawnLocation;
+            Params.Rotation = PlannedAction.SpawnRotation;
+            Params.Count = PlannedAction.SpawnCount;
+            bOk = FUEAIAgentSceneTools::SceneCreateActor(Params, ResultMessage);
+        }
+        else if (PlannedAction.Type == EUEAIAgentPlannedActionType::DeleteActor)
+        {
+            FUEAIAgentDeleteActorParams Params;
+            Params.ActorNames = PlannedAction.ActorNames;
+            Params.bUseSelectionIfActorNamesEmpty = false;
+            if (Params.ActorNames.IsEmpty())
+            {
+                ExecuteSummary += TEXT("- Skipped delete action with no target actors.\n");
+                continue;
+            }
+            bOk = FUEAIAgentSceneTools::SceneDeleteActor(Params, ResultMessage);
+        }
+        else
+        {
+            FUEAIAgentModifyActorParams Params;
+            Params.ActorNames = PlannedAction.ActorNames;
+            Params.DeltaLocation = PlannedAction.DeltaLocation;
+            Params.DeltaRotation = PlannedAction.DeltaRotation;
+            Params.bUseSelectionIfActorNamesEmpty = false;
+            if (Params.ActorNames.IsEmpty())
+            {
+                ExecuteSummary += TEXT("- Skipped modify action with no target actors.\n");
+                continue;
+            }
+            bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
         }
 
-        FString ResultMessage;
-        const bool bOk = FUEAIAgentSceneTools::SceneModifyActor(Params, ResultMessage);
         if (bOk)
         {
             ++SuccessCount;

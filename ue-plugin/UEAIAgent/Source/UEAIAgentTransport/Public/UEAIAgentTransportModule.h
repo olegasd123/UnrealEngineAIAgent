@@ -7,11 +7,30 @@
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
 
-struct FUEAIAgentPlannedSceneModifyAction
+enum class EUEAIAgentPlannedActionType : uint8
 {
+    ModifyActor,
+    CreateActor,
+    DeleteActor
+};
+
+struct FUEAIAgentPlannedSceneAction
+{
+    EUEAIAgentPlannedActionType Type = EUEAIAgentPlannedActionType::ModifyActor;
+
+    // Shared target scope for selection-based actions.
     TArray<FString> ActorNames;
+
+    // scene.modifyActor
     FVector DeltaLocation = FVector::ZeroVector;
     FRotator DeltaRotation = FRotator::ZeroRotator;
+
+    // scene.createActor
+    FString ActorClass = TEXT("Actor");
+    FVector SpawnLocation = FVector::ZeroVector;
+    FRotator SpawnRotation = FRotator::ZeroRotator;
+    int32 SpawnCount = 1;
+
     bool bApproved = true;
 };
 
@@ -37,11 +56,11 @@ public:
     FString GetPlannedActionPreviewText(int32 ActionIndex) const;
     bool IsPlannedActionApproved(int32 ActionIndex) const;
     void SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const;
-    bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneModifyAction>& OutActions) const;
+    bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const;
 
 private:
     FString BuildHealthUrl() const;
     FString BuildPlanUrl() const;
 
-    mutable TArray<FUEAIAgentPlannedSceneModifyAction> PlannedActions;
+    mutable TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
 };

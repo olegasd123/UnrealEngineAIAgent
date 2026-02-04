@@ -18,3 +18,5 @@ Saved/
 .idea/
 .vscode/
 
+# Logs
+agent-core/data/*-log.*

@@ -198,66 +198,139 @@ void FUEAIAgentTransportModule::PlanTask(const FString& Prompt, const TArray<FSt
                             continue;
                         }
 
-                        FString Command;
-                        if (!ActionObj->TryGetStringField(TEXT("command"), Command) || Command != TEXT("scene.modifyActor"))
-                        {
-                            continue;
-                        }
-
                         const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
                         if (!ActionObj->TryGetObjectField(TEXT("params"), ParamsObj) || !ParamsObj || !ParamsObj->IsValid())
                         {
                             continue;
                         }
 
-                        FString Target;
-                        if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+                        FString Command;
+                        if (!ActionObj->TryGetStringField(TEXT("command"), Command))
                         {
                             continue;
                         }
 
-                        FUEAIAgentPlannedSceneModifyAction ParsedAction;
-                        ParsedAction.ActorNames = SelectedActors;
-
-                        bool bHasAnyDelta = false;
-
-                        const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
-                        if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
-                            DeltaLocationObj && DeltaLocationObj->IsValid())
+                        if (Command == TEXT("scene.modifyActor"))
                         {
-                            double X = 0.0;
-                            double Y = 0.0;
-                            double Z = 0.0;
-                            if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
-                                (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
                             {
-                                ParsedAction.DeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                bHasAnyDelta = true;
+                                continue;
                             }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
+                            ParsedAction.ActorNames = SelectedActors;
+
+                            bool bHasAnyDelta = false;
+                            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
+                                DeltaLocationObj && DeltaLocationObj->IsValid())
+                            {
+                                double X = 0.0;
+                                double Y = 0.0;
+                                double Z = 0.0;
+                                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                                {
+                                    ParsedAction.DeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
+                            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
+                                DeltaRotationObj && DeltaRotationObj->IsValid())
+                            {
+                                double Pitch = 0.0;
+                                double Yaw = 0.0;
+                                double Roll = 0.0;
+                                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                                {
+                                    ParsedAction.DeltaRotation = FRotator(
+                                        static_cast<float>(Pitch),
+                                        static_cast<float>(Yaw),
+                                        static_cast<float>(Roll));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
+                            if (bHasAnyDelta)
+                            {
+                                PlannedActions.Add(ParsedAction);
+                            }
+                            continue;
                         }
 
-                        const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
-                        if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
-                            DeltaRotationObj && DeltaRotationObj->IsValid())
+                        if (Command == TEXT("scene.createActor"))
                         {
-                            double Pitch = 0.0;
-                            double Yaw = 0.0;
-                            double Roll = 0.0;
-                            if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
-                                (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
-                                (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                            FString ActorClass;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("actorClass"), ActorClass) || ActorClass.IsEmpty())
                             {
-                                ParsedAction.DeltaRotation = FRotator(
-                                    static_cast<float>(Pitch),
-                                    static_cast<float>(Yaw),
-                                    static_cast<float>(Roll));
-                                bHasAnyDelta = true;
+                                continue;
                             }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::CreateActor;
+                            ParsedAction.ActorClass = ActorClass;
+
+                            double Count = 1.0;
+                            if ((*ParamsObj)->TryGetNumberField(TEXT("count"), Count))
+                            {
+                                ParsedAction.SpawnCount = FMath::Clamp(FMath::RoundToInt(static_cast<float>(Count)), 1, 200);
+                            }
+
+                            const TSharedPtr<FJsonObject>* LocationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("location"), LocationObj) &&
+                                LocationObj && LocationObj->IsValid())
+                            {
+                                double X = 0.0;
+                                double Y = 0.0;
+                                double Z = 0.0;
+                                if ((*LocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                                    (*LocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                    (*LocationObj)->TryGetNumberField(TEXT("z"), Z))
+                                {
+                                    ParsedAction.SpawnLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                }
+                            }
+
+                            const TSharedPtr<FJsonObject>* RotationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("rotation"), RotationObj) &&
+                                RotationObj && RotationObj->IsValid())
+                            {
+                                double Pitch = 0.0;
+                                double Yaw = 0.0;
+                                double Roll = 0.0;
+                                if ((*RotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                                    (*RotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                                    (*RotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                                {
+                                    ParsedAction.SpawnRotation = FRotator(
+                                        static_cast<float>(Pitch),
+                                        static_cast<float>(Yaw),
+                                        static_cast<float>(Roll));
+                                }
+                            }
+
+                            PlannedActions.Add(ParsedAction);
+                            continue;
                         }
 
-                        if (bHasAnyDelta)
+                        if (Command == TEXT("scene.deleteActor"))
                         {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
+                            ParsedAction.ActorNames = SelectedActors;
                             PlannedActions.Add(ParsedAction);
                         }
                     }
@@ -285,7 +358,30 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
         return TEXT("Invalid action index.");
     }
 
-    const FUEAIAgentPlannedSceneModifyAction& Action = PlannedActions[ActionIndex];
+    const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
+    if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
+    {
+        return FString::Printf(
+            TEXT("Action %d -> scene.createActor count=%d class=%s, Location: X=%.2f Y=%.2f Z=%.2f, Rotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
+            ActionIndex + 1,
+            Action.SpawnCount,
+            *Action.ActorClass,
+            Action.SpawnLocation.X,
+            Action.SpawnLocation.Y,
+            Action.SpawnLocation.Z,
+            Action.SpawnRotation.Pitch,
+            Action.SpawnRotation.Yaw,
+            Action.SpawnRotation.Roll);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::DeleteActor)
+    {
+        return FString::Printf(
+            TEXT("Action %d -> scene.deleteActor on selection (%d actor(s))"),
+            ActionIndex + 1,
+            Action.ActorNames.Num());
+    }
+
     return FString::Printf(
         TEXT("Action %d -> scene.modifyActor on %d actor(s), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
         ActionIndex + 1,
@@ -318,10 +414,10 @@ void FUEAIAgentTransportModule::SetPlannedActionApproved(int32 ActionIndex, bool
     PlannedActions[ActionIndex].bApproved = bApproved;
 }
 
-bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneModifyAction>& OutActions) const
+bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const
 {
     OutActions.Empty();
-    for (const FUEAIAgentPlannedSceneModifyAction& Action : PlannedActions)
+    for (const FUEAIAgentPlannedSceneAction& Action : PlannedActions)
     {
         if (Action.bApproved)
         {

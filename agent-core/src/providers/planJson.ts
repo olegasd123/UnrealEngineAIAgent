@@ -62,6 +62,23 @@ export function buildPlanPrompt(input: PlanInput): string {
               deltaRotation: { pitch: 0, yaw: 0, roll: 0 }
             },
             risk: "low"
+          },
+          {
+            command: "scene.createActor",
+            params: {
+              actorClass: "StaticMeshActor",
+              location: { x: 0, y: 0, z: 0 },
+              rotation: { pitch: 0, yaw: 0, roll: 0 },
+              count: 1
+            },
+            risk: "low"
+          },
+          {
+            command: "scene.deleteActor",
+            params: {
+              target: "selection"
+            },
+            risk: "high"
           }
         ]
       },
@@ -70,9 +87,10 @@ export function buildPlanPrompt(input: PlanInput): string {
     ),
     "Rules:",
     "- actions can be empty [] if nothing executable.",
-    "- action.command must be scene.modifyActor.",
-    "- action.params.target must be selection.",
-    "- include deltaLocation and/or deltaRotation.",
+    "- action.command must be one of: scene.modifyActor, scene.createActor, scene.deleteActor.",
+    "- for scene.modifyActor: target must be selection, include deltaLocation and/or deltaRotation.",
+    "- for scene.createActor: include actorClass, optional location/rotation, optional count >= 1.",
+    "- for scene.deleteActor: target must be selection.",
     "- risk must be low, medium, or high.",
     "Input:",
     JSON.stringify(payload)

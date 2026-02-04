@@ -36,11 +36,41 @@ export const PlanActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+const SceneCreateActorParamsSchema = z.object({
+  actorClass: z.string().min(1),
+  location: DeltaLocationSchema.optional(),
+  rotation: DeltaRotationSchema.optional(),
+  count: z.number().int().min(1).max(200).default(1)
+});
+
+const SceneDeleteActorParamsSchema = z.object({
+  target: z.literal("selection")
+});
+
+export const SceneModifyActorActionSchema = PlanActionSchema;
+export const SceneCreateActorActionSchema = z.object({
+  command: z.literal("scene.createActor"),
+  params: SceneCreateActorParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneDeleteActorActionSchema = z.object({
+  command: z.literal("scene.deleteActor"),
+  params: SceneDeleteActorParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const PlanActionUnionSchema = z.discriminatedUnion("command", [
+  SceneModifyActorActionSchema,
+  SceneCreateActorActionSchema,
+  SceneDeleteActorActionSchema
+]);
+
 export const PlanOutputSchema = z.object({
   summary: z.string().min(1),
   steps: z.array(z.string().min(1)).min(1),
-  actions: z.array(PlanActionSchema).default([])
+  actions: z.array(PlanActionUnionSchema).default([])
 });
 
-export type PlanAction = z.infer<typeof PlanActionSchema>;
+export type PlanAction = z.infer<typeof PlanActionUnionSchema>;
 export type PlanOutput = z.infer<typeof PlanOutputSchema>;

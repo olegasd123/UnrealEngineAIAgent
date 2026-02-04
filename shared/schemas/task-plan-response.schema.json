@@ -29,72 +29,181 @@
         "actions": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "command",
-              "params",
-              "risk"
-            ],
-            "properties": {
-              "command": {
-                "type": "string",
-                "const": "scene.modifyActor"
-              },
-              "params": {
+            "oneOf": [
+              {
                 "type": "object",
                 "required": [
-                  "target"
+                  "command",
+                  "params",
+                  "risk"
                 ],
                 "properties": {
-                  "target": {
+                  "command": {
                     "type": "string",
-                    "const": "selection"
+                    "const": "scene.modifyActor"
                   },
-                  "deltaLocation": {
+                  "params": {
                     "type": "object",
                     "required": [
-                      "x",
-                      "y",
-                      "z"
+                      "target"
                     ],
                     "properties": {
-                      "x": { "type": "number" },
-                      "y": { "type": "number" },
-                      "z": { "type": "number" }
+                      "target": {
+                        "type": "string",
+                        "const": "selection"
+                      },
+                      "deltaLocation": {
+                        "type": "object",
+                        "required": [
+                          "x",
+                          "y",
+                          "z"
+                        ],
+                        "properties": {
+                          "x": { "type": "number" },
+                          "y": { "type": "number" },
+                          "z": { "type": "number" }
+                        },
+                        "additionalProperties": false
+                      },
+                      "deltaRotation": {
+                        "type": "object",
+                        "required": [
+                          "pitch",
+                          "yaw",
+                          "roll"
+                        ],
+                        "properties": {
+                          "pitch": { "type": "number" },
+                          "yaw": { "type": "number" },
+                          "roll": { "type": "number" }
+                        },
+                        "additionalProperties": false
+                      }
                     },
+                    "anyOf": [
+                      { "required": ["deltaLocation"] },
+                      { "required": ["deltaRotation"] }
+                    ],
                     "additionalProperties": false
                   },
-                  "deltaRotation": {
-                    "type": "object",
-                    "required": [
-                      "pitch",
-                      "yaw",
-                      "roll"
-                    ],
-                    "properties": {
-                      "pitch": { "type": "number" },
-                      "yaw": { "type": "number" },
-                      "roll": { "type": "number" }
-                    },
-                    "additionalProperties": false
+                  "risk": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
                   }
                 },
-                "anyOf": [
-                  { "required": ["deltaLocation"] },
-                  { "required": ["deltaRotation"] }
-                ],
                 "additionalProperties": false
               },
-              "risk": {
-                "type": "string",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ]
+              {
+                "type": "object",
+                "required": [
+                  "command",
+                  "params",
+                  "risk"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "const": "scene.createActor"
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "actorClass"
+                    ],
+                    "properties": {
+                      "actorClass": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "location": {
+                        "type": "object",
+                        "required": [
+                          "x",
+                          "y",
+                          "z"
+                        ],
+                        "properties": {
+                          "x": { "type": "number" },
+                          "y": { "type": "number" },
+                          "z": { "type": "number" }
+                        },
+                        "additionalProperties": false
+                      },
+                      "rotation": {
+                        "type": "object",
+                        "required": [
+                          "pitch",
+                          "yaw",
+                          "roll"
+                        ],
+                        "properties": {
+                          "pitch": { "type": "number" },
+                          "yaw": { "type": "number" },
+                          "roll": { "type": "number" }
+                        },
+                        "additionalProperties": false
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "risk": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "command",
+                  "params",
+                  "risk"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "const": "scene.deleteActor"
+                  },
+                  "params": {
+                    "type": "object",
+                    "required": [
+                      "target"
+                    ],
+                    "properties": {
+                      "target": {
+                        "type": "string",
+                        "const": "selection"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "risk": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  }
+                },
+                "additionalProperties": false
               }
-            },
-            "additionalProperties": false
+            ]
           }
         }
       },
