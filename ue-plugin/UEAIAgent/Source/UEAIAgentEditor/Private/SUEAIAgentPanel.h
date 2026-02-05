@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Types/SlateEnums.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Widgets/SWidget.h"
 
 class STextBlock;
 class SEditableTextBox;
@@ -24,7 +25,6 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
-    FReply OnCheckHealthClicked();
     FReply OnSaveApiKeyClicked();
     FReply OnRemoveApiKeyClicked();
     FReply OnTestApiKeyClicked();
@@ -45,6 +45,7 @@ private:
     void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
     TArray<FString> CollectSelectedActorNames() const;
+    EActiveTimerReturnType HandleHealthTimer(double InCurrentTime, float InDeltaTime);
 
     TSharedPtr<STextBlock> StatusText;
     TSharedPtr<STextBlock> CredentialText;

@@ -8,7 +8,7 @@ Settings path in UE:
 - `Project Settings -> Plugins -> UE AI Agent`
 
 Quick validation in editor tab:
-- `Check Local Agent` for localhost health check
+- Agent status is checked when tab opens and refreshed every 10 seconds
 - provider key tools: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - `Run` to run one flow:
   - in chat mode: request `/v1/task/plan` and show parsed actions

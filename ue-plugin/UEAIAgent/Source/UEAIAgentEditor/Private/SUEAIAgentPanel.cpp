@@ -133,18 +133,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(0.0f, 0.0f, 8.0f, 0.0f)
             [
                 SNew(SBox)
-                .WidthOverride(180.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Check Local Agent")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnCheckHealthClicked)
-                ]
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SBox)
                 .WidthOverride(200.0f)
                 .Visibility_Lambda([]()
                 {
@@ -234,21 +222,16 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         ]
     ];
 
-    UpdateActionApprovalUi();
-}
-
-FReply SUEAIAgentPanel::OnCheckHealthClicked()
-{
     if (StatusText.IsValid())
     {
         StatusText->SetText(FText::FromString(TEXT("Status: checking...")));
     }
-
     FUEAIAgentTransportModule::Get().CheckHealth(FOnUEAIAgentHealthChecked::CreateSP(
         this,
         &SUEAIAgentPanel::HandleHealthResult));
+    RegisterActiveTimer(10.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleHealthTimer));
 
-    return FReply::Handled();
+    UpdateActionApprovalUi();
 }
 
 FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
@@ -705,4 +688,14 @@ void SUEAIAgentPanel::HandleProviderComboSelectionChanged(TSharedPtr<FString> Ne
     }
 
     SelectedProviderItem = NewValue;
+}
+
+EActiveTimerReturnType SUEAIAgentPanel::HandleHealthTimer(double InCurrentTime, float InDeltaTime)
+{
+    (void)InCurrentTime;
+    (void)InDeltaTime;
+    FUEAIAgentTransportModule::Get().CheckHealth(FOnUEAIAgentHealthChecked::CreateSP(
+        this,
+        &SUEAIAgentPanel::HandleHealthResult));
+    return EActiveTimerReturnType::Continue;
 }
