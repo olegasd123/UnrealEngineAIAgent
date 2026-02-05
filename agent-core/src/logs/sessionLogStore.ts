@@ -1,30 +1,39 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
-import type { PlanOutput, TaskRequest } from "../contracts.js";
-import type { LlmProvider } from "../providers/types.js";
+import type {
+  SessionApproveRequest,
+  SessionNextRequest,
+  SessionResumeRequest,
+  SessionStartRequest
+} from "../contracts.js";
+import type { SessionDecision } from "../sessions/sessionStore.js";
 import { buildDailyLogPath, resolveLogDirectory } from "./dailyLogPath.js";
 
-interface TaskPlanLogBase {
+type SessionRoute =
+  | "/v1/session/start"
+  | "/v1/session/next"
+  | "/v1/session/approve"
+  | "/v1/session/resume";
+
+interface SessionLogBase {
   id: string;
   timestamp: string;
-  route: "/v1/task/plan";
+  route: SessionRoute;
   durationMs: number;
-  provider: {
-    name: LlmProvider["name"];
-    model: string;
-    adapter: LlmProvider["adapter"];
-    configured: boolean;
-  };
 }
 
-interface TaskPlanSuccessLog extends TaskPlanLogBase {
+interface SessionSuccessLog extends SessionLogBase {
   ok: true;
-  request: TaskRequest;
-  plan: PlanOutput;
+  request:
+    | SessionStartRequest
+    | SessionNextRequest
+    | SessionApproveRequest
+    | SessionResumeRequest;
+  decision: SessionDecision;
 }
 
-interface TaskPlanErrorLog extends TaskPlanLogBase {
+interface SessionErrorLog extends SessionLogBase {
   ok: false;
   request: {
     rawBodySample: string;
@@ -32,9 +41,9 @@ interface TaskPlanErrorLog extends TaskPlanLogBase {
   error: string;
 }
 
-type TaskPlanLogEntry = TaskPlanSuccessLog | TaskPlanErrorLog;
+type SessionLogEntry = SessionSuccessLog | SessionErrorLog;
 
-export class TaskLogStore {
+export class SessionLogStore {
   private readonly logDirectory: string;
 
   constructor(pathOrDirectory: string) {
@@ -49,49 +58,41 @@ export class TaskLogStore {
     return this.getCurrentLogPath();
   }
 
-  public async appendTaskPlanSuccess(params: {
+  public async appendSessionSuccess(params: {
     requestId: string;
-    provider: LlmProvider;
-    request: TaskRequest;
-    plan: PlanOutput;
+    route: SessionRoute;
+    request:
+      | SessionStartRequest
+      | SessionNextRequest
+      | SessionApproveRequest
+      | SessionResumeRequest;
+    decision: SessionDecision;
     durationMs: number;
   }): Promise<void> {
-    const entry: TaskPlanSuccessLog = {
+    const entry: SessionSuccessLog = {
       id: params.requestId,
       timestamp: new Date().toISOString(),
-      route: "/v1/task/plan",
+      route: params.route,
       durationMs: params.durationMs,
-      provider: {
-        name: params.provider.name,
-        model: params.provider.model,
-        adapter: params.provider.adapter,
-        configured: params.provider.hasApiKey
-      },
       ok: true,
       request: params.request,
-      plan: params.plan
+      decision: params.decision
     };
     await this.append(entry);
   }
 
-  public async appendTaskPlanError(params: {
+  public async appendSessionError(params: {
     requestId: string;
-    provider: LlmProvider;
+    route: SessionRoute;
     rawBody: string;
     error: string;
     durationMs: number;
   }): Promise<void> {
-    const entry: TaskPlanErrorLog = {
+    const entry: SessionErrorLog = {
       id: params.requestId,
       timestamp: new Date().toISOString(),
-      route: "/v1/task/plan",
+      route: params.route,
       durationMs: params.durationMs,
-      provider: {
-        name: params.provider.name,
-        model: params.provider.model,
-        adapter: params.provider.adapter,
-        configured: params.provider.hasApiKey
-      },
       ok: false,
       request: {
         rawBodySample: params.rawBody.slice(0, 4000)
@@ -101,11 +102,11 @@ export class TaskLogStore {
     await this.append(entry);
   }
 
-  public async readLastTaskPlanEntries(limit: number): Promise<TaskPlanLogEntry[]> {
+  public async readLastSessionEntries(limit: number): Promise<SessionLogEntry[]> {
     const normalizedLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const logPath = this.getCurrentLogPath();
 
     let content = "";
-    const logPath = this.getCurrentLogPath();
     try {
       content = await readFile(logPath, "utf8");
     } catch (error) {
@@ -117,7 +118,7 @@ export class TaskLogStore {
     }
 
     const lines = content.split("\n");
-    const entries: TaskPlanLogEntry[] = [];
+    const entries: SessionLogEntry[] = [];
     for (let i = lines.length - 1; i >= 0 && entries.length < normalizedLimit; i -= 1) {
       const line = lines[i]?.trim();
       if (!line) {
@@ -125,7 +126,7 @@ export class TaskLogStore {
       }
 
       try {
-        entries.push(JSON.parse(line) as TaskPlanLogEntry);
+        entries.push(JSON.parse(line) as SessionLogEntry);
       } catch {
         // Skip broken lines and keep reading.
       }
@@ -135,13 +136,14 @@ export class TaskLogStore {
     return entries;
   }
 
-  private async append(entry: TaskPlanLogEntry): Promise<void> {
+  private async append(entry: SessionLogEntry): Promise<void> {
     const logPath = this.getCurrentLogPath();
     await mkdir(this.logDirectory, { recursive: true });
     await appendFile(logPath, `${JSON.stringify(entry)}\n`, "utf8");
   }
 
   private getCurrentLogPath(): string {
-    return buildDailyLogPath(this.logDirectory, "task");
+    return buildDailyLogPath(this.logDirectory, "session");
   }
 }
+

@@ -21,7 +21,7 @@ Optional environment:
 - `AGENT_HOST` (default `127.0.0.1`)
 - `AGENT_PORT` (default `4317`)
 - `AGENT_PROVIDER` (`openai` or `gemini`, default `openai`)
-- `AGENT_TASK_LOG_PATH` (default `data/task-log.jsonl`)
+- `AGENT_TASK_LOG_PATH` (default `data`; used as log directory, legacy file path still works)
 - `OPENAI_API_KEY` (optional in stub mode)
 - `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (optional)
@@ -55,6 +55,23 @@ Optional environment:
 - Each `/v1/task/plan` request is appended to local JSONL log file.
 - Success and error entries include `requestId`, timestamp, provider info, and duration.
 - Read logs: `GET /v1/task/logs?limit=50` (max limit is 50, default is 50).
+
+## Session log store
+
+- Each session endpoint call is appended to local JSONL log file:
+  - `POST /v1/session/start`
+  - `POST /v1/session/next`
+  - `POST /v1/session/approve`
+  - `POST /v1/session/resume`
+- Success and error entries include `requestId`, timestamp, route, request sample/data, decision (on success), and duration.
+- Read logs: `GET /v1/session/logs?limit=50` (max limit is 50, default is 50).
+
+## Log file naming
+
+- Log files are daily and use this format:
+  - `yyyyMMdd-task-log.jsonl`
+  - `yyyyMMdd-session-log.jsonl`
+- Example: `20261129-session-log.jsonl`
 
 ## Agent session orchestration
 

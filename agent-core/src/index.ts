@@ -11,11 +11,13 @@ import {
 } from "./contracts.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
+import { SessionLogStore } from "./logs/sessionLogStore.js";
 import { TaskLogStore } from "./logs/taskLogStore.js";
 import { createProvider } from "./providers/createProvider.js";
 import { SessionStore } from "./sessions/sessionStore.js";
 
 const taskLogStore = new TaskLogStore(config.taskLogPath);
+const sessionLogStore = new SessionLogStore(config.taskLogPath);
 const credentialStore = new CredentialStore();
 const sessionStore = new SessionStore();
 
@@ -208,54 +210,202 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "POST" && pathname === "/v1/session/start") {
+  if (req.method === "GET" && pathname === "/v1/session/logs") {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "50");
+    const normalizedLimit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(50, Math.trunc(requestedLimit)))
+      : 50;
+
     try {
-      const rawBody = await readBody(req);
+      const entries = await sessionLogStore.readLastSessionEntries(normalizedLimit);
+      return sendJson(res, 200, {
+        ok: true,
+        limit: normalizedLimit,
+        count: entries.length,
+        entries
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/session/start") {
+    const requestId = sessionLogStore.createRequestId();
+    const startedAt = Date.now();
+    let rawBody = "";
+
+    try {
+      rawBody = await readBody(req);
       const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
       const provider = await resolveProvider();
       const providerPlan = await provider.planTask(parsed);
       const plan = PlanOutputSchema.parse(providerPlan);
       const decision = sessionStore.create(parsed, plan);
-      return sendJson(res, 200, { ok: true, decision });
+
+      try {
+        await sessionLogStore.appendSessionSuccess({
+          requestId,
+          route: "/v1/session/start",
+          request: parsed,
+          decision,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      return sendJson(res, 400, { ok: false, error: message });
+
+      try {
+        await sessionLogStore.appendSessionError({
+          requestId,
+          route: "/v1/session/start",
+          rawBody,
+          error: message,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 400, { ok: false, requestId, error: message });
     }
   }
 
   if (req.method === "POST" && pathname === "/v1/session/next") {
+    const requestId = sessionLogStore.createRequestId();
+    const startedAt = Date.now();
+    let rawBody = "";
+
     try {
-      const rawBody = await readBody(req);
+      rawBody = await readBody(req);
       const parsed = SessionNextRequestSchema.parse(JSON.parse(rawBody));
       const decision = sessionStore.next(parsed.sessionId, parsed.result);
-      return sendJson(res, 200, { ok: true, decision });
+
+      try {
+        await sessionLogStore.appendSessionSuccess({
+          requestId,
+          route: "/v1/session/next",
+          request: parsed,
+          decision,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      return sendJson(res, 400, { ok: false, error: message });
+
+      try {
+        await sessionLogStore.appendSessionError({
+          requestId,
+          route: "/v1/session/next",
+          rawBody,
+          error: message,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 400, { ok: false, requestId, error: message });
     }
   }
 
   if (req.method === "POST" && pathname === "/v1/session/approve") {
+    const requestId = sessionLogStore.createRequestId();
+    const startedAt = Date.now();
+    let rawBody = "";
+
     try {
-      const rawBody = await readBody(req);
+      rawBody = await readBody(req);
       const parsed = SessionApproveRequestSchema.parse(JSON.parse(rawBody));
       const decision = sessionStore.approve(parsed.sessionId, parsed.actionIndex, parsed.approved);
-      return sendJson(res, 200, { ok: true, decision });
+
+      try {
+        await sessionLogStore.appendSessionSuccess({
+          requestId,
+          route: "/v1/session/approve",
+          request: parsed,
+          decision,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      return sendJson(res, 400, { ok: false, error: message });
+
+      try {
+        await sessionLogStore.appendSessionError({
+          requestId,
+          route: "/v1/session/approve",
+          rawBody,
+          error: message,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 400, { ok: false, requestId, error: message });
     }
   }
 
   if (req.method === "POST" && pathname === "/v1/session/resume") {
+    const requestId = sessionLogStore.createRequestId();
+    const startedAt = Date.now();
+    let rawBody = "";
+
     try {
-      const rawBody = await readBody(req);
+      rawBody = await readBody(req);
       const parsed = SessionResumeRequestSchema.parse(JSON.parse(rawBody));
       const decision = sessionStore.resume(parsed.sessionId);
-      return sendJson(res, 200, { ok: true, decision });
+
+      try {
+        await sessionLogStore.appendSessionSuccess({
+          requestId,
+          route: "/v1/session/resume",
+          request: parsed,
+          decision,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      return sendJson(res, 400, { ok: false, error: message });
+
+      try {
+        await sessionLogStore.appendSessionError({
+          requestId,
+          route: "/v1/session/resume",
+          rawBody,
+          error: message,
+          durationMs: Date.now() - startedAt
+        });
+      } catch (logError) {
+        // eslint-disable-next-line no-console
+        console.warn("Session log write failed:", logError);
+      }
+
+      return sendJson(res, 400, { ok: false, requestId, error: message });
     }
   }
 
@@ -316,4 +466,6 @@ server.listen(config.port, config.host, () => {
   console.log(`Agent Core listening on http://${config.host}:${config.port}`);
   // eslint-disable-next-line no-console
   console.log(`Task log path: ${taskLogStore.getLogPath()}`);
+  // eslint-disable-next-line no-console
+  console.log(`Session log path: ${sessionLogStore.getLogPath()}`);
 });
