@@ -33,6 +33,15 @@ private:
         Settings
     };
 
+    enum class ESessionStatus : uint8
+    {
+        Unknown,
+        ReadyToExecute,
+        AwaitingApproval,
+        Completed,
+        Failed
+    };
+
     FReply OnSaveApiKeyClicked();
     FReply OnRemoveApiKeyClicked();
     FReply OnTestApiKeyClicked();
@@ -56,6 +65,7 @@ private:
     void HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
+    ESessionStatus ParseSessionStatusFromMessage(const FString& Message) const;
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
@@ -79,5 +89,6 @@ private:
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;
     int32 PromptVisibleLineCount = 1;
+    ESessionStatus CurrentSessionStatus = ESessionStatus::Unknown;
     EPanelView CurrentView = EPanelView::Main;
 };

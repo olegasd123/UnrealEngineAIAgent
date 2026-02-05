@@ -244,6 +244,56 @@ function shouldDeleteSelection(prompt: string): boolean {
   return /(delete|remove|destroy|erase)/.test(lower) && /(selected|selection|actor|actors)/.test(lower);
 }
 
+function parseActorNamesFromPrompt(prompt: string): string[] | null {
+  const names = new Set<string>();
+  const lower = prompt.toLowerCase();
+
+  const directActorToken = /\bactor[0-9a-z_]+\b/gi;
+  for (const match of prompt.matchAll(directActorToken)) {
+    const value = match[0];
+    if (value && !/^actors?$/i.test(value)) {
+      names.add(value);
+    }
+  }
+
+  const listPattern = /\bactors?\s+([0-9a-z_,\s]+)/gi;
+  for (const match of prompt.matchAll(listPattern)) {
+    let chunk = match[1] ?? "";
+    const stopWord = /\b(on|along|around|by|to|at|with|and|rotate|move|offset|translate|shift|nudge|push|pull|delete|remove|destroy|erase)\b/i;
+    const stopMatch = stopWord.exec(chunk);
+    if (stopMatch) {
+      chunk = chunk.slice(0, stopMatch.index);
+    }
+    for (const token of chunk.split(/[\s,]+/)) {
+      const trimmed = token.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (/^actors?$/i.test(trimmed)) {
+        continue;
+      }
+      names.add(trimmed);
+    }
+  }
+
+  const namedPattern = /\b(?:named|name)\s+([0-9a-z_]+)/gi;
+  for (const match of prompt.matchAll(namedPattern)) {
+    const value = match[1];
+    if (value && !/^actors?$/i.test(value)) {
+      names.add(value);
+    }
+  }
+
+  if (names.size === 0) {
+    if (/(delete|remove|destroy|erase)/.test(lower)) {
+      return null;
+    }
+    return null;
+  }
+
+  return Array.from(names);
+}
+
 export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
   const selection = Array.isArray((input.context as { selection?: unknown }).selection)
     ? ((input.context as { selection: unknown[] }).selection as unknown[])
@@ -251,7 +301,9 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
   const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
   const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
   const createActor = parseCreateActorFromPrompt(input.prompt);
+  const actorNames = parseActorNamesFromPrompt(input.prompt);
   const deleteSelection = shouldDeleteSelection(input.prompt);
+  const deleteByName = /(delete|remove|destroy|erase)/.test(input.prompt.toLowerCase()) && Boolean(actorNames?.length);
 
   const actions: PlanAction[] = [];
   if (createActor) {
@@ -264,10 +316,11 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
 
   if (moveDelta || rotateDelta) {
     const params: {
-      target: "selection";
+      target: "selection" | "byName";
+      actorNames?: string[];
       deltaLocation?: { x: number; y: number; z: number };
       deltaRotation?: { pitch: number; yaw: number; roll: number };
-    } = { target: "selection" };
+    } = actorNames && actorNames.length > 0 ? { target: "byName", actorNames } : { target: "selection" };
     if (moveDelta) {
       params.deltaLocation = moveDelta;
     }
@@ -279,6 +332,14 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
       command: "scene.modifyActor",
       params,
       risk: "low"
+    });
+  }
+
+  if (deleteByName && actorNames) {
+    actions.push({
+      command: "scene.deleteActor",
+      params: { target: "byName", actorNames },
+      risk: "high"
     });
   }
 

@@ -22,12 +22,16 @@ const DeltaRotationSchema = z.object({
 
 const SceneModifyActorParamsSchema = z
   .object({
-    target: z.literal("selection"),
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
     deltaLocation: DeltaLocationSchema.optional(),
     deltaRotation: DeltaRotationSchema.optional()
   })
   .refine((value) => Boolean(value.deltaLocation || value.deltaRotation), {
     message: "scene.modifyActor action needs deltaLocation or deltaRotation"
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.modifyActor target=byName needs actorNames"
   });
 
 export const PlanActionSchema = z.object({
@@ -43,9 +47,14 @@ const SceneCreateActorParamsSchema = z.object({
   count: z.number().int().min(1).max(200).default(1)
 });
 
-const SceneDeleteActorParamsSchema = z.object({
-  target: z.literal("selection")
-});
+const SceneDeleteActorParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.deleteActor target=byName needs actorNames"
+  });
 
 export const SceneModifyActorActionSchema = PlanActionSchema;
 export const SceneCreateActorActionSchema = z.object({

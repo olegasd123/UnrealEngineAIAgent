@@ -14,6 +14,26 @@ DEFINE_LOG_CATEGORY_STATIC(LogUEAIAgentTransport, Log, All);
 
 namespace
 {
+    bool ParseActorNamesField(const TSharedPtr<FJsonObject>& ParamsObj, TArray<FString>& OutActorNames)
+    {
+        OutActorNames.Empty();
+        const TArray<TSharedPtr<FJsonValue>>* NamesArray = nullptr;
+        if (!ParamsObj.IsValid() || !ParamsObj->TryGetArrayField(TEXT("actorNames"), NamesArray) || !NamesArray)
+        {
+            return false;
+        }
+
+        for (const TSharedPtr<FJsonValue>& Value : *NamesArray)
+        {
+            FString Name;
+            if (Value.IsValid() && Value->TryGetString(Name) && !Name.IsEmpty())
+            {
+                OutActorNames.Add(Name);
+            }
+        }
+        return OutActorNames.Num() > 0;
+    }
+
     EUEAIAgentRiskLevel ParseRiskLevel(const TSharedPtr<FJsonObject>& ActionObj)
     {
         if (!ActionObj.IsValid())
@@ -89,15 +109,29 @@ namespace
         if (Command == TEXT("scene.modifyActor"))
         {
             FString Target;
-            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
             {
                 return false;
             }
 
             FUEAIAgentPlannedSceneAction ParsedAction;
             ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
-            ParsedAction.ActorNames = SelectedActors;
             ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
 
             bool bHasAnyDelta = false;
             const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
@@ -203,15 +237,29 @@ namespace
         if (Command == TEXT("scene.deleteActor"))
         {
             FString Target;
-            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
             {
                 return false;
             }
 
             FUEAIAgentPlannedSceneAction ParsedAction;
             ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
-            ParsedAction.ActorNames = SelectedActors;
             ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
             OutAction = ParsedAction;
             return true;
         }
@@ -470,16 +518,30 @@ void FUEAIAgentTransportModule::PlanTask(
                         if (Command == TEXT("scene.modifyActor"))
                         {
                             FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
                             {
                                 continue;
                             }
 
                             FUEAIAgentPlannedSceneAction ParsedAction;
                             ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
-                            ParsedAction.ActorNames = SelectedActors;
                             ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
 
                             bool bHasAnyDelta = false;
                             const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
@@ -584,16 +646,30 @@ void FUEAIAgentTransportModule::PlanTask(
                         if (Command == TEXT("scene.deleteActor"))
                         {
                             FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target) || Target != TEXT("selection"))
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
                             {
                                 continue;
                             }
 
                             FUEAIAgentPlannedSceneAction ParsedAction;
                             ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
-                            ParsedAction.ActorNames = SelectedActors;
                             ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = false;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
                             PlannedActions.Add(ParsedAction);
                         }
                     }
@@ -658,14 +734,24 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
     (*DecisionObj)->TryGetNumberField(TEXT("nextActionIndex"), ActionIndex);
     ActiveSessionActionIndex = ActionIndex >= 0.0 ? FMath::TruncToInt(ActionIndex) : INDEX_NONE;
 
-    const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
-    if ((*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid())
+    const bool bCanExecute = Status.Equals(TEXT("ready_to_execute"), ESearchCase::IgnoreCase) ||
+        Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
+    if (!bCanExecute)
     {
-        FUEAIAgentPlannedSceneAction ParsedAction;
-        if (ParsePlannedActionFromJson(*NextActionObj, SelectedActors, ParsedAction))
+        ActiveSessionActionIndex = INDEX_NONE;
+    }
+
+    if (bCanExecute)
+    {
+        const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
+        if ((*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid())
         {
-            ParsedAction.bApproved = Status != TEXT("awaiting_approval");
-            PlannedActions.Add(ParsedAction);
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            if (ParsePlannedActionFromJson(*NextActionObj, SelectedActors, ParsedAction))
+            {
+                ParsedAction.bApproved = !Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
+                PlannedActions.Add(ParsedAction);
+            }
         }
     }
 
@@ -1146,16 +1232,24 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
 
     if (Action.Type == EUEAIAgentPlannedActionType::DeleteActor)
     {
+        const FString TargetText = Action.ActorNames.Num() > 0
+            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
+            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.deleteActor on selection (%d actor(s))%s"),
+            TEXT("Action %d -> scene.deleteActor on %s (%d actor(s))%s"),
             ActionIndex + 1,
+            *TargetText,
             Action.ActorNames.Num(),
             *Suffix);
     }
 
+    const FString ModifyTargetText = Action.ActorNames.Num() > 0
+        ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
+        : TEXT("selection");
     return FString::Printf(
-        TEXT("Action %d -> scene.modifyActor on %d actor(s), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
+        TEXT("Action %d -> scene.modifyActor on %s (%d actor(s)), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
         ActionIndex + 1,
+        *ModifyTargetText,
         Action.ActorNames.Num(),
         Action.DeltaLocation.X,
         Action.DeltaLocation.Y,

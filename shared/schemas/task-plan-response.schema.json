@@ -50,7 +50,11 @@
                     "properties": {
                       "target": {
                         "type": "string",
-                        "const": "selection"
+                        "enum": ["selection", "byName"]
+                      },
+                      "actorNames": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 }
                       },
                       "deltaLocation": {
                         "type": "object",
@@ -84,6 +88,12 @@
                     "anyOf": [
                       { "required": ["deltaLocation"] },
                       { "required": ["deltaRotation"] }
+                    ],
+                    "allOf": [
+                      {
+                        "if": { "properties": { "target": { "const": "byName" } } },
+                        "then": { "required": ["actorNames"] }
+                      }
                     ],
                     "additionalProperties": false
                   },
@@ -187,9 +197,19 @@
                     "properties": {
                       "target": {
                         "type": "string",
-                        "const": "selection"
+                        "enum": ["selection", "byName"]
+                      },
+                      "actorNames": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 }
                       }
                     },
+                    "allOf": [
+                      {
+                        "if": { "properties": { "target": { "const": "byName" } } },
+                        "then": { "required": ["actorNames"] }
+                      }
+                    ],
                     "additionalProperties": false
                   },
                   "risk": {

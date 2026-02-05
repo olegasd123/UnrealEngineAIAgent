@@ -40,6 +40,7 @@ namespace
         for (const FString& Name : ActorNames)
         {
             NameSet.Add(Name);
+            NameSet.Add(Name.ToLower());
         }
         for (TActorIterator<AActor> It(World); It; ++It)
         {
@@ -49,7 +50,15 @@ namespace
                 continue;
             }
 
-            if (NameSet.Contains(Actor->GetName()))
+            const FString ActorName = Actor->GetName();
+            const FString ActorLabel = Actor->GetActorLabel();
+            const FString ActorNameLower = ActorName.ToLower();
+            const FString ActorLabelLower = ActorLabel.ToLower();
+
+            if (NameSet.Contains(ActorName) ||
+                NameSet.Contains(ActorLabel) ||
+                NameSet.Contains(ActorNameLower) ||
+                NameSet.Contains(ActorLabelLower))
             {
                 OutActors.Add(Actor);
             }

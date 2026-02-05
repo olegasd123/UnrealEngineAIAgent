@@ -90,7 +90,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(120.0f)
-                    .Visibility_Lambda([]()
+                    .Visibility_Lambda([this]()
                     {
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
@@ -123,7 +123,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(200.0f)
-                    .Visibility_Lambda([]()
+                    .Visibility_Lambda([this]()
                     {
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
@@ -147,7 +147,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(220.0f)
-                    .Visibility_Lambda([]()
+                    .Visibility_Lambda([this]()
                     {
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
@@ -360,6 +360,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         return FReply::Handled();
     }
 
+    CurrentSessionStatus = ESessionStatus::Unknown;
     const FString Prompt = PromptInput->GetText().ToString().TrimStartAndEnd();
     if (Prompt.IsEmpty())
     {
@@ -551,6 +552,7 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
         return;
     }
 
+    CurrentSessionStatus = ESessionStatus::Unknown;
     if (!bOk)
     {
         PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
@@ -585,7 +587,20 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     UpdateActionApprovalUi();
     if (!bOk)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: error\n") + Message));
+        CurrentSessionStatus = ESessionStatus::Failed;
+        PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        return;
+    }
+
+    CurrentSessionStatus = ParseSessionStatusFromMessage(Message);
+    if (CurrentSessionStatus == ESessionStatus::Failed)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        return;
+    }
+    if (CurrentSessionStatus == ESessionStatus::Completed)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: completed\n") + Message + TEXT("\nClick Run to start over.")));
         return;
     }
 
@@ -617,6 +632,41 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         bOkExecute,
         ExecuteMessage,
         FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
+}
+
+SUEAIAgentPanel::ESessionStatus SUEAIAgentPanel::ParseSessionStatusFromMessage(const FString& Message) const
+{
+    const FString Prefix = TEXT("Session:");
+    if (!Message.StartsWith(Prefix))
+    {
+        return ESessionStatus::Unknown;
+    }
+
+    int32 NewlineIndex = INDEX_NONE;
+    if (!Message.FindChar(TEXT('\n'), NewlineIndex))
+    {
+        NewlineIndex = Message.Len();
+    }
+
+    FString StatusValue = Message.Mid(Prefix.Len(), NewlineIndex - Prefix.Len()).TrimStartAndEnd();
+    if (StatusValue.Equals(TEXT("ready_to_execute"), ESearchCase::IgnoreCase))
+    {
+        return ESessionStatus::ReadyToExecute;
+    }
+    if (StatusValue.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase))
+    {
+        return ESessionStatus::AwaitingApproval;
+    }
+    if (StatusValue.Equals(TEXT("completed"), ESearchCase::IgnoreCase))
+    {
+        return ESessionStatus::Completed;
+    }
+    if (StatusValue.Equals(TEXT("failed"), ESearchCase::IgnoreCase))
+    {
+        return ESessionStatus::Failed;
+    }
+
+    return ESessionStatus::Unknown;
 }
 
 bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const

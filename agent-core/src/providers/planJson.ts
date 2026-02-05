@@ -147,6 +147,7 @@ export function buildPlanPrompt(input: PlanInput): string {
             command: "scene.modifyActor",
             params: {
               target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
               deltaLocation: { x: 0, y: 0, z: 0 },
               deltaRotation: { pitch: 0, yaw: 0, roll: 0 }
             },
@@ -165,7 +166,8 @@ export function buildPlanPrompt(input: PlanInput): string {
           {
             command: "scene.deleteActor",
             params: {
-              target: "selection"
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"]
             },
             risk: "high"
           }
@@ -178,9 +180,9 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- Keep summary short and concrete.",
     "- steps must be short, ordered, and actionable.",
     "- actions can be empty [] if no executable command is found.",
-    "- scene.modifyActor: target must be 'selection'; include deltaLocation and/or deltaRotation.",
+    "- scene.modifyActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include deltaLocation and/or deltaRotation.",
     "- scene.createActor: include actorClass; location/rotation optional; count must be integer >= 1.",
-    "- scene.deleteActor: target must be 'selection'.",
+    "- scene.deleteActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'.",
     "- risk must be low|medium|high.",
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",
     "- Never invent non-existing commands or extra fields.",
@@ -215,6 +217,24 @@ export function buildPlanPrompt(input: PlanInput): string {
           summary: "Delete current selection.",
           steps: ["Preview delete impact", "Require explicit approval", "Delete selected actors in transaction"],
           actions: [{ command: "scene.deleteActor", params: { target: "selection" }, risk: "high" }]
+        }
+      },
+      null,
+      2
+    ),
+    JSON.stringify(
+      {
+        prompt: "move actor3 +250 on X",
+        output: {
+          summary: "Move actor3 along X.",
+          steps: ["Preview planned modify action", "Wait for user approval", "Apply modify action"],
+          actions: [
+            {
+              command: "scene.modifyActor",
+              params: { target: "byName", actorNames: ["actor3"], deltaLocation: { x: 250, y: 0, z: 0 } },
+              risk: "low"
+            }
+          ]
         }
       },
       null,
