@@ -11,6 +11,7 @@
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -32,195 +33,237 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
 
     ChildSlot
     [
-        SNew(SVerticalBox)
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f)
+        SAssignNew(ViewSwitcher, SWidgetSwitcher)
+        + SWidgetSwitcher::Slot()
         [
-            SAssignNew(StatusText, STextBlock)
-            .Text(FText::FromString(TEXT("Status: not checked")))
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SNew(SHorizontalBox)
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f)
             [
-                SAssignNew(ProviderCombo, SComboBox<TSharedPtr<FString>>)
-                .OptionsSource(&ProviderItems)
-                .InitiallySelectedItem(SelectedProviderItem)
-                .OnGenerateWidget(this, &SUEAIAgentPanel::HandleProviderComboGenerateWidget)
-                .OnSelectionChanged(this, &SUEAIAgentPanel::HandleProviderComboSelectionChanged)
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(StatusText, STextBlock)
+                    .Text(FText::FromString(TEXT("Status: not checked")))
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Settings")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnOpenSettingsClicked)
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SAssignNew(PromptInput, SEditableTextBox)
+                .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
+                .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(200.0f)
+                    .Visibility_Lambda([]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
+                        if (bHasPendingSessionAction || bHasPlannedActions)
+                        {
+                            return EVisibility::Collapsed;
+                        }
+                        return EVisibility::Visible;
+                    })
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Run")))
+                        .OnClicked(this, &SUEAIAgentPanel::OnRunWithSelectionClicked)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(220.0f)
+                    .Visibility_Lambda([]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        return bHasPendingSessionAction ? EVisibility::Visible : EVisibility::Collapsed;
+                    })
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Resume")))
+                        .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SBox)
+                    .WidthOverride(240.0f)
+                    .Visibility_Lambda([]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        const bool bCanApply = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
+                        return bCanApply ? EVisibility::Visible : EVisibility::Collapsed;
+                    })
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Apply")))
+                        .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
+                    ]
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SCheckBox)
+                .IsChecked(ECheckBoxState::Checked)
+                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
+                {
+                    bAgentModeEnabled = (NewState == ECheckBoxState::Checked);
+                })
                 [
                     SNew(STextBlock)
-                    .Text_Lambda([this]()
-                    {
-                        return FText::FromString(GetSelectedProviderLabel());
-                    })
+                    .Text(FText::FromString(TEXT("Agent mode: auto-run low risk actions, pause on medium/high")))
                 ]
             ]
-            + SHorizontalBox::Slot()
-            .FillWidth(1.0f)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(ApiKeyInput, SEditableTextBox)
-                .HintText(FText::FromString(TEXT("Paste API key")))
-                .IsPassword(true)
+                SAssignNew(ActionListBox, SVerticalBox)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SAssignNew(PlanText, STextBlock)
+                .AutoWrapText(true)
+                .Text(FText::FromString(TEXT("Plan: not requested")))
             ]
         ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+        + SWidgetSwitcher::Slot()
         [
-            SNew(SHorizontalBox)
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f)
             [
-                SNew(SButton)
-                .Text(FText::FromString(TEXT("Save API Key")))
-                .OnClicked(this, &SUEAIAgentPanel::OnSaveApiKeyClicked)
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SButton)
-                .Text(FText::FromString(TEXT("Remove API Key")))
-                .OnClicked(this, &SUEAIAgentPanel::OnRemoveApiKeyClicked)
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SButton)
-                .Text(FText::FromString(TEXT("Test Provider")))
-                .OnClicked(this, &SUEAIAgentPanel::OnTestApiKeyClicked)
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                SNew(SButton)
-                .Text(FText::FromString(TEXT("Refresh Provider Status")))
-                .OnClicked(this, &SUEAIAgentPanel::OnRefreshProviderStatusClicked)
-            ]
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SAssignNew(CredentialText, STextBlock)
-            .AutoWrapText(true)
-            .Text(FText::FromString(TEXT("Provider keys: unknown. Click 'Refresh Provider Status'.")))
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SAssignNew(PromptInput, SEditableTextBox)
-            .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
-            .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SNew(SHorizontalBox)
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SBox)
-                .WidthOverride(200.0f)
-                .Visibility_Lambda([]()
-                {
-                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                    const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
-                    if (bHasPendingSessionAction || bHasPlannedActions)
-                    {
-                        return EVisibility::Collapsed;
-                    }
-                    return EVisibility::Visible;
-                })
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Run")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnRunWithSelectionClicked)
+                    .Text(FText::FromString(TEXT("Back")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnBackToMainClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(STextBlock)
+                    .Text(FText::FromString(TEXT("Settings")))
                 ]
             ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SNew(SBox)
-                .WidthOverride(220.0f)
-                .Visibility_Lambda([]()
-                {
-                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                    return bHasPendingSessionAction ? EVisibility::Visible : EVisibility::Collapsed;
-                })
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SAssignNew(ProviderCombo, SComboBox<TSharedPtr<FString>>)
+                    .OptionsSource(&ProviderItems)
+                    .InitiallySelectedItem(SelectedProviderItem)
+                    .OnGenerateWidget(this, &SUEAIAgentPanel::HandleProviderComboGenerateWidget)
+                    .OnSelectionChanged(this, &SUEAIAgentPanel::HandleProviderComboSelectionChanged)
+                    [
+                        SNew(STextBlock)
+                        .Text_Lambda([this]()
+                        {
+                            return FText::FromString(GetSelectedProviderLabel());
+                        })
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(ApiKeyInput, SEditableTextBox)
+                    .HintText(FText::FromString(TEXT("Paste API key")))
+                    .IsPassword(true)
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Resume")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
+                    .Text(FText::FromString(TEXT("Save API Key")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnSaveApiKeyClicked)
                 ]
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            [
-                SNew(SBox)
-                .WidthOverride(240.0f)
-                .Visibility_Lambda([]()
-                {
-                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                    const bool bCanApply = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
-                    return bCanApply ? EVisibility::Visible : EVisibility::Collapsed;
-                })
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Apply")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
+                    .Text(FText::FromString(TEXT("Remove API Key")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRemoveApiKeyClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Test Provider")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnTestApiKeyClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Refresh Provider Status")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRefreshProviderStatusClicked)
                 ]
             ]
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SNew(SCheckBox)
-            .IsChecked(ECheckBoxState::Checked)
-            .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
-            {
-                bAgentModeEnabled = (NewState == ECheckBoxState::Checked);
-            })
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SNew(STextBlock)
-                .Text(FText::FromString(TEXT("Agent mode: auto-run low risk actions, pause on medium/high")))
+                SAssignNew(CredentialText, STextBlock)
+                .AutoWrapText(true)
+                .Text(FText::FromString(TEXT("Provider keys: unknown. Click 'Refresh Provider Status'.")))
             ]
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SAssignNew(ActionListBox, SVerticalBox)
-        ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-        [
-            SAssignNew(PlanText, STextBlock)
-            .AutoWrapText(true)
-            .Text(FText::FromString(TEXT("Plan: not requested")))
         ]
     ];
+
+    SetCurrentView(EPanelView::Main);
 
     if (StatusText.IsValid())
     {
@@ -232,6 +275,40 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     RegisterActiveTimer(10.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleHealthTimer));
 
     UpdateActionApprovalUi();
+}
+
+void SUEAIAgentPanel::SetCurrentView(EPanelView NewView)
+{
+    CurrentView = NewView;
+    if (!ViewSwitcher.IsValid())
+    {
+        return;
+    }
+
+    const int32 Index = CurrentView == EPanelView::Settings ? 1 : 0;
+    ViewSwitcher->SetActiveWidgetIndex(Index);
+}
+
+FReply SUEAIAgentPanel::OnOpenSettingsClicked()
+{
+    SetCurrentView(EPanelView::Settings);
+    if (CredentialText.IsValid())
+    {
+        CredentialText->SetText(FText::FromString(TEXT("Credential: loading provider status...")));
+    }
+    FUEAIAgentTransportModule::Get().GetProviderStatus(
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnBackToMainClicked()
+{
+    SetCurrentView(EPanelView::Main);
+    if (ApiKeyInput.IsValid())
+    {
+        ApiKeyInput->SetText(FText::GetEmpty());
+    }
+    return FReply::Handled();
 }
 
 FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
@@ -345,7 +422,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Transport.GetPlannedActionCount() == 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned actions. Use 'Plan With Selection' first.")));
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned actions. Use 'Run' first.")));
         return FReply::Handled();
     }
 

@@ -9,6 +9,7 @@ class STextBlock;
 class SEditableTextBox;
 class SCheckBox;
 class SVerticalBox;
+class SWidgetSwitcher;
 template<typename OptionType>
 class SComboBox;
 enum class ECheckBoxState : uint8;
@@ -25,10 +26,18 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
+    enum class EPanelView : uint8
+    {
+        Main,
+        Settings
+    };
+
     FReply OnSaveApiKeyClicked();
     FReply OnRemoveApiKeyClicked();
     FReply OnTestApiKeyClicked();
     FReply OnRefreshProviderStatusClicked();
+    FReply OnOpenSettingsClicked();
+    FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnResumeAgentLoopClicked();
     FReply OnApplyPlannedActionClicked();
@@ -46,10 +55,12 @@ private:
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
     TArray<FString> CollectSelectedActorNames() const;
     EActiveTimerReturnType HandleHealthTimer(double InCurrentTime, float InDeltaTime);
+    void SetCurrentView(EPanelView NewView);
 
     TSharedPtr<STextBlock> StatusText;
     TSharedPtr<STextBlock> CredentialText;
     TSharedPtr<SEditableTextBox> ApiKeyInput;
+    TSharedPtr<SWidgetSwitcher> ViewSwitcher;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
     TArray<TSharedPtr<FString>> ProviderItems;
     TSharedPtr<FString> SelectedProviderItem;
@@ -59,4 +70,5 @@ private:
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;
     bool bAgentModeEnabled = true;
+    EPanelView CurrentView = EPanelView::Main;
 };

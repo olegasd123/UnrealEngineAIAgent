@@ -9,7 +9,7 @@ Settings path in UE:
 
 Quick validation in editor tab:
 - Agent status is checked when tab opens and refreshed every 10 seconds
-- provider key tools: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
+- open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - `Run` to run one flow:
   - in chat mode: request `/v1/task/plan` and show parsed actions
   - in agent mode: start session orchestration with `/v1/session/start`
