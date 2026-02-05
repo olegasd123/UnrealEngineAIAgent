@@ -10,6 +10,7 @@
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SBoxPanel.h"
@@ -256,9 +257,14 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(CredentialText, STextBlock)
-                .AutoWrapText(true)
-                .Text(FText::FromString(TEXT("Provider keys: unknown. Click 'Refresh Provider Status'.")))
+                SNew(SBox)
+                .HeightOverride(88.0f)
+                [
+                    SAssignNew(CredentialText, SMultiLineEditableTextBox)
+                    .IsReadOnly(true)
+                    .SelectAllTextWhenFocused(false)
+                    .Text(FText::FromString(TEXT("Provider keys: unknown. Click 'Refresh Provider Status'.")))
+                ]
             ]
         ]
     ];

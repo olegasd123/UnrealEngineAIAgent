@@ -4,6 +4,14 @@ import { buildPlanPrompt, parsePlanOutput } from "./planJson.js";
 import { buildRuleBasedPlan } from "./ruleBasedPlanner.js";
 import type { LlmProvider, PlanInput } from "./types.js";
 
+function formatErrorBody(body: string): string {
+  const max = 4000;
+  if (body.length <= max) {
+    return body;
+  }
+  return `${body.slice(0, max)}... [truncated ${body.length - max} chars]`;
+}
+
 export class GeminiProvider implements LlmProvider {
   public readonly name = "gemini";
   public readonly model: string;
@@ -54,7 +62,7 @@ export class GeminiProvider implements LlmProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Gemini request failed (${response.status}): ${body.slice(0, 250)}`);
+      throw new Error(`Gemini request failed (${response.status}): ${formatErrorBody(body)}`);
     }
 
     const data = (await response.json()) as {

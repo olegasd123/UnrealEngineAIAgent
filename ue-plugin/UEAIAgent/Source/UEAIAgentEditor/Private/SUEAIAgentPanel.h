@@ -7,6 +7,7 @@
 
 class STextBlock;
 class SEditableTextBox;
+class SMultiLineEditableTextBox;
 class SCheckBox;
 class SVerticalBox;
 class SWidgetSwitcher;
@@ -58,7 +59,7 @@ private:
     void SetCurrentView(EPanelView NewView);
 
     TSharedPtr<STextBlock> StatusText;
-    TSharedPtr<STextBlock> CredentialText;
+    TSharedPtr<SMultiLineEditableTextBox> CredentialText;
     TSharedPtr<SEditableTextBox> ApiKeyInput;
     TSharedPtr<SWidgetSwitcher> ViewSwitcher;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
