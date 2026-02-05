@@ -69,13 +69,14 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .HeightOverride_Lambda([this]()
                 {
                     const int32 Lines = FMath::Clamp(PromptVisibleLineCount, 1, 10);
-                    return 12.0f + (18.0f * Lines);
+                    return 16.0f + (16.0f * Lines);
                 })
                 [
                     SAssignNew(PromptInput, SMultiLineEditableTextBox)
                     .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
                     .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
                     .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
+                    .Padding(FMargin(8.0f, 8.0f, 8.0f, 8.0f))
                 ]
             ]
             + SVerticalBox::Slot()
