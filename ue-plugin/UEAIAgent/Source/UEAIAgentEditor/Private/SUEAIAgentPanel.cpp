@@ -145,23 +145,23 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(0.0f, 0.0f, 8.0f, 0.0f)
             [
                 SNew(SBox)
-                .WidthOverride(220.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Plan With Selection")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnPlanFromSelectionClicked)
-                ]
-            ]
-            + SHorizontalBox::Slot()
-            .AutoWidth()
-            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SBox)
                 .WidthOverride(200.0f)
+                .Visibility_Lambda([]()
+                {
+                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                    const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
+                    if (bHasPendingSessionAction || bHasPlannedActions)
+                    {
+                        return EVisibility::Collapsed;
+                    }
+                    return EVisibility::Visible;
+                })
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Run Agent Loop")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnRunAgentLoopClicked)
+                    .Text(FText::FromString(TEXT("Run")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRunWithSelectionClicked)
                 ]
             ]
             + SHorizontalBox::Slot()
@@ -170,9 +170,16 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             [
                 SNew(SBox)
                 .WidthOverride(220.0f)
+                .Visibility_Lambda([]()
+                {
+                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                    return bHasPendingSessionAction ? EVisibility::Visible : EVisibility::Collapsed;
+                })
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Resume Agent Loop")))
+                    .Text(FText::FromString(TEXT("Resume")))
                     .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
                 ]
             ]
@@ -181,9 +188,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             [
                 SNew(SBox)
                 .WidthOverride(240.0f)
+                .Visibility_Lambda([]()
+                {
+                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                        Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                    const bool bCanApply = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
+                    return bCanApply ? EVisibility::Visible : EVisibility::Collapsed;
+                })
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Apply Planned Actions")))
+                    .Text(FText::FromString(TEXT("Apply")))
                     .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
                 ]
             ]
@@ -236,7 +251,7 @@ FReply SUEAIAgentPanel::OnCheckHealthClicked()
     return FReply::Handled();
 }
 
-FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
+FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
 {
     if (!PromptInput.IsValid() || !PlanText.IsValid())
     {
@@ -251,11 +266,23 @@ FReply SUEAIAgentPanel::OnPlanFromSelectionClicked()
     }
 
     const TArray<FString> SelectedActors = CollectSelectedActorNames();
-    PlanText->SetText(FText::FromString(TEXT("Plan: requesting...")));
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
 
-    FUEAIAgentTransportModule::Get().PlanTask(
+    if (bAgentModeEnabled)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
+        Transport.StartSession(
+            Prompt,
+            TEXT("agent"),
+            SelectedActors,
+            FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
+        return FReply::Handled();
+    }
+
+    PlanText->SetText(FText::FromString(TEXT("Plan: requesting...")));
+    Transport.PlanTask(
         Prompt,
-        bAgentModeEnabled ? TEXT("agent") : TEXT("chat"),
+        TEXT("chat"),
         SelectedActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
@@ -369,36 +396,6 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     return FReply::Handled();
 }
 
-FReply SUEAIAgentPanel::OnRunAgentLoopClicked()
-{
-    if (!PromptInput.IsValid() || !PlanText.IsValid())
-    {
-        return FReply::Handled();
-    }
-
-    if (!bAgentModeEnabled)
-    {
-        PlanText->SetText(FText::FromString(TEXT("Agent: enable agent mode first.")));
-        return FReply::Handled();
-    }
-
-    const FString Prompt = PromptInput->GetText().ToString().TrimStartAndEnd();
-    if (Prompt.IsEmpty())
-    {
-        PlanText->SetText(FText::FromString(TEXT("Agent: please enter a prompt first.")));
-        return FReply::Handled();
-    }
-
-    const TArray<FString> SelectedActors = CollectSelectedActorNames();
-    PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
-    FUEAIAgentTransportModule::Get().StartSession(
-        Prompt,
-        TEXT("agent"),
-        SelectedActors,
-        FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
-    return FReply::Handled();
-}
-
 FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
 {
     if (!PlanText.IsValid())
@@ -409,7 +406,7 @@ FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (!Transport.HasActiveSession())
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run Agent Loop first.")));
+        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run first.")));
         return FReply::Handled();
     }
 
@@ -555,93 +552,6 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         return false;
     }
     return FUEAIAgentSceneTools::SceneModifyActor(Params, OutMessage);
-}
-
-bool SUEAIAgentPanel::CanAutoExecuteRisk(EUEAIAgentRiskLevel Risk) const
-{
-    return Risk == EUEAIAgentRiskLevel::Low;
-}
-
-FString SUEAIAgentPanel::RunAgentLoop(bool bResumeOnly)
-{
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-    if (Transport.GetPlannedActionCount() == 0)
-    {
-        return TEXT("Agent: no planned actions. Use 'Plan With Selection' first.");
-    }
-
-    FString Lines;
-    int32 AppliedCount = 0;
-
-    for (int32 ActionIndex = 0; ActionIndex < Transport.GetPlannedActionCount(); ++ActionIndex)
-    {
-        FUEAIAgentPlannedSceneAction PlannedAction;
-        if (!Transport.GetPendingAction(ActionIndex, PlannedAction))
-        {
-            continue;
-        }
-
-        const bool bNeedsApproval = !CanAutoExecuteRisk(PlannedAction.Risk) && !PlannedAction.bApproved;
-        if (bNeedsApproval)
-        {
-            Lines += FString::Printf(
-                TEXT("- Pause at action %d: risk requires approval. Check action and click Resume Agent Loop.\n"),
-                ActionIndex + 1);
-            break;
-        }
-
-        if (!bResumeOnly && !CanAutoExecuteRisk(PlannedAction.Risk) && PlannedAction.bApproved)
-        {
-            Lines += FString::Printf(
-                TEXT("- Pause at action %d: medium/high risk approved. Click Resume Agent Loop to continue.\n"),
-                ActionIndex + 1);
-            break;
-        }
-
-        bool bActionOk = false;
-        FString LastMessage;
-        int32 Attempt = 0;
-        const int32 MaxAttempts = FMath::Max(1, AgentMaxRetries + 1);
-        for (; Attempt < MaxAttempts; ++Attempt)
-        {
-            if (ExecutePlannedAction(PlannedAction, LastMessage))
-            {
-                bActionOk = true;
-                break;
-            }
-        }
-
-        Transport.UpdateActionResult(ActionIndex, bActionOk, Attempt + 1);
-        if (bActionOk)
-        {
-            AppliedCount += 1;
-            Lines += FString::Printf(TEXT("- Action %d succeeded: %s\n"), ActionIndex + 1, *LastMessage);
-        }
-        else
-        {
-            Lines += FString::Printf(TEXT("- Action %d failed after retries: %s\n"), ActionIndex + 1, *LastMessage);
-            break;
-        }
-    }
-
-    UpdateActionApprovalUi();
-
-    const int32 NextPending = Transport.GetNextPendingActionIndex();
-    if (Lines.IsEmpty())
-    {
-        Lines = TEXT("- No pending actions executed.");
-    }
-
-    if (NextPending == INDEX_NONE)
-    {
-        return FString::Printf(TEXT("Agent: completed (%d action(s) applied)\n%s"), AppliedCount, *Lines);
-    }
-
-    return FString::Printf(
-        TEXT("Agent: paused with pending action %d (%d action(s) applied)\n%s"),
-        NextPending + 1,
-        AppliedCount,
-        *Lines);
 }
 
 void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)
