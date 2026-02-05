@@ -6,6 +6,9 @@ AGENT_CORE_DIR="$ROOT_DIR/agent-core"
 PLUGIN_SRC_DIR="$ROOT_DIR/ue-plugin/UEAIAgent"
 UE_PROJECT_PLUGINS_DIR="/Users/oleg/Dev/temp/AIAgentTPCpp/Plugins"
 PLUGIN_DST_DIR="$UE_PROJECT_PLUGINS_DIR/UEAIAgent"
+UE_ENGINE_DIR="/Users/Shared/Epic Games/UE_5.7"
+UE_PROJECT_FILE="/Users/oleg/Dev/temp/AIAgentTPCpp/AIAgentTPCpp.uproject"
+UE_PROJECT_NAME="$(basename "$UE_PROJECT_FILE" .uproject)"
 PID_FILE="/tmp/ue-ai-agent-core.pid"
 LOG_FILE="/tmp/ue-ai-agent-core.log"
 
@@ -16,6 +19,7 @@ Usage:
   ./dev.command stop-agent
   ./dev.command restart-agent
   ./dev.command deploy-plugin
+  ./dev.command build-plugin
   ./dev.command setup
 
 Commands:
@@ -23,7 +27,8 @@ Commands:
   stop-agent     Stop running agent-core process.
   restart-agent  Restart agent-core process.
   deploy-plugin  Copy UEAIAgent plugin to UE project Plugins folder.
-  setup          Restart agent-core and deploy plugin.
+  build-plugin   Build UE project (compiles the plugin).
+  setup          Restart agent-core, deploy plugin, and build it.
 EOF
 }
 
@@ -87,6 +92,23 @@ deploy_plugin() {
   echo "Plugin deployed to: $PLUGIN_DST_DIR"
 }
 
+build_plugin() {
+  if [[ ! -f "$UE_PROJECT_FILE" ]]; then
+    echo "UE project not found: $UE_PROJECT_FILE"
+    return 1
+  fi
+
+  local ubt="$UE_ENGINE_DIR/Engine/Build/BatchFiles/RunUBT.sh"
+  if [[ ! -x "$ubt" ]]; then
+    echo "UnrealBuildTool not found: $ubt"
+    return 1
+  fi
+
+  local target="${UE_PROJECT_NAME}Editor"
+  "$ubt" "$target" Mac Development -Project="$UE_PROJECT_FILE" -WaitMutex
+  echo "Build done for target: $target"
+}
+
 main() {
   local cmd="${1:-}"
   case "$cmd" in
@@ -94,9 +116,11 @@ main() {
     stop-agent) stop_agent ;;
     restart-agent) restart_agent ;;
     deploy-plugin) deploy_plugin ;;
+    build-plugin) build_plugin ;;
     setup)
       restart_agent
       deploy_plugin
+      build_plugin
       ;;
     *)
       print_usage
@@ -106,4 +130,3 @@ main() {
 }
 
 main "${1:-}"
-
