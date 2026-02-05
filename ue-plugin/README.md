@@ -10,9 +10,11 @@ Settings path in UE:
 Quick validation in editor tab:
 - Agent status is checked when tab opens and refreshed every 10 seconds
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
+- mode selector near `Run`: `Chat` or `Agent`
 - `Run` to run one flow:
   - in chat mode: request `/v1/task/plan` and show parsed actions
   - in agent mode: start session orchestration with `/v1/session/start`
+- prompt input is multi-line and grows up to 10 lines
 - `Resume` to send approvals and continue (`/v1/session/approve` + `/v1/session/resume`)
 - `Apply` to execute approved `scene.modifyActor`, `scene.createActor`, and `scene.deleteActor` actions with Undo support
 - buttons are state-based:

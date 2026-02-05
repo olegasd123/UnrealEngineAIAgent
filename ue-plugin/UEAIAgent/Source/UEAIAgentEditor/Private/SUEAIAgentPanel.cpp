@@ -21,6 +21,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     ProviderItems.Empty();
     ProviderItems.Add(MakeShared<FString>(TEXT("OpenAI")));
     ProviderItems.Add(MakeShared<FString>(TEXT("Gemini")));
+    ModeItems.Empty();
+    ModeItems.Add(MakeShared<FString>(TEXT("Chat")));
+    ModeItems.Add(MakeShared<FString>(TEXT("Agent")));
+    SelectedModeItem = ModeItems[1];
 
     const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
     if (Settings && Settings->DefaultProvider == EUEAIAgentProvider::Gemini)
@@ -61,15 +65,57 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(PromptInput, SEditableTextBox)
-                .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
-                .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
+                SNew(SBox)
+                .HeightOverride_Lambda([this]()
+                {
+                    const int32 Lines = FMath::Clamp(PromptVisibleLineCount, 1, 10);
+                    return 12.0f + (18.0f * Lines);
+                })
+                [
+                    SAssignNew(PromptInput, SMultiLineEditableTextBox)
+                    .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
+                    .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
+                    .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
+                ]
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(120.0f)
+                    .Visibility_Lambda([]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
+                        if (bHasPendingSessionAction || bHasPlannedActions)
+                        {
+                            return EVisibility::Collapsed;
+                        }
+                        return EVisibility::Visible;
+                    })
+                    [
+                        SAssignNew(ModeCombo, SComboBox<TSharedPtr<FString>>)
+                        .OptionsSource(&ModeItems)
+                        .InitiallySelectedItem(SelectedModeItem)
+                        .OnGenerateWidget(this, &SUEAIAgentPanel::HandleModeComboGenerateWidget)
+                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleModeComboSelectionChanged)
+                        [
+                            SNew(STextBlock)
+                            .Text_Lambda([this]()
+                            {
+                                return FText::FromString(GetSelectedModeLabel());
+                            })
+                        ]
+                    ]
+                ]
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
@@ -131,21 +177,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         .Text(FText::FromString(TEXT("Apply")))
                         .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
                     ]
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
-                SNew(SCheckBox)
-                .IsChecked(ECheckBoxState::Checked)
-                .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
-                {
-                    bAgentModeEnabled = (NewState == ECheckBoxState::Checked);
-                })
-                [
-                    SNew(STextBlock)
-                    .Text(FText::FromString(TEXT("Agent mode: auto-run low risk actions, pause on medium/high")))
                 ]
             ]
             + SVerticalBox::Slot()
@@ -270,6 +301,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     ];
 
     SetCurrentView(EPanelView::Main);
+    if (PromptInput.IsValid())
+    {
+        HandlePromptTextChanged(PromptInput->GetText());
+    }
 
     if (StatusText.IsValid())
     {
@@ -333,8 +368,9 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
 
     const TArray<FString> SelectedActors = CollectSelectedActorNames();
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const FString Mode = GetSelectedModeCode();
 
-    if (bAgentModeEnabled)
+    if (Mode == TEXT("agent"))
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
         Transport.StartSession(
@@ -758,7 +794,32 @@ FString SUEAIAgentPanel::GetSelectedProviderLabel() const
     return *SelectedProviderItem;
 }
 
+FString SUEAIAgentPanel::GetSelectedModeCode() const
+{
+    if (!SelectedModeItem.IsValid())
+    {
+        return TEXT("agent");
+    }
+
+    return SelectedModeItem->Equals(TEXT("Chat"), ESearchCase::IgnoreCase) ? TEXT("chat") : TEXT("agent");
+}
+
+FString SUEAIAgentPanel::GetSelectedModeLabel() const
+{
+    if (!SelectedModeItem.IsValid())
+    {
+        return TEXT("Agent");
+    }
+
+    return *SelectedModeItem;
+}
+
 TSharedRef<SWidget> SUEAIAgentPanel::HandleProviderComboGenerateWidget(TSharedPtr<FString> InItem) const
+{
+    return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
+}
+
+TSharedRef<SWidget> SUEAIAgentPanel::HandleModeComboGenerateWidget(TSharedPtr<FString> InItem) const
 {
     return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
 }
@@ -771,6 +832,30 @@ void SUEAIAgentPanel::HandleProviderComboSelectionChanged(TSharedPtr<FString> Ne
     }
 
     SelectedProviderItem = NewValue;
+}
+
+void SUEAIAgentPanel::HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+{
+    if (!NewValue.IsValid())
+    {
+        return;
+    }
+
+    SelectedModeItem = NewValue;
+}
+
+void SUEAIAgentPanel::HandlePromptTextChanged(const FText& NewText)
+{
+    const FString TextValue = NewText.ToString();
+    int32 Lines = 1;
+    for (const TCHAR CharValue : TextValue)
+    {
+        if (CharValue == TEXT('\n'))
+        {
+            ++Lines;
+        }
+    }
+    PromptVisibleLineCount = FMath::Clamp(Lines, 1, 10);
 }
 
 EActiveTimerReturnType SUEAIAgentPanel::HandleHealthTimer(double InCurrentTime, float InDeltaTime)
