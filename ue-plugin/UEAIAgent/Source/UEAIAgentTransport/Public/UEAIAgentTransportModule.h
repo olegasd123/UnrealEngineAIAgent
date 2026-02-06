@@ -20,7 +20,10 @@ enum class EUEAIAgentPlannedActionType : uint8
     SetComponentStaticMesh,
     SetActorFolder,
     AddActorLabelPrefix,
-    DuplicateActors
+    DuplicateActors,
+    SessionBeginTransaction,
+    SessionCommitTransaction,
+    SessionRollbackTransaction
 };
 
 enum class EUEAIAgentRiskLevel : uint8
@@ -86,6 +89,9 @@ struct FUEAIAgentPlannedSceneAction
     // scene.duplicateActors
     int32 DuplicateCount = 1;
     FVector DuplicateOffset = FVector::ZeroVector;
+
+    // session.beginTransaction
+    FString TransactionDescription;
 
     EUEAIAgentRiskLevel Risk = EUEAIAgentRiskLevel::Low;
     EUEAIAgentActionState State = EUEAIAgentActionState::Pending;

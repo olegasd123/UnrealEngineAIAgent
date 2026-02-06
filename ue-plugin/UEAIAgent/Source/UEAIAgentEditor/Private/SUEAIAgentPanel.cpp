@@ -723,6 +723,21 @@ SUEAIAgentPanel::ESessionStatus SUEAIAgentPanel::ParseSessionStatusFromMessage(c
 
 bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const
 {
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
+    {
+        return FUEAIAgentSceneTools::SessionBeginTransaction(PlannedAction.TransactionDescription, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SessionCommitTransaction)
+    {
+        return FUEAIAgentSceneTools::SessionCommitTransaction(OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SessionRollbackTransaction)
+    {
+        return FUEAIAgentSceneTools::SessionRollbackTransaction(OutMessage);
+    }
+
     if (PlannedAction.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
         FUEAIAgentCreateActorParams Params;

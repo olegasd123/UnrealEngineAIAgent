@@ -100,4 +100,7 @@ public:
     static bool SceneSetActorFolder(const FUEAIAgentSetActorFolderParams& Params, FString& OutMessage);
     static bool SceneAddActorLabelPrefix(const FUEAIAgentAddActorLabelPrefixParams& Params, FString& OutMessage);
     static bool SceneDuplicateActors(const FUEAIAgentDuplicateActorsParams& Params, FString& OutMessage);
+    static bool SessionBeginTransaction(const FString& Description, FString& OutMessage);
+    static bool SessionCommitTransaction(FString& OutMessage);
+    static bool SessionRollbackTransaction(FString& OutMessage);
 };

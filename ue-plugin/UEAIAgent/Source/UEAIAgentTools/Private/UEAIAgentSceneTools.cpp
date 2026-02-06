@@ -19,6 +19,8 @@
 
 namespace
 {
+    TUniquePtr<FScopedTransaction> GUEAIAgentSessionTransaction;
+
     void CollectActorsFromSelection(TArray<AActor*>& OutActors)
     {
         if (!GEditor)
@@ -887,6 +889,53 @@ bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsP
 
     OutMessage = FString::Printf(TEXT("scene.duplicateActors created %d duplicate(s)."), DuplicateCount);
     return DuplicateCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SessionBeginTransaction(const FString& Description, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    if (GUEAIAgentSessionTransaction)
+    {
+        OutMessage = TEXT("Session transaction is already active.");
+        return false;
+    }
+
+    const FString Label = Description.IsEmpty() ? TEXT("UE AI Agent Session") : Description;
+    GUEAIAgentSessionTransaction = MakeUnique<FScopedTransaction>(FText::FromString(Label));
+    OutMessage = TEXT("session.beginTransaction started.");
+    return true;
+}
+
+bool FUEAIAgentSceneTools::SessionCommitTransaction(FString& OutMessage)
+{
+    if (!GUEAIAgentSessionTransaction)
+    {
+        OutMessage = TEXT("No active session transaction to commit.");
+        return false;
+    }
+
+    GUEAIAgentSessionTransaction.Reset();
+    OutMessage = TEXT("session.commitTransaction committed.");
+    return true;
+}
+
+bool FUEAIAgentSceneTools::SessionRollbackTransaction(FString& OutMessage)
+{
+    if (!GUEAIAgentSessionTransaction)
+    {
+        OutMessage = TEXT("No active session transaction to rollback.");
+        return false;
+    }
+
+    GUEAIAgentSessionTransaction->Cancel();
+    GUEAIAgentSessionTransaction.Reset();
+    OutMessage = TEXT("session.rollbackTransaction rolled back.");
+    return true;
 }
 
 #undef LOCTEXT_NAMESPACE

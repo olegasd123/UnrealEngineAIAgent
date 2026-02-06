@@ -22,7 +22,10 @@
         "scene.addActorTag",
         "scene.setActorFolder",
         "scene.addActorLabelPrefix",
-        "scene.duplicateActors"
+        "scene.duplicateActors",
+        "session.beginTransaction",
+        "session.commitTransaction",
+        "session.rollbackTransaction"
       ]
     },
     "params": {

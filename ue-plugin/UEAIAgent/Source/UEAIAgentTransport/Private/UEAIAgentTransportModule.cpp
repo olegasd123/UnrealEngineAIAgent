@@ -680,6 +680,38 @@ namespace
             return true;
         }
 
+        if (Command == TEXT("session.beginTransaction"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionBeginTransaction;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            FString Description;
+            if ((*ParamsObj)->TryGetStringField(TEXT("description"), Description))
+            {
+                ParsedAction.TransactionDescription = Description;
+            }
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("session.commitTransaction"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionCommitTransaction;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("session.rollbackTransaction"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionRollbackTransaction;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
         return false;
     }
 
@@ -1601,6 +1633,41 @@ void FUEAIAgentTransportModule::PlanTask(
                             PlannedActions.Add(ParsedAction);
                             continue;
                         }
+
+                        if (Command == TEXT("session.beginTransaction"))
+                        {
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionBeginTransaction;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            FString Description;
+                            if ((*ParamsObj)->TryGetStringField(TEXT("description"), Description))
+                            {
+                                ParsedAction.TransactionDescription = Description;
+                            }
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("session.commitTransaction"))
+                        {
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionCommitTransaction;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("session.rollbackTransaction"))
+                        {
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionRollbackTransaction;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
                     }
                 }
 
@@ -2302,6 +2369,32 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             Action.DuplicateOffset.X,
             Action.DuplicateOffset.Y,
             Action.DuplicateOffset.Z,
+            *Suffix);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
+    {
+        const FString Label = Action.TransactionDescription.IsEmpty() ? TEXT("UE AI Agent Session") : Action.TransactionDescription;
+        return FString::Printf(
+            TEXT("Action %d -> session.beginTransaction description=%s%s"),
+            ActionIndex + 1,
+            *Label,
+            *Suffix);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SessionCommitTransaction)
+    {
+        return FString::Printf(
+            TEXT("Action %d -> session.commitTransaction%s"),
+            ActionIndex + 1,
+            *Suffix);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SessionRollbackTransaction)
+    {
+        return FString::Printf(
+            TEXT("Action %d -> session.rollbackTransaction%s"),
+            ActionIndex + 1,
             *Suffix);
     }
 
