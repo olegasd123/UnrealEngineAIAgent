@@ -28,7 +28,7 @@ Commands:
   restart-agent  Restart agent-core process.
   deploy-plugin  Copy UEAIAgent plugin to UE project Plugins folder.
   build-plugin   Build UE project (compiles the plugin).
-  setup          Restart agent-core, deploy plugin, and build it.
+  setup          Generate tool commands, restart agent-core, deploy plugin, and build it.
 EOF
 }
 
@@ -86,6 +86,13 @@ restart_agent() {
   start_agent
 }
 
+generate_commands() {
+  (
+    cd "$AGENT_CORE_DIR"
+    npm run generate:commands
+  )
+}
+
 deploy_plugin() {
   mkdir -p "$UE_PROJECT_PLUGINS_DIR"
   rsync -a --delete --exclude "Binaries/" --exclude "Intermediate/" "$PLUGIN_SRC_DIR/" "$PLUGIN_DST_DIR/"
@@ -118,6 +125,7 @@ main() {
     deploy-plugin) deploy_plugin ;;
     build-plugin) build_plugin ;;
     setup)
+      generate_commands
       restart_agent
       deploy_plugin
       build_plugin

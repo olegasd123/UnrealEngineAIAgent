@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export { AllowedCommands, UeToolCommandSchema, type UeToolCommand } from "./generated/ueToolCommandSchema.js";
+
 export const TaskRequestSchema = z.object({
   prompt: z.string().min(1),
   mode: z.enum(["chat", "agent"]).default("chat"),

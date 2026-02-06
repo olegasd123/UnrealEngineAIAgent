@@ -1,4 +1,4 @@
-import { PlanOutputSchema, type PlanOutput } from "../contracts.js";
+import { PlanOutputSchema, type PlanOutput, AllowedCommands } from "../contracts.js";
 import type { PlanInput } from "./types.js";
 
 function stripCodeFence(raw: string): string {
@@ -131,19 +131,7 @@ export function buildPlanPrompt(input: PlanInput): string {
     "You are a planner for Unreal Editor actions.",
     "Return ONLY one valid JSON object. No markdown. No comments. No extra text.",
     "Allowed actions in this version:",
-    "- scene.modifyActor",
-    "- scene.createActor",
-    "- scene.deleteActor",
-    "- scene.modifyComponent",
-    "- scene.setComponentMaterial",
-    "- scene.setComponentStaticMesh",
-    "- scene.addActorTag",
-    "- scene.setActorFolder",
-    "- scene.addActorLabelPrefix",
-    "- scene.duplicateActors",
-    "- session.beginTransaction",
-    "- session.commitTransaction",
-    "- session.rollbackTransaction",
+    ...AllowedCommands.map((command) => `- ${command}`),
     "Use Unreal axis defaults: X forward, Y right, Z up.",
     "If the prompt has both create and transform intent, include both actions in correct order.",
     "If intent is unclear, return actions: [] and explain uncertainty in steps.",

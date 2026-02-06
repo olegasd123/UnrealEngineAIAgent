@@ -17,6 +17,15 @@ npm install
 npm run dev
 ```
 
+## Generated command list
+
+The allowed tool commands are generated from the shared JSON schema. Re-generate after any change to:
+- `./shared/schemas/ue-tool-command.schema.json`
+
+```bash
+npm run generate:commands
+```
+
 Optional environment:
 - `AGENT_HOST` (default `127.0.0.1`)
 - `AGENT_PORT` (default `4317`)
