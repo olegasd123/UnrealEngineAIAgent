@@ -11,6 +11,22 @@ import type {
 type ActionState = "pending" | "succeeded" | "failed";
 type SessionStatus = "ready_to_execute" | "awaiting_approval" | "completed" | "failed";
 
+const MAX_CREATE_COUNT = 50;
+const MAX_DUPLICATE_COUNT = 10;
+const MAX_TARGET_NAMES = 50;
+const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
+  "Actor",
+  "StaticMeshActor",
+  "PointLight",
+  "SpotLight",
+  "DirectionalLight",
+  "RectLight",
+  "SkyLight",
+  "ExponentialHeightFog",
+  "PostProcessVolume",
+  "CameraActor"
+]);
+
 interface SessionAction {
   action: PlanAction;
   approved: boolean;
@@ -45,6 +61,131 @@ function shouldAutoApprove(risk: PlanAction["risk"]): boolean {
   return risk === "low";
 }
 
+function normalizeAssetPath(path: string): string {
+  return path.trim();
+}
+
+function isAllowedAssetPath(path: string): boolean {
+  const normalized = normalizeAssetPath(path);
+  return normalized.startsWith("/Game/") || normalized.startsWith("/Engine/");
+}
+
+function requireApproval(
+  action: PlanAction,
+  reason: string,
+  riskOverride: PlanAction["risk"] = "high"
+): { approved: boolean; risk: PlanAction["risk"]; message: string } {
+  return {
+    approved: false,
+    risk: riskOverride,
+    message: reason
+  };
+}
+
+function applyLocalPolicy(action: PlanAction): { approved: boolean; risk: PlanAction["risk"]; message?: string } {
+  let risk: PlanAction["risk"] = action.risk;
+  let approved = shouldAutoApprove(risk);
+  let message: string | undefined;
+
+  if (action.command === "scene.createActor") {
+    const actorClass = action.params.actorClass;
+    if (!ALLOWED_CREATE_ACTOR_CLASSES.has(actorClass)) {
+      return requireApproval(
+        action,
+        `Policy: actorClass '${actorClass}' is not in the allowlist.`,
+        "high"
+      );
+    }
+
+    if (action.params.count > MAX_CREATE_COUNT) {
+      action.params.count = MAX_CREATE_COUNT;
+      const policy = requireApproval(
+        action,
+        `Policy: create count capped to ${MAX_CREATE_COUNT}.`,
+        "medium"
+      );
+      approved = policy.approved;
+      risk = policy.risk;
+      message = policy.message;
+    }
+  }
+
+  if (action.command === "scene.duplicateActors") {
+    if (action.params.count > MAX_DUPLICATE_COUNT) {
+      action.params.count = MAX_DUPLICATE_COUNT;
+      const policy = requireApproval(
+        action,
+        `Policy: duplicate count capped to ${MAX_DUPLICATE_COUNT}.`,
+        "medium"
+      );
+      approved = policy.approved;
+      risk = policy.risk;
+      message = policy.message;
+    }
+  }
+
+  if (action.command === "scene.deleteActor") {
+    const policy = requireApproval(action, "Policy: delete actions always require approval.", "high");
+    approved = policy.approved;
+    risk = policy.risk;
+    message = policy.message;
+  }
+
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.duplicateActors" ||
+    action.command === "scene.deleteActor"
+  ) {
+    if (action.params.target === "byName" && action.params.actorNames) {
+      if (action.params.actorNames.length > MAX_TARGET_NAMES) {
+        action.params.actorNames = action.params.actorNames.slice(0, MAX_TARGET_NAMES);
+        const policy = requireApproval(
+          action,
+          `Policy: actorNames capped to ${MAX_TARGET_NAMES}.`,
+          "medium"
+        );
+        approved = policy.approved;
+        risk = policy.risk;
+        message = policy.message;
+      }
+    }
+  }
+
+  if (action.command === "scene.setComponentMaterial") {
+    if (!isAllowedAssetPath(action.params.materialPath)) {
+      const policy = requireApproval(
+        action,
+        "Policy: materialPath must start with /Game/ or /Engine/.",
+        "high"
+      );
+      approved = policy.approved;
+      risk = policy.risk;
+      message = policy.message;
+    }
+  }
+
+  if (action.command === "scene.setComponentStaticMesh") {
+    if (!isAllowedAssetPath(action.params.meshPath)) {
+      const policy = requireApproval(
+        action,
+        "Policy: meshPath must start with /Game/ or /Engine/.",
+        "high"
+      );
+      approved = policy.approved;
+      risk = policy.risk;
+      message = policy.message;
+    }
+  }
+
+  return { approved, risk, message };
+}
+
 export class SessionStore {
   private readonly sessions = new Map<string, SessionData>();
 
@@ -60,12 +201,19 @@ export class SessionStore {
       },
       plan,
       maxRetries: input.maxRetries,
-      actions: plan.actions.map((action) => ({
-        action,
-        approved: shouldAutoApprove(action.risk),
-        state: "pending",
-        attempts: 0
-      }))
+      actions: plan.actions.map((action) => {
+        const policy = applyLocalPolicy(action);
+        return {
+          action: {
+            ...action,
+            risk: policy.risk
+          },
+          approved: policy.approved,
+          state: "pending",
+          attempts: 0,
+          lastMessage: policy.message
+        };
+      })
     };
     this.sessions.set(id, session);
     return this.makeDecision(session);
