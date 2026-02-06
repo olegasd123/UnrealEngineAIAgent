@@ -154,46 +154,99 @@ function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: numbe
   return { pitch, yaw, roll };
 }
 
-function parseScaleDeltaFromPrompt(prompt: string): { x: number; y: number; z: number } | null {
+function parseScaleFromPrompt(prompt: string): {
+  delta?: { x: number; y: number; z: number };
+  absolute?: { x: number; y: number; z: number };
+} | null {
   const lower = prompt.toLowerCase();
   if (!/(scale|resize|grow|shrink)/.test(lower)) {
     return null;
   }
 
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  let foundAny = false;
+  let deltaX = 0;
+  let deltaY = 0;
+  let deltaZ = 0;
+  let hasDelta = false;
+  let absX: number | undefined;
+  let absY: number | undefined;
+  let absZ: number | undefined;
+  let hasAbsolute = false;
 
-  const patternAxisFirst = /\b(x|y|z)\s*(?:scale)?\s*(?:by|to)?\s*([+-]?\d+(?:\.\d+)?)/gi;
+  const patternAxisBy = /\b(x|y|z)\s*(?:scale)?\s*by\s*([+-]?\d+(?:\.\d+)?)/gi;
+  for (const match of lower.matchAll(patternAxisBy)) {
+    const axis = match[1];
+    const value = Number(match[2]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    hasDelta = true;
+    if (axis === "x") deltaX += value;
+    if (axis === "y") deltaY += value;
+    if (axis === "z") deltaZ += value;
+  }
+
+  const patternAxisTo = /\b(x|y|z)\s*(?:scale)?\s*(?:to|=)\s*([+-]?\d+(?:\.\d+)?)/gi;
+  for (const match of lower.matchAll(patternAxisTo)) {
+    const axis = match[1];
+    const value = Number(match[2]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    hasAbsolute = true;
+    if (axis === "x") absX = value;
+    if (axis === "y") absY = value;
+    if (axis === "z") absZ = value;
+  }
+
+  const patternAxisFirst = /\b(x|y|z)\s*(?:scale)?\s*([+-]?\d+(?:\.\d+)?)/gi;
   for (const match of lower.matchAll(patternAxisFirst)) {
     const axis = match[1];
     const value = Number(match[2]);
     if (!Number.isFinite(value)) {
       continue;
     }
-    foundAny = true;
-    if (axis === "x") x += value;
-    if (axis === "y") y += value;
-    if (axis === "z") z += value;
+    if (axis === "x") deltaX += value;
+    if (axis === "y") deltaY += value;
+    if (axis === "z") deltaZ += value;
+    hasDelta = true;
   }
 
-  const uniformPattern = /\bscale\s*(?:by|to)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(lower);
-  if (uniformPattern) {
-    const value = Number(uniformPattern[1]);
+  const uniformBy = /\bscale\s*by\s*([+-]?\d+(?:\.\d+)?)/i.exec(lower);
+  if (uniformBy) {
+    const value = Number(uniformBy[1]);
     if (Number.isFinite(value)) {
-      x += value;
-      y += value;
-      z += value;
-      foundAny = true;
+      deltaX += value;
+      deltaY += value;
+      deltaZ += value;
+      hasDelta = true;
     }
   }
 
-  if (!foundAny) {
+  const uniformTo = /\b(?:set\s+)?scale\s*(?:to|=)\s*([+-]?\d+(?:\.\d+)?)/i.exec(lower);
+  if (uniformTo) {
+    const value = Number(uniformTo[1]);
+    if (Number.isFinite(value)) {
+      absX = value;
+      absY = value;
+      absZ = value;
+      hasAbsolute = true;
+    }
+  }
+
+  if (!hasDelta && !hasAbsolute) {
     return null;
   }
 
-  return { x, y, z };
+  const absolute = hasAbsolute
+    ? {
+        x: absX ?? 1,
+        y: absY ?? 1,
+        z: absZ ?? 1
+      }
+    : undefined;
+
+  const delta = hasDelta ? { x: deltaX, y: deltaY, z: deltaZ } : undefined;
+  return { delta, absolute };
 }
 
 function parseCreateLocationFromPrompt(prompt: string): { x: number; y: number; z: number } | undefined {
@@ -369,6 +422,78 @@ function parseComponentVisibilityFromPrompt(prompt: string): {
   };
 }
 
+function parseComponentNameFromPrompt(prompt: string): string | null {
+  const quoted =
+    /\bcomponent\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\bcomponent\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\bcomponent\s*:\s*([0-9a-z_]+)/i.exec(prompt);
+  if (quoted && quoted[1]) {
+    return quoted[1];
+  }
+
+  const plain = /\bcomponent\s+([0-9a-z_]+)/i.exec(prompt) ?? /\bcomp\s+([0-9a-z_]+)/i.exec(prompt);
+  if (plain && plain[1]) {
+    return plain[1];
+  }
+
+  return null;
+}
+
+function parseAssetPathFromPrompt(prompt: string): string | null {
+  const pathMatch = /\/Game\/[0-9A-Za-z_\/\.\-]+/i.exec(prompt);
+  if (pathMatch) {
+    return pathMatch[0];
+  }
+
+  const quoted = /\"([0-9A-Za-z_\/\.\-]+)\"/.exec(prompt);
+  if (quoted && quoted[1] && /[\/\.]/.test(quoted[1])) {
+    return quoted[1];
+  }
+
+  return null;
+}
+
+function parseMaterialAssignmentFromPrompt(prompt: string): {
+  componentName: string;
+  materialPath: string;
+  materialSlot?: number;
+} | null {
+  if (!/(material|shader)/i.test(prompt) || !/(set|assign|apply|replace)/i.test(prompt)) {
+    return null;
+  }
+
+  const componentName = parseComponentNameFromPrompt(prompt);
+  const materialPath = parseAssetPathFromPrompt(prompt);
+  if (!componentName || !materialPath) {
+    return null;
+  }
+
+  const slotMatch = /\bslot\s*(\d+)\b/i.exec(prompt);
+  const materialSlot = slotMatch ? Number(slotMatch[1]) : undefined;
+  return {
+    componentName,
+    materialPath,
+    materialSlot: Number.isFinite(materialSlot ?? NaN) ? materialSlot : undefined
+  };
+}
+
+function parseStaticMeshAssignmentFromPrompt(prompt: string): {
+  componentName: string;
+  meshPath: string;
+} | null {
+  if (!/(static\s*mesh|mesh)/i.test(prompt) || !/(set|assign|replace|swap)/i.test(prompt)) {
+    return null;
+  }
+
+  const componentName = parseComponentNameFromPrompt(prompt);
+  const meshPath = parseAssetPathFromPrompt(prompt);
+  if (!componentName || !meshPath) {
+    return null;
+  }
+
+  return { componentName, meshPath };
+}
+
 function parseActorTagFromPrompt(prompt: string): string | null {
   const lower = prompt.toLowerCase();
   if (!/(tag|label)/.test(lower)) {
@@ -390,19 +515,72 @@ function parseActorTagFromPrompt(prompt: string): string | null {
   return tag;
 }
 
+function parseActorFolderFromPrompt(prompt: string): string | null {
+  if (!/(folder|group)/i.test(prompt) || !/(set|move|place|put)/i.test(prompt)) {
+    return null;
+  }
+
+  const match =
+    /\bfolder\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\bfolder\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\bfolder\s+([0-9A-Za-z_\/\-]+)/i.exec(prompt);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  return null;
+}
+
+function parseActorLabelPrefixFromPrompt(prompt: string): string | null {
+  if (!/(label|name)/i.test(prompt) || !/(prefix|add prefix)/i.test(prompt)) {
+    return null;
+  }
+
+  const match =
+    /\bprefix\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\bprefix\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\bprefix\s+([0-9A-Za-z_]+)/i.exec(prompt);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  return null;
+}
+
+function parseDuplicateFromPrompt(prompt: string): { count: number; offset?: { x: number; y: number; z: number } } | null {
+  if (!/(duplicate|copy|clone)/i.test(prompt)) {
+    return null;
+  }
+
+  const countMatch =
+    /\bduplicate\s+(\d+)\b/i.exec(prompt) ??
+    /\bcopy\s+(\d+)\b/i.exec(prompt) ??
+    /\b(\d+)\s+copies?\b/i.exec(prompt);
+  const parsedCount = countMatch ? Number(countMatch[1]) : 1;
+  const count = Number.isFinite(parsedCount) ? Math.max(1, Math.min(20, Math.trunc(parsedCount))) : 1;
+  const offset = parseMoveDeltaFromPrompt(prompt) ?? undefined;
+  return { count, offset };
+}
+
 export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
   const selection = Array.isArray((input.context as { selection?: unknown }).selection)
     ? ((input.context as { selection: unknown[] }).selection as unknown[])
     : [];
   const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
   const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
-  const scaleDelta = parseScaleDeltaFromPrompt(input.prompt);
+  const scale = parseScaleFromPrompt(input.prompt);
   const createActor = parseCreateActorFromPrompt(input.prompt);
   const actorNames = parseActorNamesFromPrompt(input.prompt);
   const deleteSelection = shouldDeleteSelection(input.prompt);
   const deleteByName = /(delete|remove|destroy|erase)/.test(input.prompt.toLowerCase()) && Boolean(actorNames?.length);
   const componentVisibility = parseComponentVisibilityFromPrompt(input.prompt);
+  const componentName = parseComponentNameFromPrompt(input.prompt);
+  const materialAssignment = parseMaterialAssignmentFromPrompt(input.prompt);
+  const meshAssignment = parseStaticMeshAssignmentFromPrompt(input.prompt);
   const tag = parseActorTagFromPrompt(input.prompt);
+  const folderPath = parseActorFolderFromPrompt(input.prompt);
+  const labelPrefix = parseActorLabelPrefixFromPrompt(input.prompt);
+  const duplicate = parseDuplicateFromPrompt(input.prompt);
 
   const actions: PlanAction[] = [];
   if (createActor) {
@@ -413,13 +591,14 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
     });
   }
 
-  if (moveDelta || rotateDelta || scaleDelta) {
+  if (moveDelta || rotateDelta || scale?.delta || scale?.absolute) {
     const params: {
       target: "selection" | "byName";
       actorNames?: string[];
       deltaLocation?: { x: number; y: number; z: number };
       deltaRotation?: { pitch: number; yaw: number; roll: number };
       deltaScale?: { x: number; y: number; z: number };
+      scale?: { x: number; y: number; z: number };
     } = actorNames && actorNames.length > 0 ? { target: "byName", actorNames } : { target: "selection" };
     if (moveDelta) {
       params.deltaLocation = moveDelta;
@@ -427,8 +606,11 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
     if (rotateDelta) {
       params.deltaRotation = rotateDelta;
     }
-    if (scaleDelta) {
-      params.deltaScale = scaleDelta;
+    if (scale?.delta) {
+      params.deltaScale = scale.delta;
+    }
+    if (scale?.absolute) {
+      params.scale = scale.absolute;
     }
 
     actions.push({
@@ -467,6 +649,49 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
     });
   }
 
+  if (componentName && (scale?.delta || scale?.absolute || moveDelta || rotateDelta)) {
+    actions.push({
+      command: "scene.modifyComponent",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        componentName,
+        deltaLocation: moveDelta ?? undefined,
+        deltaRotation: rotateDelta ?? undefined,
+        deltaScale: scale?.delta,
+        scale: scale?.absolute
+      },
+      risk: "low"
+    });
+  }
+
+  if (materialAssignment) {
+    actions.push({
+      command: "scene.setComponentMaterial",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        componentName: materialAssignment.componentName,
+        materialPath: materialAssignment.materialPath,
+        materialSlot: materialAssignment.materialSlot
+      },
+      risk: "low"
+    });
+  }
+
+  if (meshAssignment) {
+    actions.push({
+      command: "scene.setComponentStaticMesh",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        componentName: meshAssignment.componentName,
+        meshPath: meshAssignment.meshPath
+      },
+      risk: "low"
+    });
+  }
+
   if (tag) {
     actions.push({
       command: "scene.addActorTag",
@@ -476,6 +701,43 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
         tag
       },
       risk: "low"
+    });
+  }
+
+  if (folderPath !== null) {
+    actions.push({
+      command: "scene.setActorFolder",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        folderPath
+      },
+      risk: "low"
+    });
+  }
+
+  if (labelPrefix) {
+    actions.push({
+      command: "scene.addActorLabelPrefix",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        prefix: labelPrefix
+      },
+      risk: "low"
+    });
+  }
+
+  if (duplicate) {
+    actions.push({
+      command: "scene.duplicateActors",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        count: duplicate.count,
+        offset: duplicate.offset
+      },
+      risk: duplicate.count > 5 ? "medium" : "low"
     });
   }
 

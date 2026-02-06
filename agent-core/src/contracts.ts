@@ -26,16 +26,23 @@ const DeltaScaleSchema = z.object({
   z: z.number()
 });
 
+const ScaleSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  z: z.number()
+});
+
 const SceneModifyActorParamsSchema = z
   .object({
     target: z.enum(["selection", "byName"]),
     actorNames: z.array(z.string().min(1)).optional(),
     deltaLocation: DeltaLocationSchema.optional(),
     deltaRotation: DeltaRotationSchema.optional(),
-    deltaScale: DeltaScaleSchema.optional()
+    deltaScale: DeltaScaleSchema.optional(),
+    scale: ScaleSchema.optional()
   })
-  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale), {
-    message: "scene.modifyActor action needs deltaLocation, deltaRotation, or deltaScale"
+  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale || value.scale), {
+    message: "scene.modifyActor action needs deltaLocation, deltaRotation, deltaScale, or scale"
   })
   .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
     message: "scene.modifyActor target=byName needs actorNames"
@@ -71,13 +78,37 @@ const SceneModifyComponentParamsSchema = z
     deltaLocation: DeltaLocationSchema.optional(),
     deltaRotation: DeltaRotationSchema.optional(),
     deltaScale: DeltaScaleSchema.optional(),
+    scale: ScaleSchema.optional(),
     visibility: z.boolean().optional()
   })
-  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale || value.visibility !== undefined), {
-    message: "scene.modifyComponent action needs a delta transform or visibility"
+  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale || value.scale || value.visibility !== undefined), {
+    message: "scene.modifyComponent action needs a transform or visibility"
   })
   .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
     message: "scene.modifyComponent target=byName needs actorNames"
+  });
+
+const SceneSetComponentMaterialParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    componentName: z.string().min(1),
+    materialPath: z.string().min(1),
+    materialSlot: z.number().int().min(0).max(32).optional()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setComponentMaterial target=byName needs actorNames"
+  });
+
+const SceneSetComponentStaticMeshParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    componentName: z.string().min(1),
+    meshPath: z.string().min(1)
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setComponentStaticMesh target=byName needs actorNames"
   });
 
 const SceneAddActorTagParamsSchema = z
@@ -88,6 +119,37 @@ const SceneAddActorTagParamsSchema = z
   })
   .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
     message: "scene.addActorTag target=byName needs actorNames"
+  });
+
+const SceneSetActorFolderParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    folderPath: z.string()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setActorFolder target=byName needs actorNames"
+  });
+
+const SceneAddActorLabelPrefixParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    prefix: z.string().min(1)
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.addActorLabelPrefix target=byName needs actorNames"
+  });
+
+const SceneDuplicateActorsParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    count: z.number().int().min(1).max(20).default(1),
+    offset: DeltaLocationSchema.optional()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.duplicateActors target=byName needs actorNames"
   });
 
 export const SceneModifyActorActionSchema = PlanActionSchema;
@@ -109,9 +171,39 @@ export const SceneModifyComponentActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const SceneSetComponentMaterialActionSchema = z.object({
+  command: z.literal("scene.setComponentMaterial"),
+  params: SceneSetComponentMaterialParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneSetComponentStaticMeshActionSchema = z.object({
+  command: z.literal("scene.setComponentStaticMesh"),
+  params: SceneSetComponentStaticMeshParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const SceneAddActorTagActionSchema = z.object({
   command: z.literal("scene.addActorTag"),
   params: SceneAddActorTagParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneSetActorFolderActionSchema = z.object({
+  command: z.literal("scene.setActorFolder"),
+  params: SceneSetActorFolderParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneAddActorLabelPrefixActionSchema = z.object({
+  command: z.literal("scene.addActorLabelPrefix"),
+  params: SceneAddActorLabelPrefixParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneDuplicateActorsActionSchema = z.object({
+  command: z.literal("scene.duplicateActors"),
+  params: SceneDuplicateActorsParamsSchema,
   risk: z.enum(["low", "medium", "high"])
 });
 
@@ -120,7 +212,12 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneCreateActorActionSchema,
   SceneDeleteActorActionSchema,
   SceneModifyComponentActionSchema,
-  SceneAddActorTagActionSchema
+  SceneSetComponentMaterialActionSchema,
+  SceneSetComponentStaticMeshActionSchema,
+  SceneAddActorTagActionSchema,
+  SceneSetActorFolderActionSchema,
+  SceneAddActorLabelPrefixActionSchema,
+  SceneDuplicateActorsActionSchema
 ]);
 
 export const PlanOutputSchema = z.object({

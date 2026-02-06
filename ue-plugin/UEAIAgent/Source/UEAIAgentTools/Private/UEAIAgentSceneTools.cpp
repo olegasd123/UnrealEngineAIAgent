@@ -8,6 +8,9 @@
 #include "ScopedTransaction.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Engine/StaticMesh.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -154,13 +157,20 @@ bool FUEAIAgentSceneTools::SceneModifyActor(const FUEAIAgentModifyActorParams& P
         Actor->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
         const FRotator NewRotation = Actor->GetActorRotation() + Params.DeltaRotation;
         Actor->SetActorRotation(NewRotation, ETeleportType::None);
-        const FVector NewScale = Actor->GetActorScale3D() + Params.DeltaScale;
-        Actor->SetActorScale3D(NewScale);
+        if (Params.bHasScale)
+        {
+            Actor->SetActorScale3D(Params.Scale);
+        }
+        else
+        {
+            const FVector NewScale = Actor->GetActorScale3D() + Params.DeltaScale;
+            Actor->SetActorScale3D(NewScale);
+        }
         ++UpdatedCount;
     }
 
     OutMessage = FString::Printf(
-        TEXT("scene.modifyActor applied to %d actor(s). DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f"),
+        TEXT("scene.modifyActor applied to %d actor(s). DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, Scale: X=%.2f Y=%.2f Z=%.2f"),
         UpdatedCount,
         Params.DeltaLocation.X,
         Params.DeltaLocation.Y,
@@ -170,7 +180,10 @@ bool FUEAIAgentSceneTools::SceneModifyActor(const FUEAIAgentModifyActorParams& P
         Params.DeltaRotation.Roll,
         Params.DeltaScale.X,
         Params.DeltaScale.Y,
-        Params.DeltaScale.Z);
+        Params.DeltaScale.Z,
+        Params.Scale.X,
+        Params.Scale.Y,
+        Params.Scale.Z);
 
     return UpdatedCount > 0;
 }
@@ -369,7 +382,12 @@ bool FUEAIAgentSceneTools::SceneModifyComponent(const FUEAIAgentModifyComponentP
                     SceneComponent->SetRelativeRotation(SceneComponent->GetRelativeRotation() + Params.DeltaRotation);
                     bComponentEdited = true;
                 }
-                if (!Params.DeltaScale.IsNearlyZero())
+                if (Params.bHasScale)
+                {
+                    SceneComponent->SetRelativeScale3D(Params.Scale);
+                    bComponentEdited = true;
+                }
+                else if (!Params.DeltaScale.IsNearlyZero())
                 {
                     SceneComponent->SetRelativeScale3D(SceneComponent->GetRelativeScale3D() + Params.DeltaScale);
                     bComponentEdited = true;
@@ -400,7 +418,7 @@ bool FUEAIAgentSceneTools::SceneModifyComponent(const FUEAIAgentModifyComponentP
     }
 
     OutMessage = FString::Printf(
-        TEXT("scene.modifyComponent updated %d component(s) on %d actor(s). Component: %s, DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, VisibilityEdit: %s"),
+        TEXT("scene.modifyComponent updated %d component(s) on %d actor(s). Component: %s, DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, Scale: X=%.2f Y=%.2f Z=%.2f, VisibilityEdit: %s"),
         UpdatedComponents,
         UpdatedActors,
         *Params.ComponentName,
@@ -413,6 +431,9 @@ bool FUEAIAgentSceneTools::SceneModifyComponent(const FUEAIAgentModifyComponentP
         Params.DeltaScale.X,
         Params.DeltaScale.Y,
         Params.DeltaScale.Z,
+        Params.Scale.X,
+        Params.Scale.Y,
+        Params.Scale.Z,
         Params.bSetVisibility ? (Params.bVisible ? TEXT("show") : TEXT("hide")) : TEXT("none"));
 
     return UpdatedComponents > 0;
@@ -477,6 +498,373 @@ bool FUEAIAgentSceneTools::SceneAddActorTag(const FUEAIAgentAddActorTagParams& P
 
     OutMessage = FString::Printf(TEXT("scene.addActorTag added tag '%s' to %d actor(s)."), *Params.Tag, UpdatedCount);
     return UpdatedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetComponentMaterial(const FUEAIAgentSetComponentMaterialParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    if (Params.ComponentName.IsEmpty() || Params.MaterialPath.IsEmpty())
+    {
+        OutMessage = TEXT("Component name and material path are required.");
+        return false;
+    }
+
+    UMaterialInterface* Material = nullptr;
+    if (Params.MaterialPath.StartsWith(TEXT("/")))
+    {
+        Material = LoadObject<UMaterialInterface>(nullptr, *Params.MaterialPath);
+    }
+    if (!Material)
+    {
+        Material = FindObject<UMaterialInterface>(ANY_PACKAGE, *Params.MaterialPath);
+    }
+    if (!Material)
+    {
+        OutMessage = TEXT("Material asset could not be loaded.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneSetComponentMaterialTransaction", "UE AI Agent Set Component Material"));
+    int32 UpdatedComponents = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        TArray<UActorComponent*> Components;
+        Actor->GetComponents(Components);
+        for (UActorComponent* Component : Components)
+        {
+            if (!Component)
+            {
+                continue;
+            }
+
+            const FString ComponentName = Component->GetName();
+            if (!ComponentName.Equals(Params.ComponentName, ESearchCase::IgnoreCase))
+            {
+                continue;
+            }
+
+            if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(Component))
+            {
+                PrimitiveComponent->Modify();
+                PrimitiveComponent->SetMaterial(Params.MaterialSlot, Material);
+                UpdatedComponents += 1;
+            }
+        }
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("scene.setComponentMaterial updated %d component(s). Component: %s, Material: %s, Slot: %d"),
+        UpdatedComponents,
+        *Params.ComponentName,
+        *Params.MaterialPath,
+        Params.MaterialSlot);
+    return UpdatedComponents > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetComponentStaticMesh(const FUEAIAgentSetComponentStaticMeshParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    if (Params.ComponentName.IsEmpty() || Params.MeshPath.IsEmpty())
+    {
+        OutMessage = TEXT("Component name and mesh path are required.");
+        return false;
+    }
+
+    UStaticMesh* Mesh = nullptr;
+    if (Params.MeshPath.StartsWith(TEXT("/")))
+    {
+        Mesh = LoadObject<UStaticMesh>(nullptr, *Params.MeshPath);
+    }
+    if (!Mesh)
+    {
+        Mesh = FindObject<UStaticMesh>(ANY_PACKAGE, *Params.MeshPath);
+    }
+    if (!Mesh)
+    {
+        OutMessage = TEXT("Static mesh asset could not be loaded.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneSetComponentStaticMeshTransaction", "UE AI Agent Set Component Mesh"));
+    int32 UpdatedComponents = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        TArray<UActorComponent*> Components;
+        Actor->GetComponents(Components);
+        for (UActorComponent* Component : Components)
+        {
+            if (!Component)
+            {
+                continue;
+            }
+
+            const FString ComponentName = Component->GetName();
+            if (!ComponentName.Equals(Params.ComponentName, ESearchCase::IgnoreCase))
+            {
+                continue;
+            }
+
+            if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Component))
+            {
+                StaticMeshComponent->Modify();
+                StaticMeshComponent->SetStaticMesh(Mesh);
+                UpdatedComponents += 1;
+            }
+        }
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("scene.setComponentStaticMesh updated %d component(s). Component: %s, Mesh: %s"),
+        UpdatedComponents,
+        *Params.ComponentName,
+        *Params.MeshPath);
+    return UpdatedComponents > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetActorFolder(const FUEAIAgentSetActorFolderParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneSetActorFolderTransaction", "UE AI Agent Set Actor Folder"));
+    int32 UpdatedCount = 0;
+    const FName FolderName = Params.FolderPath.IsEmpty() ? NAME_None : FName(*Params.FolderPath);
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        Actor->Modify();
+        Actor->SetFolderPath(FolderName);
+        UpdatedCount += 1;
+    }
+
+    OutMessage = FString::Printf(TEXT("scene.setActorFolder updated %d actor(s) to folder '%s'."), UpdatedCount, *Params.FolderPath);
+    return UpdatedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneAddActorLabelPrefix(const FUEAIAgentAddActorLabelPrefixParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    if (Params.Prefix.IsEmpty())
+    {
+        OutMessage = TEXT("Prefix is required.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneAddActorLabelPrefixTransaction", "UE AI Agent Add Actor Label Prefix"));
+    int32 UpdatedCount = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        const FString CurrentLabel = Actor->GetActorLabel();
+        if (CurrentLabel.StartsWith(Params.Prefix))
+        {
+            continue;
+        }
+
+        Actor->Modify();
+        Actor->SetActorLabel(Params.Prefix + CurrentLabel, true);
+        UpdatedCount += 1;
+    }
+
+    OutMessage = FString::Printf(TEXT("scene.addActorLabelPrefix added prefix '%s' to %d actor(s)."), *Params.Prefix, UpdatedCount);
+    return UpdatedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    const int32 CopyCount = FMath::Clamp(Params.Count, 1, 20);
+    if (CopyCount <= 0)
+    {
+        OutMessage = TEXT("Duplicate count must be at least 1.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneDuplicateActorsTransaction", "UE AI Agent Duplicate Actors"));
+    int32 DuplicateCount = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        for (int32 CopyIndex = 0; CopyIndex < CopyCount; ++CopyIndex)
+        {
+            AActor* Duplicate = GEditor->DuplicateActor(Actor, World);
+            if (!Duplicate)
+            {
+                continue;
+            }
+
+            if (!Params.Offset.IsNearlyZero())
+            {
+                const FVector NewLocation = Duplicate->GetActorLocation() + Params.Offset * static_cast<float>(CopyIndex + 1);
+                Duplicate->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
+            }
+
+            DuplicateCount += 1;
+        }
+    }
+
+    OutMessage = FString::Printf(TEXT("scene.duplicateActors created %d duplicate(s)."), DuplicateCount);
+    return DuplicateCount > 0;
 }
 
 #undef LOCTEXT_NAMESPACE

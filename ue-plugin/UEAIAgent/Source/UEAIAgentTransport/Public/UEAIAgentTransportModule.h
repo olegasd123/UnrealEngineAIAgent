@@ -15,7 +15,12 @@ enum class EUEAIAgentPlannedActionType : uint8
     CreateActor,
     DeleteActor,
     ModifyComponent,
-    AddActorTag
+    AddActorTag,
+    SetComponentMaterial,
+    SetComponentStaticMesh,
+    SetActorFolder,
+    AddActorLabelPrefix,
+    DuplicateActors
 };
 
 enum class EUEAIAgentRiskLevel : uint8
@@ -43,12 +48,16 @@ struct FUEAIAgentPlannedSceneAction
     FVector DeltaLocation = FVector::ZeroVector;
     FRotator DeltaRotation = FRotator::ZeroRotator;
     FVector DeltaScale = FVector::ZeroVector;
+    FVector Scale = FVector::OneVector;
+    bool bHasScale = false;
 
     // scene.modifyComponent
     FString ComponentName;
     FVector ComponentDeltaLocation = FVector::ZeroVector;
     FRotator ComponentDeltaRotation = FRotator::ZeroRotator;
     FVector ComponentDeltaScale = FVector::ZeroVector;
+    FVector ComponentScale = FVector::OneVector;
+    bool bComponentHasScale = false;
     bool bComponentVisibilityEdit = false;
     bool bComponentVisible = true;
 
@@ -60,6 +69,23 @@ struct FUEAIAgentPlannedSceneAction
 
     // scene.addActorTag
     FString ActorTag;
+
+    // scene.setComponentMaterial
+    FString MaterialPath;
+    int32 MaterialSlot = 0;
+
+    // scene.setComponentStaticMesh
+    FString MeshPath;
+
+    // scene.setActorFolder
+    FString FolderPath;
+
+    // scene.addActorLabelPrefix
+    FString LabelPrefix;
+
+    // scene.duplicateActors
+    int32 DuplicateCount = 1;
+    FVector DuplicateOffset = FVector::ZeroVector;
 
     EUEAIAgentRiskLevel Risk = EUEAIAgentRiskLevel::Low;
     EUEAIAgentActionState State = EUEAIAgentActionState::Pending;

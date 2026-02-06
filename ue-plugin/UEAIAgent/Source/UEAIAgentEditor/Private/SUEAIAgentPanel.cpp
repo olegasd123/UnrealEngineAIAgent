@@ -702,6 +702,8 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         Params.DeltaLocation = PlannedAction.ComponentDeltaLocation;
         Params.DeltaRotation = PlannedAction.ComponentDeltaRotation;
         Params.DeltaScale = PlannedAction.ComponentDeltaScale;
+        Params.Scale = PlannedAction.ComponentScale;
+        Params.bHasScale = PlannedAction.bComponentHasScale;
         Params.bSetVisibility = PlannedAction.bComponentVisibilityEdit;
         Params.bVisible = PlannedAction.bComponentVisible;
         Params.bUseSelectionIfActorNamesEmpty = false;
@@ -727,11 +729,87 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         return FUEAIAgentSceneTools::SceneAddActorTag(Params, OutMessage);
     }
 
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetComponentMaterial)
+    {
+        FUEAIAgentSetComponentMaterialParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.ComponentName = PlannedAction.ComponentName;
+        Params.MaterialPath = PlannedAction.MaterialPath;
+        Params.MaterialSlot = PlannedAction.MaterialSlot;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped material action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetComponentMaterial(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetComponentStaticMesh)
+    {
+        FUEAIAgentSetComponentStaticMeshParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.ComponentName = PlannedAction.ComponentName;
+        Params.MeshPath = PlannedAction.MeshPath;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped mesh action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetComponentStaticMesh(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetActorFolder)
+    {
+        FUEAIAgentSetActorFolderParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.FolderPath = PlannedAction.FolderPath;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped folder action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetActorFolder(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::AddActorLabelPrefix)
+    {
+        FUEAIAgentAddActorLabelPrefixParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Prefix = PlannedAction.LabelPrefix;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped label prefix action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneAddActorLabelPrefix(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::DuplicateActors)
+    {
+        FUEAIAgentDuplicateActorsParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Count = PlannedAction.DuplicateCount;
+        Params.Offset = PlannedAction.DuplicateOffset;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped duplicate action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneDuplicateActors(Params, OutMessage);
+    }
+
     FUEAIAgentModifyActorParams Params;
     Params.ActorNames = PlannedAction.ActorNames;
     Params.DeltaLocation = PlannedAction.DeltaLocation;
     Params.DeltaRotation = PlannedAction.DeltaRotation;
     Params.DeltaScale = PlannedAction.DeltaScale;
+    Params.Scale = PlannedAction.Scale;
+    Params.bHasScale = PlannedAction.bHasScale;
     Params.bUseSelectionIfActorNamesEmpty = false;
     if (Params.ActorNames.IsEmpty())
     {
