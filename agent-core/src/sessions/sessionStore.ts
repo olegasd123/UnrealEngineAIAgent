@@ -35,6 +35,9 @@ export interface SessionDecision {
   steps: string[];
   nextActionIndex?: number;
   nextAction?: PlanAction;
+  nextActionState?: ActionState;
+  nextActionAttempts?: number;
+  nextActionApproved?: boolean;
   message: string;
 }
 
@@ -125,6 +128,9 @@ export class SessionStore {
   }
 
   private makeDecision(session: SessionData): SessionDecision {
+    const completedCount = session.actions.filter((action) => action.state === "succeeded").length;
+    const totalCount = session.actions.length;
+
     const failedActionIndex = session.actions.findIndex((action) => action.state === "failed");
     if (failedActionIndex >= 0) {
       const failed = session.actions[failedActionIndex];
@@ -135,9 +141,16 @@ export class SessionStore {
         steps: session.plan.steps,
         nextActionIndex: failedActionIndex,
         nextAction: failed.action,
-        message:
-          failed.lastMessage ??
-          `Action ${failedActionIndex + 1} failed after ${failed.attempts} attempts.`
+        nextActionState: failed.state,
+        nextActionAttempts: failed.attempts,
+        nextActionApproved: failed.approved,
+        message: [
+          `Action ${failedActionIndex + 1} failed after ${failed.attempts} attempt(s).`,
+          failed.lastMessage ? `Last error: ${failed.lastMessage}` : null,
+          `Progress: ${completedCount}/${totalCount} actions completed.`
+        ]
+          .filter(Boolean)
+          .join(" ")
       };
     }
 
@@ -148,7 +161,7 @@ export class SessionStore {
         status: "completed",
         summary: session.plan.summary,
         steps: session.plan.steps,
-        message: "All actions are completed."
+        message: `All actions are completed (${completedCount}/${totalCount}).`
       };
     }
 
@@ -161,7 +174,16 @@ export class SessionStore {
         steps: session.plan.steps,
         nextActionIndex: pendingActionIndex,
         nextAction: pending.action,
-        message: `Action ${pendingActionIndex + 1} is waiting for approval.`
+        nextActionState: pending.state,
+        nextActionAttempts: pending.attempts,
+        nextActionApproved: pending.approved,
+        message: [
+          `Action ${pendingActionIndex + 1} is waiting for approval (risk=${pending.action.risk}).`,
+          pending.lastMessage ? `Last result: ${pending.lastMessage}` : null,
+          `Progress: ${completedCount}/${totalCount} actions completed.`
+        ]
+          .filter(Boolean)
+          .join(" ")
       };
     }
 
@@ -172,7 +194,16 @@ export class SessionStore {
       steps: session.plan.steps,
       nextActionIndex: pendingActionIndex,
       nextAction: pending.action,
-      message: `Action ${pendingActionIndex + 1} is ready to execute.`
+      nextActionState: pending.state,
+      nextActionAttempts: pending.attempts,
+      nextActionApproved: pending.approved,
+      message: [
+        `Action ${pendingActionIndex + 1} is ready to execute (attempt ${pending.attempts + 1}/${session.maxRetries + 1}).`,
+        pending.lastMessage ? `Last result: ${pending.lastMessage}` : null,
+        `Progress: ${completedCount}/${totalCount} actions completed.`
+      ]
+        .filter(Boolean)
+        .join(" ")
     };
   }
 }

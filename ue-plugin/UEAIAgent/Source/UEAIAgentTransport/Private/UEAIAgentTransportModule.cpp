@@ -1678,7 +1678,32 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
             FUEAIAgentPlannedSceneAction ParsedAction;
             if (ParsePlannedActionFromJson(*NextActionObj, SelectedActors, ParsedAction))
             {
-                ParsedAction.bApproved = !Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
+                bool bApproved = !Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
+                (*DecisionObj)->TryGetBoolField(TEXT("nextActionApproved"), bApproved);
+                ParsedAction.bApproved = bApproved;
+
+                FString ActionStateText;
+                if ((*DecisionObj)->TryGetStringField(TEXT("nextActionState"), ActionStateText))
+                {
+                    if (ActionStateText.Equals(TEXT("succeeded"), ESearchCase::IgnoreCase))
+                    {
+                        ParsedAction.State = EUEAIAgentActionState::Succeeded;
+                    }
+                    else if (ActionStateText.Equals(TEXT("failed"), ESearchCase::IgnoreCase))
+                    {
+                        ParsedAction.State = EUEAIAgentActionState::Failed;
+                    }
+                    else
+                    {
+                        ParsedAction.State = EUEAIAgentActionState::Pending;
+                    }
+                }
+
+                double Attempts = 0.0;
+                if ((*DecisionObj)->TryGetNumberField(TEXT("nextActionAttempts"), Attempts))
+                {
+                    ParsedAction.AttemptCount = FMath::Max(0, FMath::RoundToInt(static_cast<float>(Attempts)));
+                }
                 PlannedActions.Add(ParsedAction);
             }
         }
@@ -1768,6 +1793,9 @@ void FUEAIAgentTransportModule::NextSession(
             Callback.ExecuteIfBound(false, TEXT("No active session action index."));
             return;
         }
+
+        const int32 CurrentAttempts = GetPlannedActionAttemptCount(ActiveSessionActionIndex);
+        UpdateActionResult(ActiveSessionActionIndex, bResultOk, CurrentAttempts + 1);
 
         TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
         Result->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
@@ -2305,6 +2333,16 @@ bool FUEAIAgentTransportModule::IsPlannedActionApproved(int32 ActionIndex) const
     }
 
     return PlannedActions[ActionIndex].bApproved;
+}
+
+int32 FUEAIAgentTransportModule::GetPlannedActionAttemptCount(int32 ActionIndex) const
+{
+    if (!PlannedActions.IsValidIndex(ActionIndex))
+    {
+        return 0;
+    }
+
+    return PlannedActions[ActionIndex].AttemptCount;
 }
 
 void FUEAIAgentTransportModule::SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const
