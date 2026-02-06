@@ -50,6 +50,7 @@ private:
     FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnResumeAgentLoopClicked();
+    FReply OnRejectCurrentActionClicked();
     FReply OnApplyPlannedActionClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
     void HandleCredentialOperationResult(bool bOk, const FString& Message);

@@ -89,6 +89,10 @@ export class SessionStore {
       throw new Error(`Action ${actionIndex} is already ${action.state}.`);
     }
     action.approved = approved;
+    if (!approved) {
+      action.state = "failed";
+      action.lastMessage = "Rejected by user.";
+    }
     return this.makeDecision(session);
   }
 

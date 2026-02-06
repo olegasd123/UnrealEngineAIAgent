@@ -6,6 +6,7 @@
 #include "UEAIAgentSceneTools.h"
 #include "UEAIAgentSettings.h"
 #include "UEAIAgentTransportModule.h"
+#include "Misc/MessageDialog.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
@@ -158,6 +159,27 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         SNew(SButton)
                         .Text(FText::FromString(TEXT("Resume")))
                         .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(220.0f)
+                    .Visibility_Lambda([this]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                            ? EVisibility::Visible
+                            : EVisibility::Collapsed;
+                    })
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Reject")))
+                        .OnClicked(this, &SUEAIAgentPanel::OnRejectCurrentActionClicked)
                     ]
                 ]
                 + SHorizontalBox::Slot()
@@ -530,6 +552,36 @@ FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
             FUEAIAgentTransportModule::Get().ResumeSession(
                 FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
         }));
+
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
+{
+    if (!PlanText.IsValid())
+    {
+        return FReply::Handled();
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!Transport.HasActiveSession())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run first.")));
+        return FReply::Handled();
+    }
+
+    const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
+        EAppMsgType::YesNo,
+        FText::FromString(TEXT("Reject the current action? This will mark the session as failed.")));
+    if (ConfirmResult != EAppReturnType::Yes)
+    {
+        return FReply::Handled();
+    }
+
+    PlanText->SetText(FText::FromString(TEXT("Agent: rejecting action...")));
+    Transport.ApproveCurrentSessionAction(
+        false,
+        FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
 
     return FReply::Handled();
 }
