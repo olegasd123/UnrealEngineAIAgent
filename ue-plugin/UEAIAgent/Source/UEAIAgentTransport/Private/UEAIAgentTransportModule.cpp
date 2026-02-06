@@ -2,7 +2,12 @@
 
 #include "UEAIAgentSettings.h"
 #include "Async/Async.h"
+#include "Components/ActorComponent.h"
 #include "Dom/JsonObject.h"
+#include "Editor.h"
+#include "Engine/Level.h"
+#include "EngineUtils.h"
+#include "Engine/World.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -677,6 +682,106 @@ namespace
 
         return false;
     }
+
+    TSharedRef<FJsonObject> BuildContextObject(const TArray<FString>& SelectedActors)
+    {
+        TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+
+        TArray<TSharedPtr<FJsonValue>> SelectionNames;
+        for (const FString& ActorName : SelectedActors)
+        {
+            SelectionNames.Add(MakeShared<FJsonValueString>(ActorName));
+        }
+        Context->SetArrayField(TEXT("selectionNames"), SelectionNames);
+
+        TArray<TSharedPtr<FJsonValue>> SelectionDetails;
+        if (GEditor)
+        {
+            UWorld* World = GEditor->GetEditorWorldContext().World();
+            if (World)
+            {
+                for (TActorIterator<AActor> It(World); It; ++It)
+                {
+                    AActor* Actor = *It;
+                    if (!Actor)
+                    {
+                        continue;
+                    }
+
+                    const FString ActorName = Actor->GetName();
+                    if (!SelectedActors.Contains(ActorName))
+                    {
+                        continue;
+                    }
+
+                    TSharedRef<FJsonObject> ActorObj = MakeShared<FJsonObject>();
+                    ActorObj->SetStringField(TEXT("name"), ActorName);
+                    ActorObj->SetStringField(TEXT("label"), Actor->GetActorLabel());
+                    ActorObj->SetStringField(TEXT("class"), Actor->GetClass() ? Actor->GetClass()->GetName() : TEXT("Unknown"));
+
+                    const FVector Location = Actor->GetActorLocation();
+                    const FRotator Rotation = Actor->GetActorRotation();
+                    const FVector Scale = Actor->GetActorScale3D();
+
+                    TSharedRef<FJsonObject> Transform = MakeShared<FJsonObject>();
+                    Transform->SetNumberField(TEXT("x"), Location.X);
+                    Transform->SetNumberField(TEXT("y"), Location.Y);
+                    Transform->SetNumberField(TEXT("z"), Location.Z);
+                    ActorObj->SetObjectField(TEXT("location"), Transform);
+
+                    TSharedRef<FJsonObject> RotObj = MakeShared<FJsonObject>();
+                    RotObj->SetNumberField(TEXT("pitch"), Rotation.Pitch);
+                    RotObj->SetNumberField(TEXT("yaw"), Rotation.Yaw);
+                    RotObj->SetNumberField(TEXT("roll"), Rotation.Roll);
+                    ActorObj->SetObjectField(TEXT("rotation"), RotObj);
+
+                    TSharedRef<FJsonObject> ScaleObj = MakeShared<FJsonObject>();
+                    ScaleObj->SetNumberField(TEXT("x"), Scale.X);
+                    ScaleObj->SetNumberField(TEXT("y"), Scale.Y);
+                    ScaleObj->SetNumberField(TEXT("z"), Scale.Z);
+                    ActorObj->SetObjectField(TEXT("scale"), ScaleObj);
+
+                    TArray<TSharedPtr<FJsonValue>> ComponentsArray;
+                    TArray<UActorComponent*> Components;
+                    Actor->GetComponents(Components);
+                    for (UActorComponent* Component : Components)
+                    {
+                        if (!Component)
+                        {
+                            continue;
+                        }
+
+                        TSharedRef<FJsonObject> CompObj = MakeShared<FJsonObject>();
+                        CompObj->SetStringField(TEXT("name"), Component->GetName());
+                        CompObj->SetStringField(TEXT("class"), Component->GetClass() ? Component->GetClass()->GetName() : TEXT("Unknown"));
+                        ComponentsArray.Add(MakeShared<FJsonValueObject>(CompObj));
+                    }
+                    ActorObj->SetArrayField(TEXT("components"), ComponentsArray);
+
+                    SelectionDetails.Add(MakeShared<FJsonValueObject>(ActorObj));
+                }
+            }
+        }
+
+        Context->SetArrayField(TEXT("selection"), SelectionDetails);
+
+        if (GEditor)
+        {
+            UWorld* World = GEditor->GetEditorWorldContext().World();
+            if (World)
+            {
+                TSharedRef<FJsonObject> LevelObj = MakeShared<FJsonObject>();
+                LevelObj->SetStringField(TEXT("mapName"), World->GetMapName());
+                if (World->GetCurrentLevel())
+                {
+                    LevelObj->SetStringField(TEXT("levelName"), World->GetCurrentLevel()->GetOuter()->GetName());
+                }
+                Context->SetObjectField(TEXT("level"), LevelObj);
+            }
+        }
+
+        return Context;
+    }
 }
 
 void FUEAIAgentTransportModule::StartupModule()
@@ -818,15 +923,7 @@ void FUEAIAgentTransportModule::PlanTask(
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("chat") : Mode);
-
-    TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
-    TArray<TSharedPtr<FJsonValue>> SelectionValues;
-    for (const FString& ActorName : SelectedActors)
-    {
-        SelectionValues.Add(MakeShared<FJsonValueString>(ActorName));
-    }
-    Context->SetArrayField(TEXT("selection"), SelectionValues);
-    Root->SetObjectField(TEXT("context"), Context);
+    Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
@@ -1610,15 +1707,7 @@ void FUEAIAgentTransportModule::StartSession(
     Root->SetStringField(TEXT("prompt"), Prompt);
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("agent") : Mode);
     Root->SetNumberField(TEXT("maxRetries"), 2);
-
-    TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
-    TArray<TSharedPtr<FJsonValue>> SelectionValues;
-    for (const FString& ActorName : SelectedActors)
-    {
-        SelectionValues.Add(MakeShared<FJsonValueString>(ActorName));
-    }
-    Context->SetArrayField(TEXT("selection"), SelectionValues);
-    Root->SetObjectField(TEXT("context"), Context);
+    Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
