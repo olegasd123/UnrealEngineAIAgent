@@ -845,6 +845,18 @@ bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsP
             continue;
         }
 
+        const FString BaseLabel = Actor->GetActorLabel();
+        FString LabelBase = BaseLabel;
+        int32 SuffixIndex = LabelBase.Len() - 1;
+        while (SuffixIndex >= 0 && FChar::IsDigit(LabelBase[SuffixIndex]))
+        {
+            --SuffixIndex;
+        }
+        if (SuffixIndex >= 0 && LabelBase.IsValidIndex(SuffixIndex) && LabelBase[SuffixIndex] == TEXT('_'))
+        {
+            LabelBase = LabelBase.Left(SuffixIndex);
+        }
+
         for (int32 CopyIndex = 0; CopyIndex < CopyCount; ++CopyIndex)
         {
             AActor* Duplicate = GEditor->DuplicateActor(Actor, World);
@@ -852,6 +864,9 @@ bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsP
             {
                 continue;
             }
+
+            const FString NewLabel = FString::Printf(TEXT("%s_%02d"), *LabelBase, CopyIndex + 1);
+            Duplicate->SetActorLabel(NewLabel, true);
 
             if (!Params.Offset.IsNearlyZero())
             {

@@ -436,13 +436,39 @@ function parseComponentNameFromPrompt(prompt: string): string | null {
     return plain[1];
   }
 
+  const lower = prompt.toLowerCase();
+  if (/(static\s*mesh\s*component|mesh\s*component)/.test(lower)) {
+    return "StaticMeshComponent0";
+  }
+  if (/(root\s*component)/.test(lower)) {
+    return "RootComponent";
+  }
+  if (/(camera\s*component)/.test(lower)) {
+    return "CameraComponent";
+  }
+  if (/(light\s*component)/.test(lower)) {
+    return "LightComponent";
+  }
+
   return null;
 }
 
 function parseAssetPathFromPrompt(prompt: string): string | null {
-  const pathMatch = /\/Game\/[0-9A-Za-z_\/\.\-]+/i.exec(prompt);
+  const objectPath =
+    /(?:Material|StaticMesh)?\'(\/(?:Game|Engine)\/[0-9A-Za-z_\/\.\-]+)\'/i.exec(prompt) ??
+    /(\/(?:Game|Engine)\/[0-9A-Za-z_\/\.\-]+)/i.exec(prompt);
+  if (objectPath) {
+    return objectPath[1] ?? objectPath[0];
+  }
+
+  const quotedFull = /\"(\/(?:Game|Engine)\/[0-9A-Za-z_\/\.\-]+)\"/i.exec(prompt);
+  if (quotedFull && quotedFull[1]) {
+    return quotedFull[1];
+  }
+
+  const pathMatch = /(?:^|\s)([0-9A-Za-z_]+\/[0-9A-Za-z_\/\.\-]+)/.exec(prompt);
   if (pathMatch) {
-    return pathMatch[0];
+    return pathMatch[1];
   }
 
   const quoted = /\"([0-9A-Za-z_\/\.\-]+)\"/.exec(prompt);
