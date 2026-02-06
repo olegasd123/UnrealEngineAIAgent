@@ -20,15 +20,22 @@ const DeltaRotationSchema = z.object({
   roll: z.number()
 });
 
+const DeltaScaleSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  z: z.number()
+});
+
 const SceneModifyActorParamsSchema = z
   .object({
     target: z.enum(["selection", "byName"]),
     actorNames: z.array(z.string().min(1)).optional(),
     deltaLocation: DeltaLocationSchema.optional(),
-    deltaRotation: DeltaRotationSchema.optional()
+    deltaRotation: DeltaRotationSchema.optional(),
+    deltaScale: DeltaScaleSchema.optional()
   })
-  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation), {
-    message: "scene.modifyActor action needs deltaLocation or deltaRotation"
+  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale), {
+    message: "scene.modifyActor action needs deltaLocation, deltaRotation, or deltaScale"
   })
   .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
     message: "scene.modifyActor target=byName needs actorNames"
@@ -56,6 +63,33 @@ const SceneDeleteActorParamsSchema = z
     message: "scene.deleteActor target=byName needs actorNames"
   });
 
+const SceneModifyComponentParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    componentName: z.string().min(1),
+    deltaLocation: DeltaLocationSchema.optional(),
+    deltaRotation: DeltaRotationSchema.optional(),
+    deltaScale: DeltaScaleSchema.optional(),
+    visibility: z.boolean().optional()
+  })
+  .refine((value) => Boolean(value.deltaLocation || value.deltaRotation || value.deltaScale || value.visibility !== undefined), {
+    message: "scene.modifyComponent action needs a delta transform or visibility"
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.modifyComponent target=byName needs actorNames"
+  });
+
+const SceneAddActorTagParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    tag: z.string().min(1)
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.addActorTag target=byName needs actorNames"
+  });
+
 export const SceneModifyActorActionSchema = PlanActionSchema;
 export const SceneCreateActorActionSchema = z.object({
   command: z.literal("scene.createActor"),
@@ -69,10 +103,24 @@ export const SceneDeleteActorActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const SceneModifyComponentActionSchema = z.object({
+  command: z.literal("scene.modifyComponent"),
+  params: SceneModifyComponentParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneAddActorTagActionSchema = z.object({
+  command: z.literal("scene.addActorTag"),
+  params: SceneAddActorTagParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneModifyActorActionSchema,
   SceneCreateActorActionSchema,
-  SceneDeleteActorActionSchema
+  SceneDeleteActorActionSchema,
+  SceneModifyComponentActionSchema,
+  SceneAddActorTagActionSchema
 ]);
 
 export const PlanOutputSchema = z.object({

@@ -154,6 +154,48 @@ function parseRotateDeltaFromPrompt(prompt: string): { pitch: number; yaw: numbe
   return { pitch, yaw, roll };
 }
 
+function parseScaleDeltaFromPrompt(prompt: string): { x: number; y: number; z: number } | null {
+  const lower = prompt.toLowerCase();
+  if (!/(scale|resize|grow|shrink)/.test(lower)) {
+    return null;
+  }
+
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  let foundAny = false;
+
+  const patternAxisFirst = /\b(x|y|z)\s*(?:scale)?\s*(?:by|to)?\s*([+-]?\d+(?:\.\d+)?)/gi;
+  for (const match of lower.matchAll(patternAxisFirst)) {
+    const axis = match[1];
+    const value = Number(match[2]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    foundAny = true;
+    if (axis === "x") x += value;
+    if (axis === "y") y += value;
+    if (axis === "z") z += value;
+  }
+
+  const uniformPattern = /\bscale\s*(?:by|to)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(lower);
+  if (uniformPattern) {
+    const value = Number(uniformPattern[1]);
+    if (Number.isFinite(value)) {
+      x += value;
+      y += value;
+      z += value;
+      foundAny = true;
+    }
+  }
+
+  if (!foundAny) {
+    return null;
+  }
+
+  return { x, y, z };
+}
+
 function parseCreateLocationFromPrompt(prompt: string): { x: number; y: number; z: number } | undefined {
   const lower = prompt.toLowerCase();
   const hasLocationHint = /\b(at|to|location|position|pos)\b/.test(lower);
@@ -294,16 +336,73 @@ function parseActorNamesFromPrompt(prompt: string): string[] | null {
   return Array.from(names);
 }
 
+function parseComponentVisibilityFromPrompt(prompt: string): {
+  componentName: string;
+  visibility: boolean;
+} | null {
+  const lower = prompt.toLowerCase();
+  if (!/(component|comp)/.test(lower) || !/(hide|show|visible|visibility)/.test(lower)) {
+    return null;
+  }
+
+  const componentMatch =
+    /\bcomponent\s+([0-9a-z_]+)/i.exec(prompt) ??
+    /\bcomp\s+([0-9a-z_]+)/i.exec(prompt);
+  if (!componentMatch) {
+    return null;
+  }
+
+  const componentName = componentMatch[1];
+  if (!componentName) {
+    return null;
+  }
+
+  const visibility = /(show|visible|visibility on)/i.test(prompt);
+  const hidden = /(hide|hidden|visibility off)/i.test(prompt);
+  if (!visibility && !hidden) {
+    return null;
+  }
+
+  return {
+    componentName,
+    visibility: visibility && !hidden
+  };
+}
+
+function parseActorTagFromPrompt(prompt: string): string | null {
+  const lower = prompt.toLowerCase();
+  if (!/(tag|label)/.test(lower)) {
+    return null;
+  }
+
+  const tagMatch =
+    /\btag\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\btag\s+([0-9a-z_]+)/i.exec(prompt);
+  if (!tagMatch) {
+    return null;
+  }
+
+  const tag = tagMatch[1]?.trim();
+  if (!tag) {
+    return null;
+  }
+
+  return tag;
+}
+
 export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
   const selection = Array.isArray((input.context as { selection?: unknown }).selection)
     ? ((input.context as { selection: unknown[] }).selection as unknown[])
     : [];
   const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
   const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
+  const scaleDelta = parseScaleDeltaFromPrompt(input.prompt);
   const createActor = parseCreateActorFromPrompt(input.prompt);
   const actorNames = parseActorNamesFromPrompt(input.prompt);
   const deleteSelection = shouldDeleteSelection(input.prompt);
   const deleteByName = /(delete|remove|destroy|erase)/.test(input.prompt.toLowerCase()) && Boolean(actorNames?.length);
+  const componentVisibility = parseComponentVisibilityFromPrompt(input.prompt);
+  const tag = parseActorTagFromPrompt(input.prompt);
 
   const actions: PlanAction[] = [];
   if (createActor) {
@@ -314,18 +413,22 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
     });
   }
 
-  if (moveDelta || rotateDelta) {
+  if (moveDelta || rotateDelta || scaleDelta) {
     const params: {
       target: "selection" | "byName";
       actorNames?: string[];
       deltaLocation?: { x: number; y: number; z: number };
       deltaRotation?: { pitch: number; yaw: number; roll: number };
+      deltaScale?: { x: number; y: number; z: number };
     } = actorNames && actorNames.length > 0 ? { target: "byName", actorNames } : { target: "selection" };
     if (moveDelta) {
       params.deltaLocation = moveDelta;
     }
     if (rotateDelta) {
       params.deltaRotation = rotateDelta;
+    }
+    if (scaleDelta) {
+      params.deltaScale = scaleDelta;
     }
 
     actions.push({
@@ -348,6 +451,31 @@ export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
       command: "scene.deleteActor",
       params: { target: "selection" },
       risk: "high"
+    });
+  }
+
+  if (componentVisibility) {
+    actions.push({
+      command: "scene.modifyComponent",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        componentName: componentVisibility.componentName,
+        visibility: componentVisibility.visibility
+      },
+      risk: "low"
+    });
+  }
+
+  if (tag) {
+    actions.push({
+      command: "scene.addActorTag",
+      params: {
+        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
+        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        tag
+      },
+      risk: "low"
     });
   }
 

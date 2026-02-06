@@ -13,7 +13,9 @@ enum class EUEAIAgentPlannedActionType : uint8
 {
     ModifyActor,
     CreateActor,
-    DeleteActor
+    DeleteActor,
+    ModifyComponent,
+    AddActorTag
 };
 
 enum class EUEAIAgentRiskLevel : uint8
@@ -40,12 +42,24 @@ struct FUEAIAgentPlannedSceneAction
     // scene.modifyActor
     FVector DeltaLocation = FVector::ZeroVector;
     FRotator DeltaRotation = FRotator::ZeroRotator;
+    FVector DeltaScale = FVector::ZeroVector;
+
+    // scene.modifyComponent
+    FString ComponentName;
+    FVector ComponentDeltaLocation = FVector::ZeroVector;
+    FRotator ComponentDeltaRotation = FRotator::ZeroRotator;
+    FVector ComponentDeltaScale = FVector::ZeroVector;
+    bool bComponentVisibilityEdit = false;
+    bool bComponentVisible = true;
 
     // scene.createActor
     FString ActorClass = TEXT("Actor");
     FVector SpawnLocation = FVector::ZeroVector;
     FRotator SpawnRotation = FRotator::ZeroRotator;
     int32 SpawnCount = 1;
+
+    // scene.addActorTag
+    FString ActorTag;
 
     EUEAIAgentRiskLevel Risk = EUEAIAgentRiskLevel::Low;
     EUEAIAgentActionState State = EUEAIAgentActionState::Pending;

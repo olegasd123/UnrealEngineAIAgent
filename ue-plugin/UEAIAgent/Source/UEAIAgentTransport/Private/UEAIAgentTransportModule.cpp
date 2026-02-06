@@ -169,6 +169,22 @@ namespace
                 }
             }
 
+            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
+                DeltaScaleObj && DeltaScaleObj->IsValid())
+            {
+                double X = 0.0;
+                double Y = 0.0;
+                double Z = 0.0;
+                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
+                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
+                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
+                {
+                    ParsedAction.DeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                    bHasAnyDelta = true;
+                }
+            }
+
             if (!bHasAnyDelta)
             {
                 return false;
@@ -260,6 +276,146 @@ namespace
             {
                 return false;
             }
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.modifyComponent"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            FString ComponentName;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("componentName"), ComponentName) || ComponentName.IsEmpty())
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyComponent;
+            ParsedAction.ComponentName = ComponentName;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            bool bHasAnyDelta = false;
+            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
+                DeltaLocationObj && DeltaLocationObj->IsValid())
+            {
+                double X = 0.0;
+                double Y = 0.0;
+                double Z = 0.0;
+                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                {
+                    ParsedAction.ComponentDeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                    bHasAnyDelta = true;
+                }
+            }
+
+            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
+                DeltaRotationObj && DeltaRotationObj->IsValid())
+            {
+                double Pitch = 0.0;
+                double Yaw = 0.0;
+                double Roll = 0.0;
+                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                {
+                    ParsedAction.ComponentDeltaRotation = FRotator(
+                        static_cast<float>(Pitch),
+                        static_cast<float>(Yaw),
+                        static_cast<float>(Roll));
+                    bHasAnyDelta = true;
+                }
+            }
+
+            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
+                DeltaScaleObj && DeltaScaleObj->IsValid())
+            {
+                double X = 0.0;
+                double Y = 0.0;
+                double Z = 0.0;
+                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
+                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
+                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
+                {
+                    ParsedAction.ComponentDeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                    bHasAnyDelta = true;
+                }
+            }
+
+            bool bVisibility = false;
+            if ((*ParamsObj)->TryGetBoolField(TEXT("visibility"), bVisibility))
+            {
+                ParsedAction.bComponentVisibilityEdit = true;
+                ParsedAction.bComponentVisible = bVisibility;
+            }
+
+            if (!bHasAnyDelta && !ParsedAction.bComponentVisibilityEdit)
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.addActorTag"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            FString Tag;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("tag"), Tag) || Tag.IsEmpty())
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::AddActorTag;
+            ParsedAction.ActorTag = Tag;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
             OutAction = ParsedAction;
             return true;
         }
@@ -579,6 +735,22 @@ void FUEAIAgentTransportModule::PlanTask(
                                 }
                             }
 
+                            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
+                                DeltaScaleObj && DeltaScaleObj->IsValid())
+                            {
+                                double X = 0.0;
+                                double Y = 0.0;
+                                double Z = 0.0;
+                                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
+                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
+                                {
+                                    ParsedAction.DeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
                             if (bHasAnyDelta)
                             {
                                 PlannedActions.Add(ParsedAction);
@@ -671,6 +843,149 @@ void FUEAIAgentTransportModule::PlanTask(
                                 continue;
                             }
                             PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("scene.modifyComponent"))
+                        {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+                            {
+                                continue;
+                            }
+
+                            FString ComponentName;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("componentName"), ComponentName) || ComponentName.IsEmpty())
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyComponent;
+                            ParsedAction.ComponentName = ComponentName;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
+
+                            bool bHasAnyDelta = false;
+                            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
+                                DeltaLocationObj && DeltaLocationObj->IsValid())
+                            {
+                                double X = 0.0;
+                                double Y = 0.0;
+                                double Z = 0.0;
+                                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
+                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
+                                {
+                                    ParsedAction.ComponentDeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
+                            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
+                                DeltaRotationObj && DeltaRotationObj->IsValid())
+                            {
+                                double Pitch = 0.0;
+                                double Yaw = 0.0;
+                                double Roll = 0.0;
+                                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
+                                {
+                                    ParsedAction.ComponentDeltaRotation = FRotator(
+                                        static_cast<float>(Pitch),
+                                        static_cast<float>(Yaw),
+                                        static_cast<float>(Roll));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
+                            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
+                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
+                                DeltaScaleObj && DeltaScaleObj->IsValid())
+                            {
+                                double X = 0.0;
+                                double Y = 0.0;
+                                double Z = 0.0;
+                                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
+                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
+                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
+                                {
+                                    ParsedAction.ComponentDeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                                    bHasAnyDelta = true;
+                                }
+                            }
+
+                            bool bVisibility = false;
+                            if ((*ParamsObj)->TryGetBoolField(TEXT("visibility"), bVisibility))
+                            {
+                                ParsedAction.bComponentVisibilityEdit = true;
+                                ParsedAction.bComponentVisible = bVisibility;
+                            }
+
+                            if (!bHasAnyDelta && !ParsedAction.bComponentVisibilityEdit)
+                            {
+                                continue;
+                            }
+
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("scene.addActorTag"))
+                        {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+                            {
+                                continue;
+                            }
+
+                            FString Tag;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("tag"), Tag) || Tag.IsEmpty())
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::AddActorTag;
+                            ParsedAction.ActorTag = Tag;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
+
+                            PlannedActions.Add(ParsedAction);
+                            continue;
                         }
                     }
                 }
@@ -1243,11 +1558,50 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             *Suffix);
     }
 
+    if (Action.Type == EUEAIAgentPlannedActionType::ModifyComponent)
+    {
+        const FString TargetText = Action.ActorNames.Num() > 0
+            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
+            : TEXT("selection");
+        const FString VisibilityText = Action.bComponentVisibilityEdit
+            ? (Action.bComponentVisible ? TEXT("show") : TEXT("hide"))
+            : TEXT("none");
+        return FString::Printf(
+            TEXT("Action %d -> scene.modifyComponent on %s, Component: %s, DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, Visibility: %s%s"),
+            ActionIndex + 1,
+            *TargetText,
+            *Action.ComponentName,
+            Action.ComponentDeltaLocation.X,
+            Action.ComponentDeltaLocation.Y,
+            Action.ComponentDeltaLocation.Z,
+            Action.ComponentDeltaRotation.Pitch,
+            Action.ComponentDeltaRotation.Yaw,
+            Action.ComponentDeltaRotation.Roll,
+            Action.ComponentDeltaScale.X,
+            Action.ComponentDeltaScale.Y,
+            Action.ComponentDeltaScale.Z,
+            *VisibilityText,
+            *Suffix);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::AddActorTag)
+    {
+        const FString TargetText = Action.ActorNames.Num() > 0
+            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
+            : TEXT("selection");
+        return FString::Printf(
+            TEXT("Action %d -> scene.addActorTag on %s tag=%s%s"),
+            ActionIndex + 1,
+            *TargetText,
+            *Action.ActorTag,
+            *Suffix);
+    }
+
     const FString ModifyTargetText = Action.ActorNames.Num() > 0
         ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
         : TEXT("selection");
     return FString::Printf(
-        TEXT("Action %d -> scene.modifyActor on %s (%d actor(s)), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
+        TEXT("Action %d -> scene.modifyActor on %s (%d actor(s)), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f%s"),
         ActionIndex + 1,
         *ModifyTargetText,
         Action.ActorNames.Num(),
@@ -1257,6 +1611,9 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
         Action.DeltaRotation.Pitch,
         Action.DeltaRotation.Yaw,
         Action.DeltaRotation.Roll,
+        Action.DeltaScale.X,
+        Action.DeltaScale.Y,
+        Action.DeltaScale.Z,
         *Suffix);
 }
 

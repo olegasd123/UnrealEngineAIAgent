@@ -7,7 +7,7 @@ Local service that plans and executes UE editor actions.
 - health endpoint
 - task planning endpoint (`/v1/task/plan`)
 - agent session endpoints (`/v1/session/start|next|approve|resume`)
-- simple prompt parser for move/rotate actions (example: `move +250 on x and rotate yaw +45`)
+- simple prompt parser for move/rotate/scale + component visibility + tag actions (example: `move +250 on x and rotate yaw +45`)
 - provider adapter interface
 
 ## Run

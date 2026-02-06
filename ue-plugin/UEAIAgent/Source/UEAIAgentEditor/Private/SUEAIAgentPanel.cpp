@@ -694,10 +694,44 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         return FUEAIAgentSceneTools::SceneDeleteActor(Params, OutMessage);
     }
 
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::ModifyComponent)
+    {
+        FUEAIAgentModifyComponentParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.ComponentName = PlannedAction.ComponentName;
+        Params.DeltaLocation = PlannedAction.ComponentDeltaLocation;
+        Params.DeltaRotation = PlannedAction.ComponentDeltaRotation;
+        Params.DeltaScale = PlannedAction.ComponentDeltaScale;
+        Params.bSetVisibility = PlannedAction.bComponentVisibilityEdit;
+        Params.bVisible = PlannedAction.bComponentVisible;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped component action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneModifyComponent(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::AddActorTag)
+    {
+        FUEAIAgentAddActorTagParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Tag = PlannedAction.ActorTag;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped tag action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneAddActorTag(Params, OutMessage);
+    }
+
     FUEAIAgentModifyActorParams Params;
     Params.ActorNames = PlannedAction.ActorNames;
     Params.DeltaLocation = PlannedAction.DeltaLocation;
     Params.DeltaRotation = PlannedAction.DeltaRotation;
+    Params.DeltaScale = PlannedAction.DeltaScale;
     Params.bUseSelectionIfActorNamesEmpty = false;
     if (Params.ActorNames.IsEmpty())
     {

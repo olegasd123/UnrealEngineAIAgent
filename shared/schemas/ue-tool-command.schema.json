@@ -16,6 +16,8 @@
         "scene.createActor",
         "scene.modifyActor",
         "scene.deleteActor",
+        "scene.modifyComponent",
+        "scene.addActorTag",
         "landscape.sculpt",
         "landscape.paintLayer",
         "pcg.createGraph",
@@ -34,4 +36,3 @@
   },
   "additionalProperties": false
 }
-

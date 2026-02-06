@@ -6,6 +6,8 @@
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "ScopedTransaction.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -152,18 +154,23 @@ bool FUEAIAgentSceneTools::SceneModifyActor(const FUEAIAgentModifyActorParams& P
         Actor->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
         const FRotator NewRotation = Actor->GetActorRotation() + Params.DeltaRotation;
         Actor->SetActorRotation(NewRotation, ETeleportType::None);
+        const FVector NewScale = Actor->GetActorScale3D() + Params.DeltaScale;
+        Actor->SetActorScale3D(NewScale);
         ++UpdatedCount;
     }
 
     OutMessage = FString::Printf(
-        TEXT("scene.modifyActor applied to %d actor(s). DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f"),
+        TEXT("scene.modifyActor applied to %d actor(s). DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f"),
         UpdatedCount,
         Params.DeltaLocation.X,
         Params.DeltaLocation.Y,
         Params.DeltaLocation.Z,
         Params.DeltaRotation.Pitch,
         Params.DeltaRotation.Yaw,
-        Params.DeltaRotation.Roll);
+        Params.DeltaRotation.Roll,
+        Params.DeltaScale.X,
+        Params.DeltaScale.Y,
+        Params.DeltaScale.Z);
 
     return UpdatedCount > 0;
 }
@@ -273,6 +280,203 @@ bool FUEAIAgentSceneTools::SceneDeleteActor(const FUEAIAgentDeleteActorParams& P
 
     OutMessage = FString::Printf(TEXT("scene.deleteActor deleted %d actor(s)."), DeletedCount);
     return DeletedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneModifyComponent(const FUEAIAgentModifyComponentParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    if (Params.ComponentName.IsEmpty())
+    {
+        OutMessage = TEXT("Component name is required.");
+        return false;
+    }
+
+    const bool bHasDelta =
+        !Params.DeltaLocation.IsNearlyZero() ||
+        !Params.DeltaRotation.IsNearlyZero() ||
+        !Params.DeltaScale.IsNearlyZero();
+    if (!bHasDelta && !Params.bSetVisibility)
+    {
+        OutMessage = TEXT("No component edits specified.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneModifyComponentTransaction", "UE AI Agent Modify Component"));
+    int32 UpdatedComponents = 0;
+    int32 UpdatedActors = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        bool bActorTouched = false;
+        TArray<UActorComponent*> Components;
+        Actor->GetComponents(Components);
+        for (UActorComponent* Component : Components)
+        {
+            if (!Component)
+            {
+                continue;
+            }
+
+            const FString ComponentName = Component->GetName();
+            if (!ComponentName.Equals(Params.ComponentName, ESearchCase::IgnoreCase))
+            {
+                continue;
+            }
+
+            bool bComponentEdited = false;
+            Component->Modify();
+            if (USceneComponent* SceneComponent = Cast<USceneComponent>(Component))
+            {
+                if (!Params.DeltaLocation.IsNearlyZero())
+                {
+                    SceneComponent->SetRelativeLocation(SceneComponent->GetRelativeLocation() + Params.DeltaLocation);
+                    bComponentEdited = true;
+                }
+                if (!Params.DeltaRotation.IsNearlyZero())
+                {
+                    SceneComponent->SetRelativeRotation(SceneComponent->GetRelativeRotation() + Params.DeltaRotation);
+                    bComponentEdited = true;
+                }
+                if (!Params.DeltaScale.IsNearlyZero())
+                {
+                    SceneComponent->SetRelativeScale3D(SceneComponent->GetRelativeScale3D() + Params.DeltaScale);
+                    bComponentEdited = true;
+                }
+            }
+
+            if (Params.bSetVisibility)
+            {
+                if (UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(Component))
+                {
+                    PrimitiveComponent->SetVisibility(Params.bVisible, true);
+                    bComponentEdited = true;
+                }
+            }
+
+            if (bComponentEdited)
+            {
+                UpdatedComponents += 1;
+                bActorTouched = true;
+            }
+        }
+
+        if (bActorTouched)
+        {
+            Actor->Modify();
+            UpdatedActors += 1;
+        }
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("scene.modifyComponent updated %d component(s) on %d actor(s). Component: %s, DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, VisibilityEdit: %s"),
+        UpdatedComponents,
+        UpdatedActors,
+        *Params.ComponentName,
+        Params.DeltaLocation.X,
+        Params.DeltaLocation.Y,
+        Params.DeltaLocation.Z,
+        Params.DeltaRotation.Pitch,
+        Params.DeltaRotation.Yaw,
+        Params.DeltaRotation.Roll,
+        Params.DeltaScale.X,
+        Params.DeltaScale.Y,
+        Params.DeltaScale.Z,
+        Params.bSetVisibility ? (Params.bVisible ? TEXT("show") : TEXT("hide")) : TEXT("none"));
+
+    return UpdatedComponents > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneAddActorTag(const FUEAIAgentAddActorTagParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    if (Params.Tag.IsEmpty())
+    {
+        OutMessage = TEXT("Tag is required.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("SceneAddActorTagTransaction", "UE AI Agent Add Actor Tag"));
+    int32 UpdatedCount = 0;
+    const FName TagName(*Params.Tag);
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        if (Actor->Tags.Contains(TagName))
+        {
+            continue;
+        }
+
+        Actor->Modify();
+        Actor->Tags.Add(TagName);
+        UpdatedCount += 1;
+    }
+
+    OutMessage = FString::Printf(TEXT("scene.addActorTag added tag '%s' to %d actor(s)."), *Params.Tag, UpdatedCount);
+    return UpdatedCount > 0;
 }
 
 #undef LOCTEXT_NAMESPACE

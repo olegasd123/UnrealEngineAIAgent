@@ -134,6 +134,8 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- scene.modifyActor",
     "- scene.createActor",
     "- scene.deleteActor",
+    "- scene.modifyComponent",
+    "- scene.addActorTag",
     "Use Unreal axis defaults: X forward, Y right, Z up.",
     "If the prompt has both create and transform intent, include both actions in correct order.",
     "If intent is unclear, return actions: [] and explain uncertainty in steps.",
@@ -149,7 +151,8 @@ export function buildPlanPrompt(input: PlanInput): string {
               target: "selection",
               actorNames: ["actor_name_if_target_byName"],
               deltaLocation: { x: 0, y: 0, z: 0 },
-              deltaRotation: { pitch: 0, yaw: 0, roll: 0 }
+              deltaRotation: { pitch: 0, yaw: 0, roll: 0 },
+              deltaScale: { x: 0, y: 0, z: 0 }
             },
             risk: "low"
           },
@@ -170,6 +173,28 @@ export function buildPlanPrompt(input: PlanInput): string {
               actorNames: ["actor_name_if_target_byName"]
             },
             risk: "high"
+          },
+          {
+            command: "scene.modifyComponent",
+            params: {
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
+              componentName: "StaticMeshComponent0",
+              deltaLocation: { x: 0, y: 0, z: 0 },
+              deltaRotation: { pitch: 0, yaw: 0, roll: 0 },
+              deltaScale: { x: 0, y: 0, z: 0 },
+              visibility: true
+            },
+            risk: "low"
+          },
+          {
+            command: "scene.addActorTag",
+            params: {
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
+              tag: "MyTag"
+            },
+            risk: "low"
           }
         ]
       },
@@ -180,9 +205,11 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- Keep summary short and concrete.",
     "- steps must be short, ordered, and actionable.",
     "- actions can be empty [] if no executable command is found.",
-    "- scene.modifyActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include deltaLocation and/or deltaRotation.",
+    "- scene.modifyActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include deltaLocation and/or deltaRotation and/or deltaScale.",
     "- scene.createActor: include actorClass; location/rotation optional; count must be integer >= 1.",
     "- scene.deleteActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'.",
+    "- scene.modifyComponent: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include componentName; include a delta transform or visibility.",
+    "- scene.addActorTag: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include tag.",
     "- risk must be low|medium|high.",
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",
     "- Never invent non-existing commands or extra fields.",
