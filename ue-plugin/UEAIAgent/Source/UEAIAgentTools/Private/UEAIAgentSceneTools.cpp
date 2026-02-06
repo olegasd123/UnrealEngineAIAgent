@@ -13,6 +13,7 @@
 #include "Engine/StaticMesh.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
+#include "Subsystems/EditorActorSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "UEAIAgentSceneTools"
 
@@ -528,7 +529,7 @@ bool FUEAIAgentSceneTools::SceneSetComponentMaterial(const FUEAIAgentSetComponen
     }
     if (!Material)
     {
-        Material = FindObject<UMaterialInterface>(ANY_PACKAGE, *Params.MaterialPath);
+        Material = FindObject<UMaterialInterface>(nullptr, *Params.MaterialPath);
     }
     if (!Material)
     {
@@ -622,7 +623,7 @@ bool FUEAIAgentSceneTools::SceneSetComponentStaticMesh(const FUEAIAgentSetCompon
     }
     if (!Mesh)
     {
-        Mesh = FindObject<UStaticMesh>(ANY_PACKAGE, *Params.MeshPath);
+        Mesh = FindObject<UStaticMesh>(nullptr, *Params.MeshPath);
     }
     if (!Mesh)
     {
@@ -859,7 +860,13 @@ bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsP
 
         for (int32 CopyIndex = 0; CopyIndex < CopyCount; ++CopyIndex)
         {
-            AActor* Duplicate = GEditor->DuplicateActor(Actor, World);
+            UEditorActorSubsystem* EditorActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
+            if (!EditorActorSubsystem)
+            {
+                continue;
+            }
+
+            AActor* Duplicate = EditorActorSubsystem->DuplicateActor(Actor);
             if (!Duplicate)
             {
                 continue;

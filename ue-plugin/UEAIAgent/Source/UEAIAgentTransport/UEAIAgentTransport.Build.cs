@@ -18,6 +18,7 @@ public class UEAIAgentTransport : ModuleRules
             {
                 "CoreUObject",
                 "Engine",
+                "UnrealEd",
                 "DeveloperSettings",
                 "HTTP",
                 "Json",
