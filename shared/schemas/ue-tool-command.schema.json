@@ -22,16 +22,7 @@
         "scene.addActorTag",
         "scene.setActorFolder",
         "scene.addActorLabelPrefix",
-        "scene.duplicateActors",
-        "landscape.sculpt",
-        "landscape.paintLayer",
-        "pcg.createGraph",
-        "pcg.addNode",
-        "pcg.connectNodes",
-        "pcg.setNodeParam",
-        "session.beginTransaction",
-        "session.commitTransaction",
-        "session.rollbackTransaction"
+        "scene.duplicateActors"
       ]
     },
     "params": {
