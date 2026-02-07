@@ -49,9 +49,59 @@ const WorldStateAssetsContextSchema = z
   })
   .strict();
 
+const SelectionActorSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    label: z.string().trim().min(1).optional(),
+    class: z.string().trim().min(1).optional(),
+    location: z
+      .object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+        z: z.number().finite()
+      })
+      .strict()
+      .optional(),
+    rotation: z
+      .object({
+        pitch: z.number().finite(),
+        yaw: z.number().finite(),
+        roll: z.number().finite()
+      })
+      .strict()
+      .optional(),
+    scale: z
+      .object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+        z: z.number().finite()
+      })
+      .strict()
+      .optional(),
+    components: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1),
+            class: z.string().trim().min(1).optional()
+          })
+          .strict()
+      )
+      .optional()
+  })
+  .strict();
+
+const LevelContextSchema = z
+  .object({
+    mapName: z.string().trim().min(1).optional(),
+    levelName: z.string().trim().min(1).optional()
+  })
+  .strict();
+
 export const TaskContextSchema = z
   .object({
-    selection: z.array(z.string().trim().min(1)).optional(),
+    selection: z.array(z.union([z.string().trim().min(1), SelectionActorSchema])).optional(),
+    selectionNames: z.array(z.string().trim().min(1)).optional(),
     mapName: z.string().trim().min(1).optional(),
     levelName: z.string().trim().min(1).optional(),
     gameStyle: z.string().trim().min(1).optional(),
@@ -67,6 +117,8 @@ export const TaskContextSchema = z
     materials: WorldStateMaterialsContextSchema.optional(),
     performance: WorldStatePerformanceContextSchema.optional(),
     assets: WorldStateAssetsContextSchema.optional()
+    ,
+    level: LevelContextSchema.optional()
   })
   .strict();
 

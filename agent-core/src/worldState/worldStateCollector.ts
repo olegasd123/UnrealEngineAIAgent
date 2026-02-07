@@ -95,6 +95,30 @@ function readStringArray(source: Record<string, unknown>, key: string): string[]
   return Array.from(new Set(items));
 }
 
+function readSelectionNames(source: Record<string, unknown>): string[] {
+  const direct = source.selection;
+  const names: string[] = [];
+
+  if (Array.isArray(direct)) {
+    for (const item of direct) {
+      if (typeof item === "string" && item.trim().length > 0) {
+        names.push(item.trim());
+        continue;
+      }
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        const name = typeof record.name === "string" ? record.name.trim() : "";
+        if (name.length > 0) {
+          names.push(name);
+        }
+      }
+    }
+  }
+
+  const selectionNames = readStringArray(source, "selectionNames");
+  return Array.from(new Set([...names, ...selectionNames]));
+}
+
 function readQualityTier(source: Record<string, unknown>, key: string): WorldState["performance"]["qualityTier"] {
   const raw = readString(source, key)?.toLowerCase();
   if (raw === "low" || raw === "medium" || raw === "high" || raw === "cinematic") {
@@ -106,9 +130,10 @@ function readQualityTier(source: Record<string, unknown>, key: string): WorldSta
 export class WorldStateCollector {
   collect(intent: NormalizedIntent): WorldState {
     const context = asRecord(intent.input.context);
-    const selection = readStringArray(context, "selection");
+    const selection = readSelectionNames(context);
 
     const environment = asRecord(context.environment);
+    const level = asRecord(context.level);
     const lighting = asRecord(context.lighting);
     const materials = asRecord(context.materials);
     const performance = asRecord(context.performance);
@@ -152,6 +177,13 @@ export class WorldStateCollector {
       },
       notes: []
     };
+
+    if (!worldState.environment.mapName) {
+      worldState.environment.mapName = readString(level, "mapName");
+    }
+    if (!worldState.environment.levelName) {
+      worldState.environment.levelName = readString(level, "levelName");
+    }
 
     if (worldState.selection.count === 0) {
       worldState.notes.push("Selection is empty.");
