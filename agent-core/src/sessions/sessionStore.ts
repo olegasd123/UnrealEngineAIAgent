@@ -14,6 +14,9 @@ type SessionStatus = "ready_to_execute" | "awaiting_approval" | "completed" | "f
 const MAX_CREATE_COUNT = 50;
 const MAX_DUPLICATE_COUNT = 10;
 const MAX_TARGET_NAMES = 50;
+const MAX_DELETE_BY_NAME_COUNT = 20;
+const SELECTION_TARGET_ESTIMATE = 5;
+const MAX_SESSION_CHANGE_UNITS = 120;
 const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
   "Actor",
   "StaticMeshActor",
@@ -57,6 +60,14 @@ export interface SessionDecision {
   message: string;
 }
 
+interface LocalPolicyDecision {
+  approved: boolean;
+  risk: PlanAction["risk"];
+  message?: string;
+  hardDenied: boolean;
+  estimatedChanges: number;
+}
+
 function shouldAutoApprove(risk: PlanAction["risk"]): boolean {
   return risk === "low";
 }
@@ -74,15 +85,69 @@ function requireApproval(
   action: PlanAction,
   reason: string,
   riskOverride: PlanAction["risk"] = "high"
-): { approved: boolean; risk: PlanAction["risk"]; message: string } {
+): LocalPolicyDecision {
   return {
     approved: false,
     risk: riskOverride,
-    message: reason
+    message: reason,
+    hardDenied: false,
+    estimatedChanges: estimateActionChanges(action)
   };
 }
 
-function applyLocalPolicy(action: PlanAction): { approved: boolean; risk: PlanAction["risk"]; message?: string } {
+function hardDeny(action: PlanAction, reason: string): LocalPolicyDecision {
+  return {
+    approved: false,
+    risk: "high",
+    message: reason,
+    hardDenied: true,
+    estimatedChanges: estimateActionChanges(action)
+  };
+}
+
+function estimateTargetCount(action: PlanAction): number {
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.duplicateActors"
+  ) {
+    if (action.params.target === "byName") {
+      return Math.max(1, action.params.actorNames?.length ?? 0);
+    }
+    return SELECTION_TARGET_ESTIMATE;
+  }
+  return 0;
+}
+
+function estimateActionChanges(action: PlanAction): number {
+  if (action.command === "scene.createActor") {
+    return action.params.count;
+  }
+  if (action.command === "scene.duplicateActors") {
+    return estimateTargetCount(action) * action.params.count;
+  }
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix"
+  ) {
+    return estimateTargetCount(action);
+  }
+  return 0;
+}
+
+function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
   let risk: PlanAction["risk"] = action.risk;
   let approved = shouldAutoApprove(risk);
   let message: string | undefined;
@@ -125,6 +190,18 @@ function applyLocalPolicy(action: PlanAction): { approved: boolean; risk: PlanAc
   }
 
   if (action.command === "scene.deleteActor") {
+    if (action.params.target === "selection") {
+      return hardDeny(
+        action,
+        "Policy hard-deny: scene.deleteActor target=selection is blocked. Use target=byName with explicit actorNames."
+      );
+    }
+    if ((action.params.actorNames?.length ?? 0) > MAX_DELETE_BY_NAME_COUNT) {
+      return hardDeny(
+        action,
+        `Policy hard-deny: scene.deleteActor byName supports up to ${MAX_DELETE_BY_NAME_COUNT} actors.`
+      );
+    }
     const policy = requireApproval(action, "Policy: delete actions always require approval.", "high");
     approved = policy.approved;
     risk = policy.risk;
@@ -183,7 +260,13 @@ function applyLocalPolicy(action: PlanAction): { approved: boolean; risk: PlanAc
     }
   }
 
-  return { approved, risk, message };
+  return {
+    approved,
+    risk,
+    message,
+    hardDenied: false,
+    estimatedChanges: estimateActionChanges(action)
+  };
 }
 
 export class SessionStore {
@@ -191,6 +274,7 @@ export class SessionStore {
 
   create(input: SessionStartRequest, plan: PlanOutput): SessionDecision {
     const id = randomUUID();
+    let consumedChangeUnits = 0;
     const session: SessionData = {
       id,
       createdAt: new Date().toISOString(),
@@ -203,15 +287,34 @@ export class SessionStore {
       maxRetries: input.maxRetries,
       actions: plan.actions.map((action) => {
         const policy = applyLocalPolicy(action);
+        let state: ActionState = "pending";
+        let approved = policy.approved;
+        let lastMessage = policy.message;
+
+        if (policy.hardDenied) {
+          state = "failed";
+        } else {
+          const nextConsumedChangeUnits = consumedChangeUnits + policy.estimatedChanges;
+          if (nextConsumedChangeUnits > MAX_SESSION_CHANGE_UNITS) {
+            state = "failed";
+            approved = false;
+            lastMessage =
+              `Policy hard-deny: session change budget exceeded (` +
+              `${nextConsumedChangeUnits} > ${MAX_SESSION_CHANGE_UNITS} units).`;
+          } else {
+            consumedChangeUnits = nextConsumedChangeUnits;
+          }
+        }
+
         return {
           action: {
             ...action,
             risk: policy.risk
           },
-          approved: policy.approved,
-          state: "pending",
+          approved,
+          state,
           attempts: 0,
-          lastMessage: policy.message
+          lastMessage
         };
       })
     };

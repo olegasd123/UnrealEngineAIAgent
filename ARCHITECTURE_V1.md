@@ -140,7 +140,13 @@ Rules:
 - Scope guard:
   - selected actors only (default)
   - selected level only (default)
-- Deny by default for destructive bulk actions unless approved
+- Hard-deny blocked destructive patterns:
+  - `scene.deleteActor` with `target=selection`
+  - `scene.deleteActor` with `target=byName` and more than 20 actors
+- Session change-budget hard-deny:
+  - estimate total changed actors/entities per session
+  - block session plan if estimated total is more than 120 units
+- Approval gates stay active for medium/high risk actions
 
 Risk examples:
 - Low: rename actor, move selected actor
