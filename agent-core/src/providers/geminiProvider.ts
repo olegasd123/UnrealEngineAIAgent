@@ -1,7 +1,6 @@
 import type { ProviderRuntimeConfig } from "../config.js";
 import type { PlanOutput } from "../contracts.js";
-import { buildPlanPrompt, parsePlanOutput } from "./planJson.js";
-import { buildRuleBasedPlan } from "./ruleBasedPlanner.js";
+import { buildPlanPrompt, parsePlanOutput } from "../planner/planJson.js";
 import type { LlmProvider, PlanInput } from "./types.js";
 
 function formatErrorBody(body: string): string {
@@ -77,23 +76,6 @@ export class GeminiProvider implements LlmProvider {
   }
 
   async planTask(input: PlanInput): Promise<PlanOutput> {
-    if (!this.hasApiKey) {
-      const basePlan = buildRuleBasedPlan(input);
-      return {
-        ...basePlan,
-        steps: ["GEMINI_API_KEY is missing. Using local parser fallback.", ...basePlan.steps]
-      };
-    }
-
-    try {
-      return await this.requestPlan(input);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "Unknown Gemini error";
-      const fallback = buildRuleBasedPlan(input);
-      return {
-        ...fallback,
-        steps: [`Gemini call failed. Using local fallback. Reason: ${reason}`, ...fallback.steps]
-      };
-    }
+    return this.requestPlan(input);
   }
 }

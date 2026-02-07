@@ -2,6 +2,14 @@
 
 Local service that plans and executes UE editor actions.
 
+## Runtime layers
+
+Request flow is split into 4 layers:
+- Intent Layer: normalize user request and detect goal type.
+- Planning Layer: build action plan with selected provider.
+- Validation Layer: validate plan schema and basic intent/plan alignment.
+- Execution Layer: manage session state and approval flow.
+
 ## Scope in scaffold
 
 - health endpoint

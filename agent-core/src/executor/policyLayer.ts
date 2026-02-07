@@ -1,0 +1,263 @@
+import type { PolicyRuntimeConfig } from "../config.js";
+import type { PlanAction } from "../contracts.js";
+import type { LocalPolicyDecision, SessionAction } from "../sessions/sessionTypes.js";
+
+const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
+  "Actor",
+  "StaticMeshActor",
+  "PointLight",
+  "SpotLight",
+  "DirectionalLight",
+  "RectLight",
+  "SkyLight",
+  "ExponentialHeightFog",
+  "PostProcessVolume",
+  "CameraActor"
+]);
+
+function shouldAutoApprove(risk: PlanAction["risk"]): boolean {
+  return risk === "low";
+}
+
+function normalizeAssetPath(path: string): string {
+  return path.trim();
+}
+
+function isAllowedAssetPath(path: string): boolean {
+  const normalized = normalizeAssetPath(path);
+  return normalized.startsWith("/Game/") || normalized.startsWith("/Engine/");
+}
+
+function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): number {
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.duplicateActors"
+  ) {
+    if (action.params.target === "byName") {
+      return Math.max(1, action.params.actorNames?.length ?? 0);
+    }
+    return policy.selectionTargetEstimate;
+  }
+  return 0;
+}
+
+function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig): number {
+  if (action.command === "scene.createActor") {
+    return action.params.count;
+  }
+  if (action.command === "scene.duplicateActors") {
+    return estimateTargetCount(action, policy) * action.params.count;
+  }
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix"
+  ) {
+    return estimateTargetCount(action, policy);
+  }
+  return 0;
+}
+
+function requireApproval(
+  action: PlanAction,
+  reason: string,
+  policy: PolicyRuntimeConfig,
+  riskOverride: PlanAction["risk"] = "high"
+): LocalPolicyDecision {
+  return {
+    approved: false,
+    risk: riskOverride,
+    message: reason,
+    hardDenied: false,
+    estimatedChanges: estimateActionChanges(action, policy)
+  };
+}
+
+function hardDeny(action: PlanAction, reason: string, policy: PolicyRuntimeConfig): LocalPolicyDecision {
+  return {
+    approved: false,
+    risk: "high",
+    message: reason,
+    hardDenied: true,
+    estimatedChanges: estimateActionChanges(action, policy)
+  };
+}
+
+function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig): LocalPolicyDecision {
+  let risk: PlanAction["risk"] = action.risk;
+  let approved = shouldAutoApprove(risk);
+  let message: string | undefined;
+
+  if (action.command === "scene.createActor") {
+    const actorClass = action.params.actorClass;
+    if (!ALLOWED_CREATE_ACTOR_CLASSES.has(actorClass)) {
+      return requireApproval(
+        action,
+        `Policy: actorClass '${actorClass}' is not in the allowlist.`,
+        policy,
+        "high"
+      );
+    }
+
+    if (action.params.count > policy.maxCreateCount) {
+      action.params.count = policy.maxCreateCount;
+      const decision = requireApproval(
+        action,
+        `Policy: create count capped to ${action.params.count}.`,
+        policy,
+        "medium"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  if (action.command === "scene.duplicateActors") {
+    if (action.params.count > policy.maxDuplicateCount) {
+      action.params.count = policy.maxDuplicateCount;
+      const decision = requireApproval(
+        action,
+        `Policy: duplicate count capped to ${action.params.count}.`,
+        policy,
+        "medium"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  if (action.command === "scene.deleteActor") {
+    if (action.params.target === "selection") {
+      return hardDeny(
+        action,
+        "Policy hard-deny: scene.deleteActor target=selection is blocked. Use target=byName with explicit actorNames.",
+        policy
+      );
+    }
+    if ((action.params.actorNames?.length ?? 0) > policy.maxDeleteByNameCount) {
+      return hardDeny(
+        action,
+        `Policy hard-deny: scene.deleteActor byName supports up to ${policy.maxDeleteByNameCount} actors.`,
+        policy
+      );
+    }
+    const decision = requireApproval(action, "Policy: delete actions always require approval.", policy, "high");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
+  if (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.duplicateActors" ||
+    action.command === "scene.deleteActor"
+  ) {
+    if (action.params.target === "byName" && action.params.actorNames) {
+      if (action.params.actorNames.length > policy.maxTargetNames) {
+        action.params.actorNames = action.params.actorNames.slice(0, policy.maxTargetNames);
+        const decision = requireApproval(
+          action,
+          `Policy: actorNames capped to ${action.params.actorNames.length}.`,
+          policy,
+          "medium"
+        );
+        approved = decision.approved;
+        risk = decision.risk;
+        message = decision.message;
+      }
+    }
+  }
+
+  if (action.command === "scene.setComponentMaterial") {
+    if (!isAllowedAssetPath(action.params.materialPath)) {
+      const decision = requireApproval(
+        action,
+        "Policy: materialPath must start with /Game/ or /Engine/.",
+        policy,
+        "high"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  if (action.command === "scene.setComponentStaticMesh") {
+    if (!isAllowedAssetPath(action.params.meshPath)) {
+      const decision = requireApproval(
+        action,
+        "Policy: meshPath must start with /Game/ or /Engine/.",
+        policy,
+        "high"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  return {
+    approved,
+    risk,
+    message,
+    hardDenied: false,
+    estimatedChanges: estimateActionChanges(action, policy)
+  };
+}
+
+export function buildSessionActions(actions: PlanAction[], policy: PolicyRuntimeConfig): SessionAction[] {
+  let consumedChangeUnits = 0;
+
+  return actions.map((action) => {
+    const decision = applyLocalPolicy(action, policy);
+    let state: SessionAction["state"] = "pending";
+    let approved = decision.approved;
+    let lastMessage = decision.message;
+
+    if (decision.hardDenied) {
+      state = "failed";
+    } else {
+      const nextConsumedChangeUnits = consumedChangeUnits + decision.estimatedChanges;
+      if (nextConsumedChangeUnits > policy.maxSessionChangeUnits) {
+        state = "failed";
+        approved = false;
+        lastMessage =
+          `Policy hard-deny: session change budget exceeded (` +
+          `${nextConsumedChangeUnits} > ${policy.maxSessionChangeUnits} units).`;
+      } else {
+        consumedChangeUnits = nextConsumedChangeUnits;
+      }
+    }
+
+    return {
+      action: {
+        ...action,
+        risk: decision.risk
+      },
+      approved,
+      state,
+      attempts: 0,
+      lastMessage
+    };
+  });
+}

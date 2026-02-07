@@ -1,5 +1,5 @@
 import type { PlanAction, PlanOutput } from "../contracts.js";
-import type { PlanInput } from "./types.js";
+import type { PlanInput } from "../providers/types.js";
 
 function parseAxisValues(
   source: string,

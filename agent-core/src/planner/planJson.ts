@@ -1,5 +1,5 @@
 import { PlanOutputSchema, type PlanOutput, AllowedCommands } from "../contracts.js";
-import type { PlanInput } from "./types.js";
+import type { PlanInput } from "../providers/types.js";
 
 function stripCodeFence(raw: string): string {
   const trimmed = raw.trim();

@@ -1,8 +1,8 @@
 import http from "node:http";
 import { z } from "zod";
 
+import { AgentService } from "./agent/agentService.js";
 import {
-  PlanOutputSchema,
   SessionApproveRequestSchema,
   SessionNextRequestSchema,
   SessionResumeRequestSchema,
@@ -11,15 +11,25 @@ import {
 } from "./contracts.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
+import { ExecutionLayer } from "./executor/executionLayer.js";
+import { IntentLayer } from "./intent/intentLayer.js";
 import { SessionLogStore } from "./logs/sessionLogStore.js";
 import { TaskLogStore } from "./logs/taskLogStore.js";
+import { PlanningLayer } from "./planner/planningLayer.js";
 import { createProvider } from "./providers/createProvider.js";
 import { SessionStore } from "./sessions/sessionStore.js";
+import { ValidationLayer } from "./validator/validationLayer.js";
 
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const sessionLogStore = new SessionLogStore(config.taskLogPath);
 const credentialStore = new CredentialStore();
 const sessionStore = new SessionStore(config.policy);
+const agentService = new AgentService(
+  new IntentLayer(),
+  new PlanningLayer(),
+  new ValidationLayer(),
+  new ExecutionLayer(sessionStore)
+);
 
 const ProviderSchema = z.enum(["openai", "gemini"]);
 const CredentialSetSchema = z.object({
@@ -162,13 +172,16 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const plan = await provider.planTask({
-        prompt: "Move selected actors +1 on X",
-        mode: "chat",
-        context: { selection: ["PreviewActor"] }
-      });
+      const { plan } = await agentService.planTask(
+        {
+          prompt: "Move selected actors +1 on X",
+          mode: "chat",
+          context: { selection: ["PreviewActor"] }
+        },
+        provider
+      );
       const firstStep = plan.steps[0] ?? "";
-      const looksLikeFallback = /using local fallback|api_key is missing|call failed/i.test(firstStep);
+      const looksLikeFallback = /using local fallback|api_key is missing|call failed|planning failed/i.test(firstStep);
       if (looksLikeFallback) {
         return sendJson(res, 200, {
           ok: false,
@@ -239,9 +252,7 @@ const server = http.createServer(async (req, res) => {
       rawBody = await readBody(req);
       const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
       const provider = await resolveProvider();
-      const providerPlan = await provider.planTask(parsed);
-      const plan = PlanOutputSchema.parse(providerPlan);
-      const decision = sessionStore.create(parsed, plan);
+      const decision = await agentService.startSession(parsed, provider);
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -285,7 +296,7 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionNextRequestSchema.parse(JSON.parse(rawBody));
-      const decision = sessionStore.next(parsed.sessionId, parsed.result);
+      const decision = agentService.next(parsed);
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -329,7 +340,7 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionApproveRequestSchema.parse(JSON.parse(rawBody));
-      const decision = sessionStore.approve(parsed.sessionId, parsed.actionIndex, parsed.approved);
+      const decision = agentService.approve(parsed);
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -373,7 +384,7 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionResumeRequestSchema.parse(JSON.parse(rawBody));
-      const decision = sessionStore.resume(parsed.sessionId);
+      const decision = agentService.resume(parsed);
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -419,8 +430,7 @@ const server = http.createServer(async (req, res) => {
       provider = await resolveProvider();
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
-      const providerPlan = await provider.planTask(parsed);
-      const plan = PlanOutputSchema.parse(providerPlan);
+      const { plan } = await agentService.planTask(parsed, provider);
 
       try {
         await taskLogStore.appendTaskPlanSuccess({
