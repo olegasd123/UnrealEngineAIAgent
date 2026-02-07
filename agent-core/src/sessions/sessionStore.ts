@@ -30,6 +30,38 @@ export class SessionStore {
 
   private readonly sessions = new Map<string, SessionData>();
 
+  private resolveMaxIterations(plan: PlanOutput): number {
+    const configured = plan.stopConditions.find((condition) => condition.type === "max_iterations");
+    return configured?.type === "max_iterations" ? configured.value : 1;
+  }
+
+  private advanceIterationIfNeeded(session: SessionData): void {
+    const nextPendingIndex = session.actions.findIndex((action) => action.state === "pending");
+    if (nextPendingIndex < 0) {
+      return;
+    }
+
+    const currentIterationEnd = session.iterationStartActionIndex + session.actionsPerIteration - 1;
+    if (nextPendingIndex <= currentIterationEnd) {
+      return;
+    }
+
+    if (session.currentIteration >= session.maxIterations) {
+      return;
+    }
+
+    session.currentIteration += 1;
+    session.iterationStartActionIndex = nextPendingIndex;
+    session.checkpointPending = true;
+    session.checkpointActionIndex = nextPendingIndex;
+
+    const checkpointAction = session.actions[nextPendingIndex];
+    if (checkpointAction.state === "pending") {
+      checkpointAction.approved = false;
+      checkpointAction.lastMessage = `Iteration ${session.currentIteration} checkpoint: explicit approval required before continuing.`;
+    }
+  }
+
   create(input: SessionStartRequest, plan: PlanOutput): SessionDecision {
     const id = randomUUID();
     const requestInput: TaskRequest = {
@@ -38,15 +70,23 @@ export class SessionStore {
       context: input.context
     };
 
+    const maxIterations = this.resolveMaxIterations(plan);
+    const actionsPerIteration = Math.max(1, Math.ceil(Math.max(1, plan.actions.length) / maxIterations));
     const session: SessionData = {
       id,
       createdAt: new Date().toISOString(),
       input: requestInput,
       plan,
       maxRetries: input.maxRetries,
-      actions: buildSessionActions(plan.actions, this.policy)
+      actions: buildSessionActions(plan.actions, this.policy),
+      currentIteration: 1,
+      maxIterations,
+      actionsPerIteration,
+      iterationStartActionIndex: 0,
+      checkpointPending: false
     };
 
+    this.advanceIterationIfNeeded(session);
     this.sessions.set(id, session);
     return makeSessionDecision(session);
   }
@@ -55,6 +95,7 @@ export class SessionStore {
     const session = this.get(sessionId);
     if (result) {
       applySessionResult(session, result);
+      this.advanceIterationIfNeeded(session);
     }
     return makeSessionDecision(session);
   }
@@ -77,6 +118,13 @@ export class SessionStore {
     if (!approved) {
       action.state = "failed";
       action.lastMessage = "Rejected by user.";
+      if (session.checkpointActionIndex === actionIndex) {
+        session.checkpointPending = false;
+        session.checkpointActionIndex = undefined;
+      }
+    } else if (session.checkpointActionIndex === actionIndex) {
+      session.checkpointPending = false;
+      session.checkpointActionIndex = undefined;
     }
 
     return makeSessionDecision(session);
@@ -88,6 +136,7 @@ export class SessionStore {
 
   resume(sessionId: string): SessionDecision {
     const session = this.get(sessionId);
+    this.advanceIterationIfNeeded(session);
     return makeSessionDecision(session);
   }
 

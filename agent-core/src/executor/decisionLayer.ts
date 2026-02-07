@@ -37,6 +37,20 @@ function hasUserDeniedAction(session: SessionData): boolean {
   return session.actions.some((action) => action.state === "failed" && action.lastMessage === "Rejected by user.");
 }
 
+function iterationView(session: SessionData): SessionDecision["iteration"] {
+  return {
+    current: session.currentIteration,
+    max: session.maxIterations,
+    actionsPerIteration: session.actionsPerIteration,
+    checkpointPending: session.checkpointPending
+  };
+}
+
+function hasRemainingActionsOutsideCurrentIteration(session: SessionData): boolean {
+  const currentIterationEnd = session.iterationStartActionIndex + session.actionsPerIteration - 1;
+  return session.actions.some((action, index) => index > currentIterationEnd && action.state === "pending");
+}
+
 function evaluateChecks(session: SessionData): SessionData["plan"]["checks"] {
   const hasFailedAction = session.actions.some((action) => action.state === "failed");
   const hasPendingAction = session.actions.some((action) => action.state === "pending");
@@ -89,7 +103,8 @@ function resolveStopCondition(session: SessionData, checks: SessionData["plan"][
     }
 
     if (condition.type === "max_iterations") {
-      if (pendingCount > 0 && totalAttempts >= condition.value) {
+      const beyondCurrentIteration = hasRemainingActionsOutsideCurrentIteration(session);
+      if (pendingCount > 0 && beyondCurrentIteration && session.currentIteration >= condition.value) {
         return condition;
       }
       continue;
@@ -143,6 +158,7 @@ function buildStoppedDecision(
       status: "completed",
       summary: session.plan.summary,
       steps: session.plan.steps,
+      iteration: iterationView(session),
       checks,
       matchedStopCondition: stopCondition,
       message: `Stopped by stopCondition=all_checks_passed. Progress: ${completedCount}/${totalCount} actions completed.`
@@ -161,6 +177,7 @@ function buildStoppedDecision(
         status: "awaiting_approval",
         summary: session.plan.summary,
         steps: session.plan.steps,
+        iteration: iterationView(session),
         checks,
         matchedStopCondition: stopCondition,
         nextActionIndex: index,
@@ -182,6 +199,7 @@ function buildStoppedDecision(
     status: "failed",
     summary: session.plan.summary,
     steps: session.plan.steps,
+    iteration: iterationView(session),
     checks,
     matchedStopCondition: stopCondition,
     message: `Stopped by stopCondition=${stopCondition.type}. Progress: ${completedCount}/${totalCount} actions completed.`
@@ -206,6 +224,7 @@ export function makeSessionDecision(session: SessionData): SessionDecision {
       status: "failed",
       summary: session.plan.summary,
       steps: session.plan.steps,
+      iteration: iterationView(session),
       checks,
       nextActionIndex: failedActionIndex,
       nextAction: failed.action,
@@ -229,18 +248,44 @@ export function makeSessionDecision(session: SessionData): SessionDecision {
       status: "completed",
       summary: session.plan.summary,
       steps: session.plan.steps,
+      iteration: iterationView(session),
       checks,
       message: `All actions are completed (${completedCount}/${totalCount}).`
     };
   }
 
   const pending = session.actions[pendingActionIndex];
+  if (session.checkpointPending && session.checkpointActionIndex === pendingActionIndex) {
+    return {
+      sessionId: session.id,
+      status: "awaiting_approval",
+      summary: session.plan.summary,
+      steps: session.plan.steps,
+      iteration: iterationView(session),
+      checks,
+      nextActionIndex: pendingActionIndex,
+      nextAction: pending.action,
+      nextActionState: pending.state,
+      nextActionAttempts: pending.attempts,
+      nextActionApproved: pending.approved,
+      message: [
+        `Iteration checkpoint ${session.currentIteration}/${session.maxIterations}: approval required before continuing.`,
+        `Action ${pendingActionIndex + 1} is the first action in this iteration.`,
+        pending.lastMessage ? `Last result: ${pending.lastMessage}` : null,
+        `Progress: ${completedCount}/${totalCount} actions completed.`
+      ]
+        .filter(Boolean)
+        .join(" ")
+    };
+  }
+
   if (!pending.approved) {
     return {
       sessionId: session.id,
       status: "awaiting_approval",
       summary: session.plan.summary,
       steps: session.plan.steps,
+      iteration: iterationView(session),
       checks,
       nextActionIndex: pendingActionIndex,
       nextAction: pending.action,
@@ -262,6 +307,7 @@ export function makeSessionDecision(session: SessionData): SessionDecision {
     status: "ready_to_execute",
     summary: session.plan.summary,
     steps: session.plan.steps,
+    iteration: iterationView(session),
     checks,
     nextActionIndex: pendingActionIndex,
     nextAction: pending.action,

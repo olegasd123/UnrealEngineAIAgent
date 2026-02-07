@@ -107,6 +107,15 @@ Optional environment:
   - `awaiting_approval`
   - `completed`
   - `failed`
+- Iterative execution:
+  - Session follows iteration windows based on plan `stopConditions.max_iterations`.
+  - `actionsPerIteration` is auto-calculated from total actions and max iterations.
+  - At each new iteration boundary, first pending action requires explicit approval (checkpoint).
+  - Decision payload includes `iteration` block:
+    - `current`
+    - `max`
+    - `actionsPerIteration`
+    - `checkpointPending`
 
 ## Unreal plugin migration (strict context schema)
 
@@ -114,10 +123,12 @@ Optional environment:
 
 Allowed top-level context keys:
 - `selection`
+- `selectionNames`
 - `mapName`, `levelName`, `gameStyle`, `timeOfDay`, `weather`
 - `materialStyle`
 - `qualityTier`, `targetFps`, `maxDrawCalls`
 - `manualStop`
+- `level`
 - `environment`, `lighting`, `materials`, `performance`, `assets`
 
 If your plugin sends custom fields, move them to allowed keys or remove them.

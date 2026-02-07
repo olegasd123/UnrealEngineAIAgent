@@ -18,6 +18,12 @@ export interface SessionData {
   plan: PlanOutput;
   maxRetries: number;
   actions: SessionAction[];
+  currentIteration: number;
+  maxIterations: number;
+  actionsPerIteration: number;
+  iterationStartActionIndex: number;
+  checkpointPending: boolean;
+  checkpointActionIndex?: number;
 }
 
 export interface SessionDecision {
@@ -25,6 +31,12 @@ export interface SessionDecision {
   status: SessionStatus;
   summary: string;
   steps: string[];
+  iteration: {
+    current: number;
+    max: number;
+    actionsPerIteration: number;
+    checkpointPending: boolean;
+  };
   checks?: PlanOutput["checks"];
   matchedStopCondition?: PlanOutput["stopConditions"][number];
   nextActionIndex?: number;
