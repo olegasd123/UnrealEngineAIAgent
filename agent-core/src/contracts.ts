@@ -125,7 +125,8 @@ export const TaskContextSchema = z
 export const TaskRequestSchema = z.object({
   prompt: z.string().min(1),
   mode: z.enum(["chat", "agent"]).default("chat"),
-  context: TaskContextSchema.default({})
+  context: TaskContextSchema.default({}),
+  chatId: z.string().uuid().optional()
 });
 
 export type TaskRequest = z.infer<typeof TaskRequestSchema>;
@@ -496,18 +497,36 @@ export type SessionResult = z.infer<typeof SessionResultSchema>;
 
 export const SessionNextRequestSchema = z.object({
   sessionId: z.string().min(1),
-  result: SessionResultSchema.optional()
+  result: SessionResultSchema.optional(),
+  chatId: z.string().uuid().optional()
 });
 export type SessionNextRequest = z.infer<typeof SessionNextRequestSchema>;
 
 export const SessionApproveRequestSchema = z.object({
   sessionId: z.string().min(1),
   actionIndex: z.number().int().min(0),
-  approved: z.boolean()
+  approved: z.boolean(),
+  chatId: z.string().uuid().optional()
 });
 export type SessionApproveRequest = z.infer<typeof SessionApproveRequestSchema>;
 
 export const SessionResumeRequestSchema = z.object({
-  sessionId: z.string().min(1)
+  sessionId: z.string().min(1),
+  chatId: z.string().uuid().optional()
 });
 export type SessionResumeRequest = z.infer<typeof SessionResumeRequestSchema>;
+
+export const ChatCreateRequestSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional()
+});
+export type ChatCreateRequest = z.infer<typeof ChatCreateRequestSchema>;
+
+export const ChatUpdateRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120).optional(),
+    archived: z.boolean().optional()
+  })
+  .refine((value) => value.title !== undefined || value.archived !== undefined, {
+    message: "At least one field must be provided."
+  });
+export type ChatUpdateRequest = z.infer<typeof ChatUpdateRequestSchema>;

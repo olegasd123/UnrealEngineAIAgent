@@ -47,6 +47,7 @@ const RawEnvSchema = z.object({
   AGENT_PORT: PortSchema,
   AGENT_PROVIDER: ProviderSchema.default("openai"),
   AGENT_TASK_LOG_PATH: z.string().trim().min(1).default("data"),
+  AGENT_DB_PATH: z.string().trim().min(1).default("data/agent.db"),
 
   OPENAI_API_KEY: z.string().trim().optional(),
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
@@ -102,6 +103,7 @@ export const config = {
   port: env.AGENT_PORT,
   provider: env.AGENT_PROVIDER as ProviderName,
   taskLogPath: env.AGENT_TASK_LOG_PATH,
+  dbPath: env.AGENT_DB_PATH,
   providers: {
     openai: {
       apiKey: optionalNonEmpty(env.OPENAI_API_KEY),

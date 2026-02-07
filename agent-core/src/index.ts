@@ -3,12 +3,15 @@ import { z } from "zod";
 
 import { AgentService } from "./agent/agentService.js";
 import {
+  ChatCreateRequestSchema,
+  ChatUpdateRequestSchema,
   SessionApproveRequestSchema,
   SessionNextRequestSchema,
   SessionResumeRequestSchema,
   SessionStartRequestSchema,
   TaskRequestSchema
 } from "./contracts.js";
+import { ChatStore } from "./chats/chatStore.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
 import { ExecutionLayer } from "./executor/executionLayer.js";
@@ -23,6 +26,7 @@ import { WorldStateCollector } from "./worldState/worldStateCollector.js";
 
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const sessionLogStore = new SessionLogStore(config.taskLogPath);
+const chatStore = new ChatStore(config.dbPath);
 const credentialStore = new CredentialStore();
 const sessionStore = new SessionStore(config.policy);
 const agentService = new AgentService(
@@ -99,6 +103,21 @@ async function readProviderStatus() {
   };
 }
 
+function errorStatusCode(error: unknown): number {
+  if (error instanceof Error && /was not found/i.test(error.message)) {
+    return 404;
+  }
+  return 400;
+}
+
+function parseChatRoute(pathname: string): { chatId: string; isHistory: boolean } | undefined {
+  const match = /^\/v1\/chats\/([^/]+)(?:\/(history))?$/.exec(pathname);
+  if (!match) {
+    return undefined;
+  }
+  return { chatId: decodeURIComponent(match[1] ?? ""), isHistory: match[2] === "history" };
+}
+
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url ?? "/", `http://${config.host}:${config.port}`);
   const pathname = requestUrl.pathname;
@@ -130,6 +149,78 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/chats") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = ChatCreateRequestSchema.parse(rawBody ? JSON.parse(rawBody) : {});
+      const chat = chatStore.createChat(parsed.title);
+      return sendJson(res, 200, { ok: true, chat });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "GET" && pathname === "/v1/chats") {
+    const includeArchived = requestUrl.searchParams.get("includeArchived") === "true";
+    try {
+      const chats = chatStore.listChats(includeArchived);
+      return sendJson(res, 200, { ok: true, count: chats.length, chats });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+    }
+  }
+
+  const chatRoute = parseChatRoute(pathname);
+  if (chatRoute && !chatRoute.isHistory) {
+    if (req.method === "GET") {
+      try {
+        const chat = chatStore.getChat(chatRoute.chatId);
+        return sendJson(res, 200, { ok: true, chat });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+      }
+    }
+
+    if (req.method === "PATCH") {
+      try {
+        const rawBody = await readBody(req);
+        const parsed = ChatUpdateRequestSchema.parse(JSON.parse(rawBody));
+        const chat = chatStore.updateChat(chatRoute.chatId, parsed);
+        return sendJson(res, 200, { ok: true, chat });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+      }
+    }
+
+    if (req.method === "DELETE") {
+      try {
+        chatStore.deleteChat(chatRoute.chatId);
+        return sendJson(res, 200, { ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+      }
+    }
+  }
+
+  if (chatRoute && chatRoute.isHistory && req.method === "GET") {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "100");
+    const normalizedLimit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(200, Math.trunc(requestedLimit)))
+      : 100;
+    try {
+      const history = chatStore.listHistory(chatRoute.chatId, normalizedLimit);
+      return sendJson(res, 200, { ok: true, count: history.length, history });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, errorStatusCode(error), { ok: false, error: message });
     }
   }
 
@@ -252,8 +343,20 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
+      if (parsed.chatId) {
+        chatStore.appendAsked(parsed.chatId, "/v1/session/start", parsed.prompt, {
+          mode: parsed.mode,
+          context: parsed.context
+        });
+      }
       const provider = await resolveProvider();
       const decision = await agentService.startSession(parsed, provider);
+
+      if (parsed.chatId) {
+        chatStore.appendDone(parsed.chatId, "/v1/session/start", `Session ${decision.status}`, {
+          decision
+        });
+      }
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -271,6 +374,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const parsedBody = rawBody ? SessionStartRequestSchema.safeParse(JSON.parse(rawBody)) : null;
+        if (parsedBody?.success && parsedBody.data.chatId) {
+          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/start", `Error: ${message}`, { error: message });
+        }
+      } catch {
+        // ignore chat log write/read error
+      }
 
       try {
         await sessionLogStore.appendSessionError({
@@ -285,7 +396,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 400, { ok: false, requestId, error: message });
+      return sendJson(res, errorStatusCode(error), { ok: false, requestId, error: message });
     }
   }
 
@@ -297,7 +408,18 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionNextRequestSchema.parse(JSON.parse(rawBody));
+      if (parsed.chatId) {
+        chatStore.appendAsked(parsed.chatId, "/v1/session/next", `Session ${parsed.sessionId} next`, {
+          result: parsed.result
+        });
+      }
       const decision = agentService.next(parsed);
+
+      if (parsed.chatId) {
+        chatStore.appendDone(parsed.chatId, "/v1/session/next", `Session ${decision.status}`, {
+          decision
+        });
+      }
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -315,6 +437,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const parsedBody = rawBody ? SessionNextRequestSchema.safeParse(JSON.parse(rawBody)) : null;
+        if (parsedBody?.success && parsedBody.data.chatId) {
+          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/next", `Error: ${message}`, { error: message });
+        }
+      } catch {
+        // ignore chat log write/read error
+      }
 
       try {
         await sessionLogStore.appendSessionError({
@@ -329,7 +459,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 400, { ok: false, requestId, error: message });
+      return sendJson(res, errorStatusCode(error), { ok: false, requestId, error: message });
     }
   }
 
@@ -341,7 +471,21 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionApproveRequestSchema.parse(JSON.parse(rawBody));
+      if (parsed.chatId) {
+        chatStore.appendAsked(
+          parsed.chatId,
+          "/v1/session/approve",
+          `Session ${parsed.sessionId} action ${parsed.actionIndex} approval=${parsed.approved}`,
+          {}
+        );
+      }
       const decision = agentService.approve(parsed);
+
+      if (parsed.chatId) {
+        chatStore.appendDone(parsed.chatId, "/v1/session/approve", `Session ${decision.status}`, {
+          decision
+        });
+      }
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -359,6 +503,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const parsedBody = rawBody ? SessionApproveRequestSchema.safeParse(JSON.parse(rawBody)) : null;
+        if (parsedBody?.success && parsedBody.data.chatId) {
+          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/approve", `Error: ${message}`, { error: message });
+        }
+      } catch {
+        // ignore chat log write/read error
+      }
 
       try {
         await sessionLogStore.appendSessionError({
@@ -373,7 +525,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 400, { ok: false, requestId, error: message });
+      return sendJson(res, errorStatusCode(error), { ok: false, requestId, error: message });
     }
   }
 
@@ -385,7 +537,16 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionResumeRequestSchema.parse(JSON.parse(rawBody));
+      if (parsed.chatId) {
+        chatStore.appendAsked(parsed.chatId, "/v1/session/resume", `Session ${parsed.sessionId} resume`, {});
+      }
       const decision = agentService.resume(parsed);
+
+      if (parsed.chatId) {
+        chatStore.appendDone(parsed.chatId, "/v1/session/resume", `Session ${decision.status}`, {
+          decision
+        });
+      }
 
       try {
         await sessionLogStore.appendSessionSuccess({
@@ -403,6 +564,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, requestId, decision });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const parsedBody = rawBody ? SessionResumeRequestSchema.safeParse(JSON.parse(rawBody)) : null;
+        if (parsedBody?.success && parsedBody.data.chatId) {
+          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/resume", `Error: ${message}`, { error: message });
+        }
+      } catch {
+        // ignore chat log write/read error
+      }
 
       try {
         await sessionLogStore.appendSessionError({
@@ -417,7 +586,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 400, { ok: false, requestId, error: message });
+      return sendJson(res, errorStatusCode(error), { ok: false, requestId, error: message });
     }
   }
 
@@ -431,7 +600,20 @@ const server = http.createServer(async (req, res) => {
       provider = await resolveProvider();
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
+      if (parsed.chatId) {
+        chatStore.appendAsked(parsed.chatId, "/v1/task/plan", parsed.prompt, {
+          mode: parsed.mode,
+          context: parsed.context
+        });
+      }
       const { plan } = await agentService.planTask(parsed, provider);
+
+      if (parsed.chatId) {
+        chatStore.appendDone(parsed.chatId, "/v1/task/plan", "Plan built", {
+          summary: plan.summary,
+          actions: plan.actions.length
+        });
+      }
 
       try {
         await taskLogStore.appendTaskPlanSuccess({
@@ -449,6 +631,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, requestId, plan });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const parsedBody = rawBody ? TaskRequestSchema.safeParse(JSON.parse(rawBody)) : null;
+        if (parsedBody?.success && parsedBody.data.chatId) {
+          chatStore.appendDone(parsedBody.data.chatId, "/v1/task/plan", `Error: ${message}`, { error: message });
+        }
+      } catch {
+        // ignore chat log write/read error
+      }
 
       try {
         if (provider) {
@@ -465,7 +655,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Task log write failed:", logError);
       }
 
-      return sendJson(res, 400, { ok: false, requestId, error: message });
+      return sendJson(res, errorStatusCode(error), { ok: false, requestId, error: message });
     }
   }
 
@@ -479,4 +669,6 @@ server.listen(config.port, config.host, () => {
   console.log(`Task log path: ${taskLogStore.getLogPath()}`);
   // eslint-disable-next-line no-console
   console.log(`Session log path: ${sessionLogStore.getLogPath()}`);
+  // eslint-disable-next-line no-console
+  console.log(`Chat DB path: ${config.dbPath}`);
 });

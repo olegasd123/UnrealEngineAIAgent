@@ -15,6 +15,7 @@ Request flow is split into 4 layers:
 - health endpoint
 - task planning endpoint (`/v1/task/plan`)
 - agent session endpoints (`/v1/session/start|next|approve|resume`)
+- chat endpoints (`/v1/chats`, `/v1/chats/:chatId`, `/v1/chats/:chatId/history`)
 - simple prompt parser for move/rotate/scale + component visibility + tag actions (example: `move +250 on x and rotate yaw +45`)
 - provider adapter interface
 
@@ -39,6 +40,7 @@ Optional environment:
 - `AGENT_PORT` (default `4317`)
 - `AGENT_PROVIDER` (`openai` or `gemini`, default `openai`)
 - `AGENT_TASK_LOG_PATH` (default `data`; used as log directory, legacy file path still works)
+- `AGENT_DB_PATH` (default `data/agent.db`; SQLite database for chats/history)
 - `OPENAI_API_KEY` (optional in stub mode)
 - `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (optional)
@@ -88,6 +90,23 @@ Optional environment:
   - `POST /v1/session/resume`
 - Success and error entries include `requestId`, timestamp, route, request sample/data, decision (on success), and duration.
 - Read logs: `GET /v1/session/logs?limit=50` (max limit is 50, default is 50).
+
+## Chat storage (SQLite)
+
+- Chats and chat history are stored in SQLite.
+- Tables are auto-created at startup:
+  - `chats`
+  - `chat_history`
+- Manage chats:
+  - `POST /v1/chats` (optional body: `{"title":"Lighting chat"}`)
+  - `GET /v1/chats?includeArchived=true|false`
+  - `GET /v1/chats/:chatId`
+  - `PATCH /v1/chats/:chatId` (fields: `title`, `archived`)
+  - `DELETE /v1/chats/:chatId` (soft delete: sets `archived=true`)
+  - `GET /v1/chats/:chatId/history?limit=100` (max 200)
+- History write model:
+  - send optional `chatId` in `/v1/task/plan` and `/v1/session/*` request body
+  - each call writes `asked` when request starts and `done` on success/error
 
 ## Log file naming
 
