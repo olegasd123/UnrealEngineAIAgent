@@ -2,15 +2,20 @@ import type { PlanOutput } from "../contracts.js";
 import type { LlmProvider } from "../providers/types.js";
 import type { NormalizedIntent } from "../intent/intentLayer.js";
 import { buildRuleBasedPlan } from "./ruleBasedPlanner.js";
+import { WorldStateCollector } from "../worldState/worldStateCollector.js";
 
 export class PlanningLayer {
+  constructor(private readonly worldStateCollector: WorldStateCollector = new WorldStateCollector()) {}
+
   async buildPlan(intent: NormalizedIntent, provider: LlmProvider): Promise<PlanOutput> {
+    const worldState = this.worldStateCollector.collect(intent);
     const planInput = {
       request: intent.input,
       normalizedPrompt: intent.prompt,
       goalType: intent.goalType,
       constraints: intent.constraints,
-      successCriteria: intent.successCriteria
+      successCriteria: intent.successCriteria,
+      worldState
     };
 
     try {

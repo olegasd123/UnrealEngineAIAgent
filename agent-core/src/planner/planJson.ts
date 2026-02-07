@@ -130,13 +130,15 @@ export function buildPlanPrompt(input: PlanInput): string {
       goalType: input.goalType,
       constraints: input.constraints,
       successCriteria: input.successCriteria
-    }
+    },
+    worldState: input.worldState
   };
 
   return [
     "You are a planner for Unreal Editor actions.",
     "Return ONLY one valid JSON object. No markdown. No comments. No extra text.",
     "Use normalizedIntent as the main control input for planning decisions.",
+    "Use worldState to ground decisions in current scene state (selection, environment, lighting, materials, performance, assets).",
     "Prioritize normalizedIntent.constraints over other heuristics. Do not produce actions that violate constraints.",
     "Before finalizing actions, verify the plan against normalizedIntent.successCriteria and update steps/actions to satisfy them.",
     "If constraints and successCriteria conflict or are not satisfiable from context, return actions: [] and explain the blocker in steps.",

@@ -19,6 +19,7 @@ import { PlanningLayer } from "./planner/planningLayer.js";
 import { createProvider } from "./providers/createProvider.js";
 import { SessionStore } from "./sessions/sessionStore.js";
 import { ValidationLayer } from "./validator/validationLayer.js";
+import { WorldStateCollector } from "./worldState/worldStateCollector.js";
 
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const sessionLogStore = new SessionLogStore(config.taskLogPath);
@@ -26,7 +27,7 @@ const credentialStore = new CredentialStore();
 const sessionStore = new SessionStore(config.policy);
 const agentService = new AgentService(
   new IntentLayer(),
-  new PlanningLayer(),
+  new PlanningLayer(new WorldStateCollector()),
   new ValidationLayer(),
   new ExecutionLayer(sessionStore)
 );

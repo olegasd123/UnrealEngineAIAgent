@@ -1,6 +1,7 @@
 import type { PlanOutput, TaskRequest } from "../contracts.js";
 import type { ProviderName, ProviderRuntimeConfig } from "../config.js";
 import type { GoalType } from "../intent/intentLayer.js";
+import type { WorldState } from "../worldState/worldStateCollector.js";
 
 export interface PlanInput {
   request: TaskRequest;
@@ -8,6 +9,7 @@ export interface PlanInput {
   goalType: GoalType;
   constraints: string[];
   successCriteria: string[];
+  worldState: WorldState;
 }
 
 export interface ProviderFactoryConfig {

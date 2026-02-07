@@ -107,3 +107,95 @@ Optional environment:
   - `awaiting_approval`
   - `completed`
   - `failed`
+
+## Unreal plugin migration (strict context schema)
+
+`TaskRequest.context` is now strict. Unknown keys are rejected.
+
+Allowed top-level context keys:
+- `selection`
+- `mapName`, `levelName`, `gameStyle`, `timeOfDay`, `weather`
+- `materialStyle`
+- `qualityTier`, `targetFps`, `maxDrawCalls`
+- `manualStop`
+- `environment`, `lighting`, `materials`, `performance`, `assets`
+
+If your plugin sends custom fields, move them to allowed keys or remove them.
+
+Example: `/v1/task/plan` payload
+
+```json
+{
+  "prompt": "Tune lighting for open-world survival mood",
+  "mode": "agent",
+  "context": {
+    "selection": ["SM_Rock_01", "SM_Tree_05"],
+    "mapName": "OpenWorld_P",
+    "gameStyle": "open_world_survival",
+    "timeOfDay": "dusk",
+    "environment": {
+      "weather": "overcast"
+    },
+    "lighting": {
+      "hasDirectionalLight": true,
+      "hasSkyLight": true,
+      "hasFog": true,
+      "exposureCompensation": -0.3,
+      "directionalLightIntensity": 6.5,
+      "skyLightIntensity": 1.0,
+      "fogDensity": 0.02
+    },
+    "materials": {
+      "styleHint": "wet, cold, worn",
+      "targetMaterialPaths": [
+        "/Game/Materials/M_Rock_Wet.M_Rock_Wet",
+        "/Game/Materials/M_Mud.M_Mud"
+      ],
+      "selectedMaterialCount": 2
+    },
+    "performance": {
+      "qualityTier": "high",
+      "targetFps": 60,
+      "maxDrawCalls": 4000
+    },
+    "assets": {
+      "materialPaths": ["/Game/Materials/M_Rock_Wet.M_Rock_Wet"],
+      "meshPaths": ["/Game/Props/SM_Crate.SM_Crate"]
+    }
+  }
+}
+```
+
+Example: `/v1/session/start` payload
+
+```json
+{
+  "prompt": "Adapt selected materials to stylized fantasy look",
+  "mode": "agent",
+  "maxRetries": 2,
+  "context": {
+    "selection": ["SM_House_02"],
+    "levelName": "Village_L",
+    "materialStyle": "stylized_fantasy",
+    "materials": {
+      "styleHint": "painted, soft roughness, bright accents",
+      "targetMaterialPaths": ["/Game/Materials/M_House_Stylized.M_House_Stylized"]
+    },
+    "manualStop": false
+  }
+}
+```
+
+Example: invalid context (will fail)
+
+```json
+{
+  "prompt": "Move selected actors +100 on X",
+  "context": {
+    "selection": ["Actor_1"],
+    "biome": "forest"
+  }
+}
+```
+
+`biome` is not an allowed key. Use `environment.gameStyle`, `weather`, or another supported field.

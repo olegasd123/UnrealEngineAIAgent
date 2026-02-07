@@ -2,10 +2,78 @@ import { z } from "zod";
 
 export { AllowedCommands, UeToolCommandSchema, type UeToolCommand } from "./generated/ueToolCommandSchema.js";
 
+const QualityTierSchema = z.enum(["low", "medium", "high", "cinematic"]);
+
+const WorldStateEnvironmentContextSchema = z
+  .object({
+    mapName: z.string().trim().min(1).optional(),
+    levelName: z.string().trim().min(1).optional(),
+    gameStyle: z.string().trim().min(1).optional(),
+    timeOfDay: z.string().trim().min(1).optional(),
+    weather: z.string().trim().min(1).optional()
+  })
+  .strict();
+
+const WorldStateLightingContextSchema = z
+  .object({
+    hasDirectionalLight: z.boolean().optional(),
+    hasSkyLight: z.boolean().optional(),
+    hasFog: z.boolean().optional(),
+    exposureCompensation: z.number().finite().optional(),
+    directionalLightIntensity: z.number().finite().optional(),
+    skyLightIntensity: z.number().finite().optional(),
+    fogDensity: z.number().finite().optional()
+  })
+  .strict();
+
+const WorldStateMaterialsContextSchema = z
+  .object({
+    styleHint: z.string().trim().min(1).optional(),
+    targetMaterialPaths: z.array(z.string().trim().min(1)).optional(),
+    selectedMaterialCount: z.number().int().min(0).optional()
+  })
+  .strict();
+
+const WorldStatePerformanceContextSchema = z
+  .object({
+    qualityTier: QualityTierSchema.optional(),
+    targetFps: z.number().finite().optional(),
+    maxDrawCalls: z.number().int().min(0).optional()
+  })
+  .strict();
+
+const WorldStateAssetsContextSchema = z
+  .object({
+    materialPaths: z.array(z.string().trim().min(1)).optional(),
+    meshPaths: z.array(z.string().trim().min(1)).optional()
+  })
+  .strict();
+
+export const TaskContextSchema = z
+  .object({
+    selection: z.array(z.string().trim().min(1)).optional(),
+    mapName: z.string().trim().min(1).optional(),
+    levelName: z.string().trim().min(1).optional(),
+    gameStyle: z.string().trim().min(1).optional(),
+    timeOfDay: z.string().trim().min(1).optional(),
+    weather: z.string().trim().min(1).optional(),
+    materialStyle: z.string().trim().min(1).optional(),
+    qualityTier: QualityTierSchema.optional(),
+    targetFps: z.number().finite().optional(),
+    maxDrawCalls: z.number().int().min(0).optional(),
+    manualStop: z.boolean().optional(),
+    environment: WorldStateEnvironmentContextSchema.optional(),
+    lighting: WorldStateLightingContextSchema.optional(),
+    materials: WorldStateMaterialsContextSchema.optional(),
+    performance: WorldStatePerformanceContextSchema.optional(),
+    assets: WorldStateAssetsContextSchema.optional()
+  })
+  .strict();
+
 export const TaskRequestSchema = z.object({
   prompt: z.string().min(1),
   mode: z.enum(["chat", "agent"]).default("chat"),
-  context: z.record(z.unknown()).default({})
+  context: TaskContextSchema.default({})
 });
 
 export type TaskRequest = z.infer<typeof TaskRequestSchema>;
