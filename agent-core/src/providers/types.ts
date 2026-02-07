@@ -1,7 +1,14 @@
 import type { PlanOutput, TaskRequest } from "../contracts.js";
 import type { ProviderName, ProviderRuntimeConfig } from "../config.js";
+import type { GoalType } from "../intent/intentLayer.js";
 
-export type PlanInput = TaskRequest;
+export interface PlanInput {
+  request: TaskRequest;
+  normalizedPrompt: string;
+  goalType: GoalType;
+  constraints: string[];
+  successCriteria: string[];
+}
 
 export interface ProviderFactoryConfig {
   selected: ProviderName;

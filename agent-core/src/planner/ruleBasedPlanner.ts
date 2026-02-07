@@ -1,5 +1,4 @@
-import type { PlanAction, PlanOutput } from "../contracts.js";
-import type { PlanInput } from "../providers/types.js";
+import type { PlanAction, PlanOutput, TaskRequest } from "../contracts.js";
 
 function parseAxisValues(
   source: string,
@@ -588,7 +587,7 @@ function parseDuplicateFromPrompt(prompt: string): { count: number; offset?: { x
   return { count, offset };
 }
 
-export function buildRuleBasedPlan(input: PlanInput): PlanOutput {
+export function buildRuleBasedPlan(input: TaskRequest): PlanOutput {
   const selection = Array.isArray((input.context as { selection?: unknown }).selection)
     ? ((input.context as { selection: unknown[] }).selection as unknown[])
     : [];

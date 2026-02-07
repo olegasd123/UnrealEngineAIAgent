@@ -5,8 +5,16 @@ import { buildRuleBasedPlan } from "./ruleBasedPlanner.js";
 
 export class PlanningLayer {
   async buildPlan(intent: NormalizedIntent, provider: LlmProvider): Promise<PlanOutput> {
+    const planInput = {
+      request: intent.input,
+      normalizedPrompt: intent.prompt,
+      goalType: intent.goalType,
+      constraints: intent.constraints,
+      successCriteria: intent.successCriteria
+    };
+
     try {
-      return await provider.planTask(intent.input);
+      return await provider.planTask(planInput);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown provider error";
       const fallback = buildRuleBasedPlan(intent.input);

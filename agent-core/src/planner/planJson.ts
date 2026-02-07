@@ -122,9 +122,15 @@ function tryParseWithRepairs(input: string): unknown | null {
 
 export function buildPlanPrompt(input: PlanInput): string {
   const payload = {
-    prompt: input.prompt,
-    mode: input.mode,
-    context: input.context
+    prompt: input.request.prompt,
+    mode: input.request.mode,
+    context: input.request.context,
+    normalizedIntent: {
+      prompt: input.normalizedPrompt,
+      goalType: input.goalType,
+      constraints: input.constraints,
+      successCriteria: input.successCriteria
+    }
   };
 
   return [
