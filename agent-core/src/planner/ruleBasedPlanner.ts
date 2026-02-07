@@ -1,4 +1,11 @@
 import type { PlanAction, PlanOutput, TaskRequest } from "../contracts.js";
+import type { GoalType } from "../intent/intentLayer.js";
+
+interface FallbackPlanMetadata {
+  goalType?: GoalType;
+  constraints?: string[];
+  successCriteria?: string[];
+}
 
 function parseAxisValues(
   source: string,
@@ -587,7 +594,107 @@ function parseDuplicateFromPrompt(prompt: string): { count: number; offset?: { x
   return { count, offset };
 }
 
-export function buildRuleBasedPlan(input: TaskRequest): PlanOutput {
+function normalizeIdPart(value: string): string {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized.length > 0 ? normalized : "item";
+}
+
+function buildGoal(goalType: GoalType | undefined, prompt: string): PlanOutput["goal"] {
+  if (goalType && goalType !== "unknown") {
+    return {
+      id: `goal_${goalType}`,
+      description: `Complete task for goal type: ${goalType}.`,
+      priority: goalType === "scene_delete" ? "high" : "medium"
+    };
+  }
+
+  return {
+    id: `goal_prompt_${normalizeIdPart(prompt).slice(0, 40)}`,
+    description: "Complete the requested Unreal Editor task.",
+    priority: "medium"
+  };
+}
+
+function buildSubgoals(hasActions: boolean): PlanOutput["subgoals"] {
+  if (!hasActions) {
+    return [
+      {
+        id: "sg_collect_context",
+        description: "Collect more context to build executable actions.",
+        dependsOn: []
+      }
+    ];
+  }
+
+  return [
+    {
+      id: "sg_validate_scope",
+      description: "Validate task scope and target actors/components.",
+      dependsOn: []
+    },
+    {
+      id: "sg_prepare_actions",
+      description: "Prepare ordered Unreal Editor actions.",
+      dependsOn: ["sg_validate_scope"]
+    },
+    {
+      id: "sg_execute_actions",
+      description: "Execute approved actions safely in transaction.",
+      dependsOn: ["sg_prepare_actions"]
+    }
+  ];
+}
+
+function buildChecks(
+  metadata: FallbackPlanMetadata,
+  hasHighRiskAction: boolean
+): PlanOutput["checks"] {
+  const checks: PlanOutput["checks"] = [];
+  for (const [index, text] of (metadata.constraints ?? []).entries()) {
+    checks.push({
+      id: `check_constraint_${index + 1}`,
+      description: text,
+      type: "constraint",
+      source: "intent.constraints",
+      status: "pending",
+      onFail: "stop"
+    });
+  }
+
+  for (const [index, text] of (metadata.successCriteria ?? []).entries()) {
+    checks.push({
+      id: `check_success_${index + 1}`,
+      description: text,
+      type: "success",
+      source: "intent.successCriteria",
+      status: "pending",
+      onFail: "revise_subgoals"
+    });
+  }
+
+  if (hasHighRiskAction) {
+    checks.push({
+      id: "check_safety_high_risk_approval",
+      description: "High-risk actions require explicit user approval before execution.",
+      type: "safety",
+      source: "planner",
+      status: "pending",
+      onFail: "require_approval"
+    });
+  }
+
+  return checks;
+}
+
+function buildStopConditions(hasHighRiskAction: boolean): PlanOutput["stopConditions"] {
+  const conditions: PlanOutput["stopConditions"] = [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }];
+  if (hasHighRiskAction) {
+    conditions.push({ type: "risk_threshold", maxRisk: "medium" });
+  }
+  return conditions;
+}
+
+export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMetadata = {}): PlanOutput {
   const selection = Array.isArray((input.context as { selection?: unknown }).selection)
     ? ((input.context as { selection: unknown[] }).selection as unknown[])
     : [];
@@ -766,6 +873,11 @@ export function buildRuleBasedPlan(input: TaskRequest): PlanOutput {
     });
   }
 
+  const hasHighRiskAction = actions.some((action) => action.risk === "high");
+  const goal = buildGoal(metadata.goalType, input.prompt);
+  const checks = buildChecks(metadata, hasHighRiskAction);
+  const stopConditions = buildStopConditions(hasHighRiskAction);
+
   if (actions.length > 0) {
     return {
       summary: `Planned scene actions for prompt: ${input.prompt} (selected: ${selection.length})`,
@@ -774,7 +886,11 @@ export function buildRuleBasedPlan(input: TaskRequest): PlanOutput {
         "Wait for user approval",
         "Apply approved scene actions with transaction (undo-safe)"
       ],
-      actions
+      actions,
+      goal,
+      subgoals: buildSubgoals(true),
+      checks,
+      stopConditions
     };
   }
 
@@ -785,6 +901,10 @@ export function buildRuleBasedPlan(input: TaskRequest): PlanOutput {
       "Build action list",
       "No executable action parsed from prompt yet"
     ],
-    actions: []
+    actions: [],
+    goal,
+    subgoals: buildSubgoals(false),
+    checks,
+    stopConditions
   };
 }

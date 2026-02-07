@@ -150,6 +150,42 @@ export function buildPlanPrompt(input: PlanInput): string {
       {
         summary: "short text",
         steps: ["step 1", "step 2"],
+        goal: {
+          id: "goal_lighting_tune",
+          description: "Tune lighting for the requested style.",
+          priority: "medium"
+        },
+        subgoals: [
+          {
+            id: "sg_validate_scope",
+            description: "Validate scope and targets.",
+            dependsOn: []
+          },
+          {
+            id: "sg_prepare_actions",
+            description: "Prepare ordered Unreal actions.",
+            dependsOn: ["sg_validate_scope"]
+          }
+        ],
+        checks: [
+          {
+            id: "check_constraint_1",
+            description: "Use safe editor actions only.",
+            type: "constraint",
+            source: "intent.constraints",
+            status: "pending",
+            onFail: "stop"
+          },
+          {
+            id: "check_success_1",
+            description: "Generated plan is valid by schema.",
+            type: "success",
+            source: "intent.successCriteria",
+            status: "pending",
+            onFail: "revise_subgoals"
+          }
+        ],
+        stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
         actions: [
           {
             command: "scene.modifyActor",
@@ -278,6 +314,10 @@ export function buildPlanPrompt(input: PlanInput): string {
     "Rules:",
     "- Keep summary short and concrete.",
     "- steps must be short, ordered, and actionable.",
+    "- goal is required with id, description, priority(low|medium|high).",
+    "- subgoals is an ordered list with unique id and valid dependsOn references.",
+    "- checks should map to normalizedIntent.constraints and normalizedIntent.successCriteria when available.",
+    "- stopConditions must include at least: all_checks_passed, max_iterations, user_denied.",
     "- actions can be empty [] if no executable command is found.",
     "- scene.modifyActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include deltaLocation and/or deltaRotation and/or deltaScale and/or scale.",
     "- scene.createActor: include actorClass; location/rotation optional; count must be integer >= 1.",
@@ -302,6 +342,27 @@ export function buildPlanPrompt(input: PlanInput): string {
         output: {
           summary: "Create 5 cubes and set spawn transform.",
           steps: ["Preview planned create action", "Wait for user approval", "Execute create action"],
+          goal: {
+            id: "goal_scene_create",
+            description: "Create requested actors with requested transform.",
+            priority: "medium"
+          },
+          subgoals: [
+            { id: "sg_validate_scope", description: "Validate create scope.", dependsOn: [] },
+            { id: "sg_prepare_actions", description: "Prepare create actions.", dependsOn: ["sg_validate_scope"] },
+            { id: "sg_execute_actions", description: "Execute approved actions.", dependsOn: ["sg_prepare_actions"] }
+          ],
+          checks: [
+            {
+              id: "check_constraint_1",
+              description: "Use safe editor actions only.",
+              type: "constraint",
+              source: "intent.constraints",
+              status: "pending",
+              onFail: "stop"
+            }
+          ],
+          stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
           actions: [
             {
               command: "session.beginTransaction",
@@ -335,6 +396,27 @@ export function buildPlanPrompt(input: PlanInput): string {
         output: {
           summary: "Delete current selection.",
           steps: ["Preview delete impact", "Require explicit approval", "Delete selected actors in transaction"],
+          goal: { id: "goal_scene_delete", description: "Delete selected actors.", priority: "high" },
+          subgoals: [
+            { id: "sg_validate_scope", description: "Validate delete scope.", dependsOn: [] },
+            { id: "sg_execute_actions", description: "Execute approved delete.", dependsOn: ["sg_validate_scope"] }
+          ],
+          checks: [
+            {
+              id: "check_safety_high_risk_approval",
+              description: "High-risk actions require explicit user approval.",
+              type: "safety",
+              source: "planner",
+              status: "pending",
+              onFail: "require_approval"
+            }
+          ],
+          stopConditions: [
+            { type: "all_checks_passed" },
+            { type: "max_iterations", value: 1 },
+            { type: "user_denied" },
+            { type: "risk_threshold", maxRisk: "medium" }
+          ],
           actions: [{ command: "scene.deleteActor", params: { target: "selection" }, risk: "high" }]
         }
       },
@@ -347,6 +429,13 @@ export function buildPlanPrompt(input: PlanInput): string {
         output: {
           summary: "Move actor3 along X.",
           steps: ["Preview planned modify action", "Wait for user approval", "Apply modify action"],
+          goal: { id: "goal_scene_transform", description: "Move actor3 along X.", priority: "low" },
+          subgoals: [
+            { id: "sg_validate_scope", description: "Validate transform target.", dependsOn: [] },
+            { id: "sg_execute_actions", description: "Execute approved transform action.", dependsOn: ["sg_validate_scope"] }
+          ],
+          checks: [],
+          stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
           actions: [
             {
               command: "scene.modifyActor",

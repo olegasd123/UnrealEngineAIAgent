@@ -25,6 +25,8 @@ export interface SessionDecision {
   status: SessionStatus;
   summary: string;
   steps: string[];
+  checks?: PlanOutput["checks"];
+  matchedStopCondition?: PlanOutput["stopConditions"][number];
   nextActionIndex?: number;
   nextAction?: PlanAction;
   nextActionState?: ActionState;

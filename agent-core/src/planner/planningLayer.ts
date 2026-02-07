@@ -17,7 +17,11 @@ export class PlanningLayer {
       return await provider.planTask(planInput);
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown provider error";
-      const fallback = buildRuleBasedPlan(intent.input);
+      const fallback = buildRuleBasedPlan(intent.input, {
+        goalType: intent.goalType,
+        constraints: intent.constraints,
+        successCriteria: intent.successCriteria
+      });
       return {
         ...fallback,
         steps: [`Provider planning failed. Using local fallback. Reason: ${reason}`, ...fallback.steps]

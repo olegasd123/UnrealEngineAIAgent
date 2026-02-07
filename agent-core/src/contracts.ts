@@ -251,10 +251,112 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SessionRollbackTransactionActionSchema
 ]);
 
+const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");
+
+export const PlanGoalSchema = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1),
+  priority: PlanPrioritySchema
+});
+
+export const PlanSubgoalSchema = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1),
+  dependsOn: z.array(z.string().min(1)).default([])
+});
+
+export const PlanCheckSchema = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1),
+  type: z.enum(["constraint", "success", "safety"]),
+  source: z.enum(["intent.constraints", "intent.successCriteria", "planner"]).default("planner"),
+  status: z.enum(["pending", "passed", "failed", "unknown"]).default("pending"),
+  onFail: z.enum(["revise_subgoals", "require_approval", "stop"]).default("revise_subgoals")
+});
+
+const StopAllChecksPassedSchema = z.object({
+  type: z.literal("all_checks_passed")
+});
+
+const StopMaxIterationsSchema = z.object({
+  type: z.literal("max_iterations"),
+  value: z.number().int().min(1)
+});
+
+const StopNoProgressSchema = z.object({
+  type: z.literal("no_progress"),
+  iterations: z.number().int().min(1)
+});
+
+const StopRiskThresholdSchema = z.object({
+  type: z.literal("risk_threshold"),
+  maxRisk: z.enum(["low", "medium", "high"])
+});
+
+const StopUserDeniedSchema = z.object({
+  type: z.literal("user_denied")
+});
+
+const StopManualStopSchema = z.object({
+  type: z.literal("manual_stop")
+});
+
+export const PlanStopConditionSchema = z.discriminatedUnion("type", [
+  StopAllChecksPassedSchema,
+  StopMaxIterationsSchema,
+  StopNoProgressSchema,
+  StopRiskThresholdSchema,
+  StopUserDeniedSchema,
+  StopManualStopSchema
+]);
+
 export const PlanOutputSchema = z.object({
   summary: z.string().min(1),
   steps: z.array(z.string().min(1)).min(1),
-  actions: z.array(PlanActionUnionSchema).default([])
+  actions: z.array(PlanActionUnionSchema).default([]),
+  goal: PlanGoalSchema.default({
+    id: "goal_primary",
+    description: "Execute the requested Unreal Editor task.",
+    priority: "medium"
+  }),
+  subgoals: z.array(PlanSubgoalSchema).default([]),
+  checks: z.array(PlanCheckSchema).default([]),
+  stopConditions: z
+    .array(PlanStopConditionSchema)
+    .default([{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }])
+}).superRefine((value, ctx) => {
+  const subgoalIds = new Set<string>();
+  for (const subgoal of value.subgoals) {
+    if (subgoalIds.has(subgoal.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate subgoal id: ${subgoal.id}`
+      });
+    }
+    subgoalIds.add(subgoal.id);
+  }
+
+  for (const subgoal of value.subgoals) {
+    for (const dep of subgoal.dependsOn) {
+      if (!subgoalIds.has(dep)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Subgoal ${subgoal.id} depends on missing subgoal id: ${dep}`
+        });
+      }
+    }
+  }
+
+  const checkIds = new Set<string>();
+  for (const check of value.checks) {
+    if (checkIds.has(check.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate check id: ${check.id}`
+      });
+    }
+    checkIds.add(check.id);
+  }
 });
 
 export type PlanAction = z.infer<typeof PlanActionUnionSchema>;
