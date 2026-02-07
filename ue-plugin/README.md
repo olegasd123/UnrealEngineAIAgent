@@ -11,6 +11,11 @@ Quick validation in editor tab:
 - Agent status is checked when tab opens and refreshed every 10 seconds
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - mode selector near `Run`: `Chat` or `Agent`
+- chat selector and management:
+  - `New Chat` to create chat
+  - `Refresh Chats` to reload active chat list
+  - `Archive Chat` to archive selected chat
+  - chat history box shows asked/done timeline from Agent Core
 - `Run` to run one flow:
   - in chat mode: request `/v1/task/plan` and show parsed actions
   - in agent mode: start session orchestration with `/v1/session/start`

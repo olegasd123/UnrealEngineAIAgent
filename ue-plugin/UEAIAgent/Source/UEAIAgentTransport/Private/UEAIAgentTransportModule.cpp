@@ -8,6 +8,7 @@
 #include "Engine/Level.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GenericPlatform/GenericPlatformHttp.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -884,6 +885,32 @@ FString FUEAIAgentTransportModule::BuildSessionResumeUrl() const
     return BuildBaseUrl() + TEXT("/v1/session/resume");
 }
 
+FString FUEAIAgentTransportModule::BuildChatsUrl(bool bIncludeArchived) const
+{
+    if (bIncludeArchived)
+    {
+        return BuildBaseUrl() + TEXT("/v1/chats?includeArchived=true");
+    }
+    return BuildBaseUrl() + TEXT("/v1/chats");
+}
+
+FString FUEAIAgentTransportModule::BuildCreateChatUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/chats");
+}
+
+FString FUEAIAgentTransportModule::BuildChatDeleteUrl(const FString& ChatId) const
+{
+    return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId);
+}
+
+FString FUEAIAgentTransportModule::BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const
+{
+    const int32 SafeLimit = FMath::Clamp(Limit, 1, 200);
+    return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId) +
+        FString::Printf(TEXT("/history?limit=%d"), SafeLimit);
+}
+
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
 {
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
@@ -956,6 +983,10 @@ void FUEAIAgentTransportModule::PlanTask(
     Root->SetStringField(TEXT("prompt"), Prompt);
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("chat") : Mode);
     Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
+    if (!ActiveChatId.IsEmpty())
+    {
+        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+    }
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
@@ -1800,6 +1831,10 @@ void FUEAIAgentTransportModule::StartSession(
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("agent") : Mode);
     Root->SetNumberField(TEXT("maxRetries"), 2);
     Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
+    if (!ActiveChatId.IsEmpty())
+    {
+        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+    }
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
@@ -1852,6 +1887,10 @@ void FUEAIAgentTransportModule::NextSession(
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
+    if (!ActiveChatId.IsEmpty())
+    {
+        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+    }
 
     if (bHasResult)
     {
@@ -1922,6 +1961,10 @@ void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
     Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
     Root->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
     Root->SetBoolField(TEXT("approved"), bApproved);
+    if (!ActiveChatId.IsEmpty())
+    {
+        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+    }
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
@@ -1970,6 +2013,10 @@ void FUEAIAgentTransportModule::ResumeSession(const FOnUEAIAgentSessionUpdated& 
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
+    if (!ActiveChatId.IsEmpty())
+    {
+        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+    }
 
     FString RequestBody;
     const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
@@ -2210,6 +2257,330 @@ void FUEAIAgentTransportModule::GetProviderStatus(const FOnUEAIAgentCredentialOp
         });
 
     Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::RefreshChats(bool bIncludeArchived, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatsUrl(bIncludeArchived));
+    Request->SetVerb(TEXT("GET"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Chat list failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Chat list response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned a chat list error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                Chats.Empty();
+                const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+                if (ResponseJson->TryGetArrayField(TEXT("chats"), Items) && Items)
+                {
+                    for (const TSharedPtr<FJsonValue>& Value : *Items)
+                    {
+                        if (!Value.IsValid())
+                        {
+                            continue;
+                        }
+
+                        const TSharedPtr<FJsonObject> ChatObj = Value->AsObject();
+                        if (!ChatObj.IsValid())
+                        {
+                            continue;
+                        }
+
+                        FString Id;
+                        if (!ChatObj->TryGetStringField(TEXT("id"), Id) || Id.IsEmpty())
+                        {
+                            continue;
+                        }
+
+                        FUEAIAgentChatSummary Chat;
+                        Chat.Id = Id;
+                        ChatObj->TryGetStringField(TEXT("title"), Chat.Title);
+                        ChatObj->TryGetBoolField(TEXT("archived"), Chat.bArchived);
+                        ChatObj->TryGetStringField(TEXT("lastActivityAt"), Chat.LastActivityAt);
+                        Chats.Add(Chat);
+                    }
+                }
+
+                if (!ActiveChatId.IsEmpty())
+                {
+                    const bool bExists = Chats.ContainsByPredicate([this](const FUEAIAgentChatSummary& Chat)
+                    {
+                        return Chat.Id == ActiveChatId;
+                    });
+                    if (!bExists)
+                    {
+                        ActiveChatId.Empty();
+                        ActiveChatHistory.Empty();
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, FString::Printf(TEXT("Chats loaded: %d"), Chats.Num()));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::CreateChat(const FString& Title, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    const FString TrimmedTitle = Title.TrimStartAndEnd();
+    if (!TrimmedTitle.IsEmpty())
+    {
+        Root->SetStringField(TEXT("title"), TrimmedTitle);
+    }
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildCreateChatUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Create chat failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Create chat response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned a create chat error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* ChatObj = nullptr;
+                if (!ResponseJson->TryGetObjectField(TEXT("chat"), ChatObj) || !ChatObj || !ChatObj->IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Create chat response misses chat object."));
+                    return;
+                }
+
+                FString NewChatId;
+                (*ChatObj)->TryGetStringField(TEXT("id"), NewChatId);
+                FString NewTitle;
+                (*ChatObj)->TryGetStringField(TEXT("title"), NewTitle);
+                bool bArchived = false;
+                (*ChatObj)->TryGetBoolField(TEXT("archived"), bArchived);
+                FString LastActivityAt;
+                (*ChatObj)->TryGetStringField(TEXT("lastActivityAt"), LastActivityAt);
+
+                ActiveChatId = NewChatId;
+                ActiveChatHistory.Empty();
+                if (!NewChatId.IsEmpty())
+                {
+                    Chats.RemoveAll([&NewChatId](const FUEAIAgentChatSummary& Existing)
+                    {
+                        return Existing.Id == NewChatId;
+                    });
+
+                    FUEAIAgentChatSummary NewChat;
+                    NewChat.Id = NewChatId;
+                    NewChat.Title = NewTitle;
+                    NewChat.bArchived = bArchived;
+                    NewChat.LastActivityAt = LastActivityAt;
+                    Chats.Insert(NewChat, 0);
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Chat created."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::ArchiveActiveChat(const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ActiveChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active chat selected."));
+        return;
+    }
+
+    const FString ChatId = ActiveChatId;
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatDeleteUrl(ChatId));
+    Request->SetVerb(TEXT("DELETE"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback, ChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, ChatId, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Archive chat failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                ActiveChatId.Empty();
+                ActiveChatHistory.Empty();
+                Chats.RemoveAll([&ChatId](const FUEAIAgentChatSummary& Existing)
+                {
+                    return Existing.Id == ChatId;
+                });
+                Callback.ExecuteIfBound(true, TEXT("Chat archived."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ActiveChatId.IsEmpty())
+    {
+        ActiveChatHistory.Empty();
+        Callback.ExecuteIfBound(true, TEXT("No active chat selected."));
+        return;
+    }
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatHistoryUrl(ActiveChatId, Limit));
+    Request->SetVerb(TEXT("GET"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Chat history failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Chat history response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned a chat history error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                ActiveChatHistory.Empty();
+                const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+                if (ResponseJson->TryGetArrayField(TEXT("history"), Items) && Items)
+                {
+                    for (const TSharedPtr<FJsonValue>& Value : *Items)
+                    {
+                        if (!Value.IsValid())
+                        {
+                            continue;
+                        }
+
+                        const TSharedPtr<FJsonObject> EntryObj = Value->AsObject();
+                        if (!EntryObj.IsValid())
+                        {
+                            continue;
+                        }
+
+                        FUEAIAgentChatHistoryEntry Entry;
+                        EntryObj->TryGetStringField(TEXT("kind"), Entry.Kind);
+                        EntryObj->TryGetStringField(TEXT("route"), Entry.Route);
+                        EntryObj->TryGetStringField(TEXT("summary"), Entry.Summary);
+                        EntryObj->TryGetStringField(TEXT("createdAt"), Entry.CreatedAt);
+                        ActiveChatHistory.Add(Entry);
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, FString::Printf(TEXT("History loaded: %d"), ActiveChatHistory.Num()));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+const TArray<FUEAIAgentChatSummary>& FUEAIAgentTransportModule::GetChats() const
+{
+    return Chats;
+}
+
+const TArray<FUEAIAgentChatHistoryEntry>& FUEAIAgentTransportModule::GetActiveChatHistory() const
+{
+    return ActiveChatHistory;
+}
+
+void FUEAIAgentTransportModule::SetActiveChatId(const FString& ChatId) const
+{
+    ActiveChatId = ChatId;
+}
+
+FString FUEAIAgentTransportModule::GetActiveChatId() const
+{
+    return ActiveChatId;
 }
 
 int32 FUEAIAgentTransportModule::GetPlannedActionCount() const

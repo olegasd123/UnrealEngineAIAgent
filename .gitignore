@@ -20,3 +20,4 @@ Saved/
 
 # Logs
 agent-core/data/*-log.*
+agent-core/data/agent.db

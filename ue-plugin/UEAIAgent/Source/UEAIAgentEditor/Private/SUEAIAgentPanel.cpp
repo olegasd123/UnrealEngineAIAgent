@@ -90,6 +90,80 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
                     SNew(SBox)
+                    .WidthOverride(220.0f)
+                    [
+                        SAssignNew(ChatCombo, SComboBox<TSharedPtr<FString>>)
+                        .OptionsSource(&ChatItems)
+                        .InitiallySelectedItem(SelectedChatItem)
+                        .OnGenerateWidget(this, &SUEAIAgentPanel::HandleChatComboGenerateWidget)
+                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatComboSelectionChanged)
+                        [
+                            SNew(STextBlock)
+                            .Text_Lambda([this]()
+                            {
+                                return FText::FromString(SelectedChatItem.IsValid() ? *SelectedChatItem : TEXT("No chat"));
+                            })
+                        ]
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(180.0f)
+                    [
+                        SAssignNew(NewChatTitleInput, SEditableTextBox)
+                        .HintText(FText::FromString(TEXT("New chat title")))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("New Chat")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnCreateChatClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Refresh Chats")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnRefreshChatsClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Archive Chat")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnArchiveChatClicked)
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SBox)
+                .HeightOverride(100.0f)
+                [
+                    SAssignNew(ChatHistoryText, SMultiLineEditableTextBox)
+                    .IsReadOnly(true)
+                    .SelectAllTextWhenFocused(false)
+                    .Text(FText::FromString(TEXT("Chat history: no chat selected.")))
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
                     .WidthOverride(120.0f)
                     .Visibility_Lambda([this]()
                     {
@@ -337,6 +411,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         this,
         &SUEAIAgentPanel::HandleHealthResult));
     RegisterActiveTimer(10.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleHealthTimer));
+    OnRefreshChatsClicked();
 
     UpdateActionApprovalUi();
 }
@@ -412,6 +487,28 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         SelectedActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnCreateChatClicked()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const FString Title = NewChatTitleInput.IsValid() ? NewChatTitleInput->GetText().ToString() : TEXT("");
+    Transport.CreateChat(Title, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnRefreshChatsClicked()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    Transport.RefreshChats(false, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnArchiveChatClicked()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    Transport.ArchiveActiveChat(FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
     return FReply::Handled();
 }
 
@@ -608,6 +705,7 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     if (!bOk)
     {
         PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
+        RefreshActiveChatHistory();
         return;
     }
 
@@ -627,6 +725,7 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     }
 
     PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
+    RefreshActiveChatHistory();
 }
 
 void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
@@ -641,6 +740,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     {
         CurrentSessionStatus = ESessionStatus::Failed;
         PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        RefreshActiveChatHistory();
         return;
     }
 
@@ -648,11 +748,13 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (CurrentSessionStatus == ESessionStatus::Failed)
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        RefreshActiveChatHistory();
         return;
     }
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: completed\n") + Message + TEXT("\nClick Run to start over.")));
+        RefreshActiveChatHistory();
         return;
     }
 
@@ -660,6 +762,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (Transport.GetPlannedActionCount() <= 0)
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        RefreshActiveChatHistory();
         return;
     }
 
@@ -667,12 +770,14 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (!Transport.GetPendingAction(0, NextAction))
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        RefreshActiveChatHistory();
         return;
     }
 
     if (!NextAction.bApproved)
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: awaiting approval\n") + Message));
+        RefreshActiveChatHistory();
         return;
     }
 
@@ -897,6 +1002,117 @@ void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& M
     CredentialText->SetText(FText::FromString(Prefix + Message));
 }
 
+void SUEAIAgentPanel::HandleChatOperationResult(bool bOk, const FString& Message)
+{
+    if (!bOk)
+    {
+        UpdateChatHistoryText(TEXT("Chat: error\n") + Message + TEXT("\n"));
+        return;
+    }
+
+    RefreshChatUiFromTransport(true);
+    RefreshActiveChatHistory();
+
+    if (NewChatTitleInput.IsValid())
+    {
+        NewChatTitleInput->SetText(FText::GetEmpty());
+    }
+
+    UpdateChatHistoryText(TEXT("Chat: ok\n") + Message + TEXT("\n"));
+}
+
+void SUEAIAgentPanel::HandleChatHistoryResult(bool bOk, const FString& Message)
+{
+    const FString Prefix = bOk ? TEXT("Chat history: ok\n") : TEXT("Chat history: error\n");
+    UpdateChatHistoryText(Prefix + Message + TEXT("\n"));
+}
+
+void SUEAIAgentPanel::RefreshChatUiFromTransport(bool bKeepCurrentSelection)
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const FString PreviousLabel = bKeepCurrentSelection && SelectedChatItem.IsValid() ? *SelectedChatItem : TEXT("");
+    const FString ActiveId = Transport.GetActiveChatId();
+
+    ChatItems.Empty();
+    ChatLabelToId.Empty();
+    SelectedChatItem.Reset();
+
+    const TArray<FUEAIAgentChatSummary>& Chats = Transport.GetChats();
+    for (const FUEAIAgentChatSummary& Chat : Chats)
+    {
+        const FString Label = Chat.Title.IsEmpty() ? Chat.Id : FString::Printf(TEXT("%s (%s)"), *Chat.Title, *Chat.Id.Left(8));
+        const TSharedPtr<FString> LabelItem = MakeShared<FString>(Label);
+        ChatItems.Add(LabelItem);
+        ChatLabelToId.Add(Label, Chat.Id);
+
+        if (!ActiveId.IsEmpty() && Chat.Id == ActiveId)
+        {
+            SelectedChatItem = LabelItem;
+        }
+        else if (SelectedChatItem.IsValid() == false && !PreviousLabel.IsEmpty() && Label == PreviousLabel)
+        {
+            SelectedChatItem = LabelItem;
+        }
+    }
+
+    if (!SelectedChatItem.IsValid() && ChatItems.Num() > 0)
+    {
+        SelectedChatItem = ChatItems[0];
+        const FString* IdPtr = ChatLabelToId.Find(*SelectedChatItem);
+        Transport.SetActiveChatId(IdPtr ? *IdPtr : TEXT(""));
+    }
+
+    if (ChatCombo.IsValid())
+    {
+        ChatCombo->RefreshOptions();
+        ChatCombo->SetSelectedItem(SelectedChatItem);
+    }
+}
+
+void SUEAIAgentPanel::RefreshActiveChatHistory()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    Transport.LoadActiveChatHistory(100, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatHistoryResult));
+}
+
+void SUEAIAgentPanel::UpdateChatHistoryText(const FString& PrefixMessage)
+{
+    if (!ChatHistoryText.IsValid())
+    {
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    FString ResultText = PrefixMessage;
+    const FString ActiveId = Transport.GetActiveChatId();
+    if (ActiveId.IsEmpty())
+    {
+        ResultText += TEXT("Chat history: no chat selected.");
+        ChatHistoryText->SetText(FText::FromString(ResultText));
+        return;
+    }
+
+    const TArray<FUEAIAgentChatHistoryEntry>& Entries = Transport.GetActiveChatHistory();
+    if (Entries.Num() == 0)
+    {
+        ResultText += TEXT("Chat history is empty.");
+        ChatHistoryText->SetText(FText::FromString(ResultText));
+        return;
+    }
+
+    for (const FUEAIAgentChatHistoryEntry& Entry : Entries)
+    {
+        ResultText += FString::Printf(
+            TEXT("[%s] %s %s\n%s\n"),
+            *Entry.CreatedAt,
+            *Entry.Kind,
+            *Entry.Route,
+            *Entry.Summary);
+    }
+
+    ChatHistoryText->SetText(FText::FromString(ResultText));
+}
+
 void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState)
 {
     FUEAIAgentTransportModule::Get().SetPlannedActionApproved(ActionIndex, NewState == ECheckBoxState::Checked);
@@ -1054,6 +1270,11 @@ TSharedRef<SWidget> SUEAIAgentPanel::HandleModeComboGenerateWidget(TSharedPtr<FS
     return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
 }
 
+TSharedRef<SWidget> SUEAIAgentPanel::HandleChatComboGenerateWidget(TSharedPtr<FString> InItem) const
+{
+    return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("No chat")));
+}
+
 void SUEAIAgentPanel::HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
 {
     if (!NewValue.IsValid())
@@ -1072,6 +1293,23 @@ void SUEAIAgentPanel::HandleModeComboSelectionChanged(TSharedPtr<FString> NewVal
     }
 
     SelectedModeItem = NewValue;
+}
+
+void SUEAIAgentPanel::HandleChatComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+{
+    (void)SelectInfo;
+    if (!NewValue.IsValid())
+    {
+        FUEAIAgentTransportModule::Get().SetActiveChatId(TEXT(""));
+        SelectedChatItem.Reset();
+        UpdateChatHistoryText();
+        return;
+    }
+
+    SelectedChatItem = NewValue;
+    const FString* ChatIdPtr = ChatLabelToId.Find(*NewValue);
+    FUEAIAgentTransportModule::Get().SetActiveChatId(ChatIdPtr ? *ChatIdPtr : TEXT(""));
+    RefreshActiveChatHistory();
 }
 
 void SUEAIAgentPanel::HandlePromptTextChanged(const FText& NewText)

@@ -8,6 +8,7 @@ DECLARE_DELEGATE_TwoParams(FOnUEAIAgentHealthChecked, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentTaskPlanned, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentCredentialOpFinished, bool, const FString&);
 DECLARE_DELEGATE_TwoParams(FOnUEAIAgentSessionUpdated, bool, const FString&);
+DECLARE_DELEGATE_TwoParams(FOnUEAIAgentChatOpFinished, bool, const FString&);
 
 enum class EUEAIAgentPlannedActionType : uint8
 {
@@ -99,6 +100,22 @@ struct FUEAIAgentPlannedSceneAction
     bool bApproved = true;
 };
 
+struct FUEAIAgentChatSummary
+{
+    FString Id;
+    FString Title;
+    bool bArchived = false;
+    FString LastActivityAt;
+};
+
+struct FUEAIAgentChatHistoryEntry
+{
+    FString Kind;
+    FString Route;
+    FString Summary;
+    FString CreatedAt;
+};
+
 class UEAIAGENTTRANSPORT_API FUEAIAgentTransportModule : public IModuleInterface
 {
 public:
@@ -125,6 +142,14 @@ public:
     void DeleteProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void TestProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void GetProviderStatus(const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void RefreshChats(bool bIncludeArchived, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void CreateChat(const FString& Title, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void ArchiveActiveChat(const FOnUEAIAgentChatOpFinished& Callback) const;
+    void LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const;
+    const TArray<FUEAIAgentChatSummary>& GetChats() const;
+    const TArray<FUEAIAgentChatHistoryEntry>& GetActiveChatHistory() const;
+    void SetActiveChatId(const FString& ChatId) const;
+    FString GetActiveChatId() const;
     int32 GetPlannedActionCount() const;
     FString GetPlannedActionPreviewText(int32 ActionIndex) const;
     bool IsPlannedActionApproved(int32 ActionIndex) const;
@@ -148,6 +173,10 @@ private:
     FString BuildSessionNextUrl() const;
     FString BuildSessionApproveUrl() const;
     FString BuildSessionResumeUrl() const;
+    FString BuildChatsUrl(bool bIncludeArchived) const;
+    FString BuildCreateChatUrl() const;
+    FString BuildChatDeleteUrl(const FString& ChatId) const;
+    FString BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const;
     bool ParseSessionDecision(
         const TSharedPtr<FJsonObject>& ResponseJson,
         const TArray<FString>& SelectedActors,
@@ -157,4 +186,7 @@ private:
     mutable FString ActiveSessionId;
     mutable int32 ActiveSessionActionIndex = INDEX_NONE;
     mutable TArray<FString> ActiveSessionSelectedActors;
+    mutable TArray<FUEAIAgentChatSummary> Chats;
+    mutable TArray<FUEAIAgentChatHistoryEntry> ActiveChatHistory;
+    mutable FString ActiveChatId;
 };
