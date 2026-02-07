@@ -19,7 +19,7 @@ import { SessionStore } from "./sessions/sessionStore.js";
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const sessionLogStore = new SessionLogStore(config.taskLogPath);
 const credentialStore = new CredentialStore();
-const sessionStore = new SessionStore();
+const sessionStore = new SessionStore(config.policy);
 
 const ProviderSchema = z.enum(["openai", "gemini"]);
 const CredentialSetSchema = z.object({

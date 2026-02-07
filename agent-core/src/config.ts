@@ -32,6 +32,16 @@ const MaxTokensSchema = z.preprocess(
   z.number().int().min(1)
 );
 
+const PositiveIntSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    return Number(value);
+  },
+  z.number().int().min(1)
+);
+
 const RawEnvSchema = z.object({
   AGENT_HOST: z.string().trim().min(1).default("127.0.0.1"),
   AGENT_PORT: PortSchema,
@@ -48,7 +58,14 @@ const RawEnvSchema = z.object({
   GEMINI_MODEL: z.string().trim().min(1).default("gemini-2.0-flash"),
   GEMINI_BASE_URL: z.string().trim().optional(),
   GEMINI_TEMPERATURE: TemperatureSchema,
-  GEMINI_MAX_TOKENS: MaxTokensSchema
+  GEMINI_MAX_TOKENS: MaxTokensSchema,
+
+  AGENT_POLICY_MAX_CREATE_COUNT: PositiveIntSchema.default(50),
+  AGENT_POLICY_MAX_DUPLICATE_COUNT: PositiveIntSchema.default(10),
+  AGENT_POLICY_MAX_TARGET_NAMES: PositiveIntSchema.default(50),
+  AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT: PositiveIntSchema.default(20),
+  AGENT_POLICY_SELECTION_TARGET_ESTIMATE: PositiveIntSchema.default(5),
+  AGENT_POLICY_MAX_SESSION_CHANGE_UNITS: PositiveIntSchema.default(120)
 });
 
 function optionalNonEmpty(value: string | undefined): string | undefined {
@@ -71,6 +88,15 @@ export interface ProviderRuntimeConfig {
   maxTokens: number;
 }
 
+export interface PolicyRuntimeConfig {
+  maxCreateCount: number;
+  maxDuplicateCount: number;
+  maxTargetNames: number;
+  maxDeleteByNameCount: number;
+  selectionTargetEstimate: number;
+  maxSessionChangeUnits: number;
+}
+
 export const config = {
   host: env.AGENT_HOST,
   port: env.AGENT_PORT,
@@ -91,5 +117,13 @@ export const config = {
       temperature: env.GEMINI_TEMPERATURE,
       maxTokens: env.GEMINI_MAX_TOKENS
     }
+  },
+  policy: {
+    maxCreateCount: env.AGENT_POLICY_MAX_CREATE_COUNT,
+    maxDuplicateCount: env.AGENT_POLICY_MAX_DUPLICATE_COUNT,
+    maxTargetNames: env.AGENT_POLICY_MAX_TARGET_NAMES,
+    maxDeleteByNameCount: env.AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT,
+    selectionTargetEstimate: env.AGENT_POLICY_SELECTION_TARGET_ESTIMATE,
+    maxSessionChangeUnits: env.AGENT_POLICY_MAX_SESSION_CHANGE_UNITS
   }
 };

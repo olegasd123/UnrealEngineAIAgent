@@ -41,6 +41,12 @@ Optional environment:
 - `GEMINI_BASE_URL` (optional)
 - `GEMINI_TEMPERATURE` (default `0.2`)
 - `GEMINI_MAX_TOKENS` (default `1200`)
+- `AGENT_POLICY_MAX_CREATE_COUNT` (default `50`)
+- `AGENT_POLICY_MAX_DUPLICATE_COUNT` (default `10`)
+- `AGENT_POLICY_MAX_TARGET_NAMES` (default `50`)
+- `AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT` (default `20`)
+- `AGENT_POLICY_SELECTION_TARGET_ESTIMATE` (default `5`)
+- `AGENT_POLICY_MAX_SESSION_CHANGE_UNITS` (default `120`)
 
 ## Credential management
 

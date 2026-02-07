@@ -7,16 +7,11 @@ import type {
   SessionStartRequest,
   TaskRequest
 } from "../contracts.js";
+import type { PolicyRuntimeConfig } from "../config.js";
 
 type ActionState = "pending" | "succeeded" | "failed";
 type SessionStatus = "ready_to_execute" | "awaiting_approval" | "completed" | "failed";
 
-const MAX_CREATE_COUNT = 50;
-const MAX_DUPLICATE_COUNT = 10;
-const MAX_TARGET_NAMES = 50;
-const MAX_DELETE_BY_NAME_COUNT = 20;
-const SELECTION_TARGET_ESTIMATE = 5;
-const MAX_SESSION_CHANGE_UNITS = 120;
 const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
   "Actor",
   "StaticMeshActor",
@@ -68,6 +63,15 @@ interface LocalPolicyDecision {
   estimatedChanges: number;
 }
 
+const DEFAULT_POLICY: PolicyRuntimeConfig = {
+  maxCreateCount: 50,
+  maxDuplicateCount: 10,
+  maxTargetNames: 50,
+  maxDeleteByNameCount: 20,
+  selectionTargetEstimate: 5,
+  maxSessionChangeUnits: 120
+};
+
 function shouldAutoApprove(risk: PlanAction["risk"]): boolean {
   return risk === "low";
 }
@@ -84,6 +88,7 @@ function isAllowedAssetPath(path: string): boolean {
 function requireApproval(
   action: PlanAction,
   reason: string,
+  policy: PolicyRuntimeConfig,
   riskOverride: PlanAction["risk"] = "high"
 ): LocalPolicyDecision {
   return {
@@ -91,21 +96,21 @@ function requireApproval(
     risk: riskOverride,
     message: reason,
     hardDenied: false,
-    estimatedChanges: estimateActionChanges(action)
+    estimatedChanges: estimateActionChanges(action, policy)
   };
 }
 
-function hardDeny(action: PlanAction, reason: string): LocalPolicyDecision {
+function hardDeny(action: PlanAction, reason: string, policy: PolicyRuntimeConfig): LocalPolicyDecision {
   return {
     approved: false,
     risk: "high",
     message: reason,
     hardDenied: true,
-    estimatedChanges: estimateActionChanges(action)
+    estimatedChanges: estimateActionChanges(action, policy)
   };
 }
 
-function estimateTargetCount(action: PlanAction): number {
+function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): number {
   if (
     action.command === "scene.modifyActor" ||
     action.command === "scene.deleteActor" ||
@@ -120,17 +125,17 @@ function estimateTargetCount(action: PlanAction): number {
     if (action.params.target === "byName") {
       return Math.max(1, action.params.actorNames?.length ?? 0);
     }
-    return SELECTION_TARGET_ESTIMATE;
+    return policy.selectionTargetEstimate;
   }
   return 0;
 }
 
-function estimateActionChanges(action: PlanAction): number {
+function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig): number {
   if (action.command === "scene.createActor") {
     return action.params.count;
   }
   if (action.command === "scene.duplicateActors") {
-    return estimateTargetCount(action) * action.params.count;
+    return estimateTargetCount(action, policy) * action.params.count;
   }
   if (
     action.command === "scene.modifyActor" ||
@@ -142,12 +147,12 @@ function estimateActionChanges(action: PlanAction): number {
     action.command === "scene.setActorFolder" ||
     action.command === "scene.addActorLabelPrefix"
   ) {
-    return estimateTargetCount(action);
+    return estimateTargetCount(action, policy);
   }
   return 0;
 }
 
-function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
+function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig): LocalPolicyDecision {
   let risk: PlanAction["risk"] = action.risk;
   let approved = shouldAutoApprove(risk);
   let message: string | undefined;
@@ -158,34 +163,37 @@ function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
       return requireApproval(
         action,
         `Policy: actorClass '${actorClass}' is not in the allowlist.`,
+        policy,
         "high"
       );
     }
 
-    if (action.params.count > MAX_CREATE_COUNT) {
-      action.params.count = MAX_CREATE_COUNT;
-      const policy = requireApproval(
+    if (action.params.count > policy.maxCreateCount) {
+      action.params.count = policy.maxCreateCount;
+      const decision = requireApproval(
         action,
-        `Policy: create count capped to ${MAX_CREATE_COUNT}.`,
+        `Policy: create count capped to ${action.params.count}.`,
+        policy,
         "medium"
       );
-      approved = policy.approved;
-      risk = policy.risk;
-      message = policy.message;
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
     }
   }
 
   if (action.command === "scene.duplicateActors") {
-    if (action.params.count > MAX_DUPLICATE_COUNT) {
-      action.params.count = MAX_DUPLICATE_COUNT;
-      const policy = requireApproval(
+    if (action.params.count > policy.maxDuplicateCount) {
+      action.params.count = policy.maxDuplicateCount;
+      const decision = requireApproval(
         action,
-        `Policy: duplicate count capped to ${MAX_DUPLICATE_COUNT}.`,
+        `Policy: duplicate count capped to ${action.params.count}.`,
+        policy,
         "medium"
       );
-      approved = policy.approved;
-      risk = policy.risk;
-      message = policy.message;
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
     }
   }
 
@@ -193,19 +201,21 @@ function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
     if (action.params.target === "selection") {
       return hardDeny(
         action,
-        "Policy hard-deny: scene.deleteActor target=selection is blocked. Use target=byName with explicit actorNames."
+        "Policy hard-deny: scene.deleteActor target=selection is blocked. Use target=byName with explicit actorNames.",
+        policy
       );
     }
-    if ((action.params.actorNames?.length ?? 0) > MAX_DELETE_BY_NAME_COUNT) {
+    if ((action.params.actorNames?.length ?? 0) > policy.maxDeleteByNameCount) {
       return hardDeny(
         action,
-        `Policy hard-deny: scene.deleteActor byName supports up to ${MAX_DELETE_BY_NAME_COUNT} actors.`
+        `Policy hard-deny: scene.deleteActor byName supports up to ${policy.maxDeleteByNameCount} actors.`,
+        policy
       );
     }
-    const policy = requireApproval(action, "Policy: delete actions always require approval.", "high");
-    approved = policy.approved;
-    risk = policy.risk;
-    message = policy.message;
+    const decision = requireApproval(action, "Policy: delete actions always require approval.", policy, "high");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
   }
 
   if (
@@ -220,43 +230,46 @@ function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
     action.command === "scene.deleteActor"
   ) {
     if (action.params.target === "byName" && action.params.actorNames) {
-      if (action.params.actorNames.length > MAX_TARGET_NAMES) {
-        action.params.actorNames = action.params.actorNames.slice(0, MAX_TARGET_NAMES);
-        const policy = requireApproval(
+      if (action.params.actorNames.length > policy.maxTargetNames) {
+        action.params.actorNames = action.params.actorNames.slice(0, policy.maxTargetNames);
+        const decision = requireApproval(
           action,
-          `Policy: actorNames capped to ${MAX_TARGET_NAMES}.`,
+          `Policy: actorNames capped to ${action.params.actorNames.length}.`,
+          policy,
           "medium"
         );
-        approved = policy.approved;
-        risk = policy.risk;
-        message = policy.message;
+        approved = decision.approved;
+        risk = decision.risk;
+        message = decision.message;
       }
     }
   }
 
   if (action.command === "scene.setComponentMaterial") {
     if (!isAllowedAssetPath(action.params.materialPath)) {
-      const policy = requireApproval(
+      const decision = requireApproval(
         action,
         "Policy: materialPath must start with /Game/ or /Engine/.",
+        policy,
         "high"
       );
-      approved = policy.approved;
-      risk = policy.risk;
-      message = policy.message;
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
     }
   }
 
   if (action.command === "scene.setComponentStaticMesh") {
     if (!isAllowedAssetPath(action.params.meshPath)) {
-      const policy = requireApproval(
+      const decision = requireApproval(
         action,
         "Policy: meshPath must start with /Game/ or /Engine/.",
+        policy,
         "high"
       );
-      approved = policy.approved;
-      risk = policy.risk;
-      message = policy.message;
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
     }
   }
 
@@ -265,11 +278,13 @@ function applyLocalPolicy(action: PlanAction): LocalPolicyDecision {
     risk,
     message,
     hardDenied: false,
-    estimatedChanges: estimateActionChanges(action)
+    estimatedChanges: estimateActionChanges(action, policy)
   };
 }
 
 export class SessionStore {
+  constructor(private readonly policy: PolicyRuntimeConfig = DEFAULT_POLICY) {}
+
   private readonly sessions = new Map<string, SessionData>();
 
   create(input: SessionStartRequest, plan: PlanOutput): SessionDecision {
@@ -286,21 +301,21 @@ export class SessionStore {
       plan,
       maxRetries: input.maxRetries,
       actions: plan.actions.map((action) => {
-        const policy = applyLocalPolicy(action);
+        const decision = applyLocalPolicy(action, this.policy);
         let state: ActionState = "pending";
-        let approved = policy.approved;
-        let lastMessage = policy.message;
+        let approved = decision.approved;
+        let lastMessage = decision.message;
 
-        if (policy.hardDenied) {
+        if (decision.hardDenied) {
           state = "failed";
         } else {
-          const nextConsumedChangeUnits = consumedChangeUnits + policy.estimatedChanges;
-          if (nextConsumedChangeUnits > MAX_SESSION_CHANGE_UNITS) {
+          const nextConsumedChangeUnits = consumedChangeUnits + decision.estimatedChanges;
+          if (nextConsumedChangeUnits > this.policy.maxSessionChangeUnits) {
             state = "failed";
             approved = false;
             lastMessage =
               `Policy hard-deny: session change budget exceeded (` +
-              `${nextConsumedChangeUnits} > ${MAX_SESSION_CHANGE_UNITS} units).`;
+              `${nextConsumedChangeUnits} > ${this.policy.maxSessionChangeUnits} units).`;
           } else {
             consumedChangeUnits = nextConsumedChangeUnits;
           }
@@ -309,7 +324,7 @@ export class SessionStore {
         return {
           action: {
             ...action,
-            risk: policy.risk
+            risk: decision.risk
           },
           approved,
           state,
