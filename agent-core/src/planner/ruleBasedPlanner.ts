@@ -7,6 +7,42 @@ interface FallbackPlanMetadata {
   successCriteria?: string[];
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+}
+
+function readSelectionNamesFromContext(context: TaskRequest["context"]): string[] {
+  const names: string[] = [];
+  if (Array.isArray(context.selectionNames)) {
+    for (const item of context.selectionNames) {
+      if (typeof item === "string") {
+        names.push(item);
+      }
+    }
+  }
+
+  if (Array.isArray(context.selection)) {
+    for (const item of context.selection) {
+      if (typeof item === "string") {
+        names.push(item);
+        continue;
+      }
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        if (typeof record.name === "string") {
+          names.push(record.name);
+        }
+      }
+    }
+  }
+
+  return uniqueStrings(names);
+}
+
+function isReferentialPrompt(prompt: string): boolean {
+  return /\b(it|them|that|those|selected|selection|same|previous)\b/i.test(prompt);
+}
+
 function parseAxisValues(
   source: string,
   axes: readonly string[]
@@ -69,7 +105,7 @@ function parseMoveDeltaFromPrompt(prompt: string): { x: number; y: number; z: nu
     if (axis === "z") z += value;
   }
 
-  const directionalPattern = /\b(up|down|left|right|forward|back|backward)\s*([+-]?\d+(?:\.\d+)?)/gi;
+  const directionalPattern = /\b(up|down|left|right|forward|back|backward)\s*(?:to|by)?\s*([+-]?\d+(?:\.\d+)?)/gi;
   for (const match of lower.matchAll(directionalPattern)) {
     const direction = match[1];
     const value = Number(match[2]);
@@ -695,16 +731,21 @@ function buildStopConditions(hasHighRiskAction: boolean): PlanOutput["stopCondit
 }
 
 export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMetadata = {}): PlanOutput {
-  const selection = Array.isArray((input.context as { selection?: unknown }).selection)
-    ? ((input.context as { selection: unknown[] }).selection as unknown[])
-    : [];
+  const selectionNames = readSelectionNamesFromContext(input.context);
   const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
   const rotateDelta = parseRotateDeltaFromPrompt(input.prompt);
   const scale = parseScaleFromPrompt(input.prompt);
   const createActor = parseCreateActorFromPrompt(input.prompt);
   const actorNames = parseActorNamesFromPrompt(input.prompt);
+  const referentialPrompt = isReferentialPrompt(input.prompt);
+  const resolvedActorNames =
+    actorNames && actorNames.length > 0
+      ? actorNames
+      : referentialPrompt && selectionNames.length > 0
+      ? selectionNames
+      : null;
   const deleteSelection = shouldDeleteSelection(input.prompt);
-  const deleteByName = /(delete|remove|destroy|erase)/.test(input.prompt.toLowerCase()) && Boolean(actorNames?.length);
+  const deleteByName = /(delete|remove|destroy|erase)/.test(input.prompt.toLowerCase()) && Boolean(resolvedActorNames?.length);
   const componentVisibility = parseComponentVisibilityFromPrompt(input.prompt);
   const componentName = parseComponentNameFromPrompt(input.prompt);
   const materialAssignment = parseMaterialAssignmentFromPrompt(input.prompt);
@@ -731,7 +772,9 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
       deltaRotation?: { pitch: number; yaw: number; roll: number };
       deltaScale?: { x: number; y: number; z: number };
       scale?: { x: number; y: number; z: number };
-    } = actorNames && actorNames.length > 0 ? { target: "byName", actorNames } : { target: "selection" };
+    } = resolvedActorNames && resolvedActorNames.length > 0
+      ? { target: "byName", actorNames: resolvedActorNames }
+      : { target: "selection" };
     if (moveDelta) {
       params.deltaLocation = moveDelta;
     }
@@ -752,10 +795,10 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     });
   }
 
-  if (deleteByName && actorNames) {
+  if (deleteByName && resolvedActorNames) {
     actions.push({
       command: "scene.deleteActor",
-      params: { target: "byName", actorNames },
+      params: { target: "byName", actorNames: resolvedActorNames },
       risk: "high"
     });
   }
@@ -772,8 +815,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.modifyComponent",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         componentName: componentVisibility.componentName,
         visibility: componentVisibility.visibility
       },
@@ -785,8 +828,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.modifyComponent",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         componentName,
         deltaLocation: moveDelta ?? undefined,
         deltaRotation: rotateDelta ?? undefined,
@@ -801,8 +844,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.setComponentMaterial",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         componentName: materialAssignment.componentName,
         materialPath: materialAssignment.materialPath,
         materialSlot: materialAssignment.materialSlot
@@ -815,8 +858,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.setComponentStaticMesh",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         componentName: meshAssignment.componentName,
         meshPath: meshAssignment.meshPath
       },
@@ -828,8 +871,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.addActorTag",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         tag
       },
       risk: "low"
@@ -840,8 +883,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.setActorFolder",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         folderPath
       },
       risk: "low"
@@ -852,8 +895,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.addActorLabelPrefix",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         prefix: labelPrefix
       },
       risk: "low"
@@ -864,8 +907,8 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     actions.push({
       command: "scene.duplicateActors",
       params: {
-        target: actorNames && actorNames.length > 0 ? "byName" : "selection",
-        actorNames: actorNames && actorNames.length > 0 ? actorNames : undefined,
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         count: duplicate.count,
         offset: duplicate.offset
       },
@@ -880,7 +923,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
 
   if (actions.length > 0) {
     return {
-      summary: `Planned scene actions for prompt: ${input.prompt} (selected: ${selection.length})`,
+      summary: `Planned scene actions for prompt: ${input.prompt} (selected: ${selectionNames.length})`,
       steps: [
         "Preview parsed actions",
         "Wait for user approval",
@@ -895,7 +938,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
   }
 
   return {
-    summary: `Draft plan for: ${input.prompt} (selected: ${selection.length})`,
+    summary: `Draft plan for: ${input.prompt} (selected: ${selectionNames.length})`,
     steps: [
       "Collect scene context",
       "Build action list",

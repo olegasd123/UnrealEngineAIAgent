@@ -16,6 +16,32 @@ export interface NormalizedIntent {
   successCriteria: string[];
 }
 
+function readSelectionCount(context: TaskRequest["context"]): number {
+  const names = new Set<string>();
+  if (Array.isArray((context as { selectionNames?: unknown }).selectionNames)) {
+    for (const item of (context as { selectionNames?: unknown[] }).selectionNames ?? []) {
+      if (typeof item === "string" && item.trim().length > 0) {
+        names.add(item.trim());
+      }
+    }
+  }
+  if (Array.isArray((context as { selection?: unknown }).selection)) {
+    for (const item of ((context as { selection?: unknown[] }).selection ?? [])) {
+      if (typeof item === "string" && item.trim().length > 0) {
+        names.add(item.trim());
+        continue;
+      }
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        if (typeof record.name === "string" && record.name.trim().length > 0) {
+          names.add(record.name.trim());
+        }
+      }
+    }
+  }
+  return names.size;
+}
+
 function detectGoalType(prompt: string): GoalType {
   const lower = prompt.toLowerCase();
   if (/(set|assign|apply|replace).*(material|shader)|(material|shader).*(style|look)/.test(lower)) {
@@ -39,9 +65,7 @@ function detectGoalType(prompt: string): GoalType {
 export class IntentLayer {
   normalize(input: TaskRequest): NormalizedIntent {
     const prompt = input.prompt.trim();
-    const selection = Array.isArray((input.context as { selection?: unknown[] }).selection)
-      ? ((input.context as { selection: unknown[] }).selection as unknown[])
-      : [];
+    const selectionCount = readSelectionCount(input.context);
 
     return {
       input,
@@ -49,7 +73,7 @@ export class IntentLayer {
       goalType: detectGoalType(prompt),
       constraints: [
         "Use safe editor actions only.",
-        selection.length > 0 ? "Prefer selected actors when target is not explicit." : "Target can be selection or explicit names."
+        selectionCount > 0 ? "Prefer selected actors when target is not explicit." : "Target can be selection or explicit names."
       ],
       successCriteria: [
         "Generated plan is valid by schema.",

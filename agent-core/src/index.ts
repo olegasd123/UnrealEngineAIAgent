@@ -12,6 +12,7 @@ import {
   TaskRequestSchema
 } from "./contracts.js";
 import { ChatStore } from "./chats/chatStore.js";
+import { resolveContextWithChatMemory } from "./chats/contextMemory.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
 import { ExecutionLayer } from "./executor/executionLayer.js";
@@ -343,14 +344,19 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
+      const resolvedContext = resolveContextWithChatMemory(parsed, chatStore);
+      const requestWithResolvedContext = {
+        ...parsed,
+        context: resolvedContext
+      };
       if (parsed.chatId) {
         chatStore.appendAsked(parsed.chatId, "/v1/session/start", parsed.prompt, {
           mode: parsed.mode,
-          context: parsed.context
+          context: resolvedContext
         });
       }
       const provider = await resolveProvider();
-      const decision = await agentService.startSession(parsed, provider);
+      const decision = await agentService.startSession(requestWithResolvedContext, provider);
 
       if (parsed.chatId) {
         chatStore.appendDone(parsed.chatId, "/v1/session/start", `Session ${decision.status}`, {
@@ -600,13 +606,18 @@ const server = http.createServer(async (req, res) => {
       provider = await resolveProvider();
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
+      const resolvedContext = resolveContextWithChatMemory(parsed, chatStore);
+      const requestWithResolvedContext = {
+        ...parsed,
+        context: resolvedContext
+      };
       if (parsed.chatId) {
         chatStore.appendAsked(parsed.chatId, "/v1/task/plan", parsed.prompt, {
           mode: parsed.mode,
-          context: parsed.context
+          context: resolvedContext
         });
       }
-      const { plan } = await agentService.planTask(parsed, provider);
+      const { plan } = await agentService.planTask(requestWithResolvedContext, provider);
 
       if (parsed.chatId) {
         chatStore.appendDone(parsed.chatId, "/v1/task/plan", "Plan built", {
@@ -619,7 +630,7 @@ const server = http.createServer(async (req, res) => {
         await taskLogStore.appendTaskPlanSuccess({
           requestId,
           provider,
-          request: parsed,
+          request: requestWithResolvedContext,
           plan,
           durationMs: Date.now() - startedAt
         });

@@ -141,7 +141,7 @@ private:
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<SButton> RunButton;
     TSharedPtr<SButton> ResumeButton;
-    TSharedPtr<STextBlock> PlanText;
+    TSharedPtr<SMultiLineEditableTextBox> PlanText;
     TSharedPtr<SVerticalBox> ActionListBox;
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;
@@ -149,6 +149,7 @@ private:
     TArray<bool> ActionExpandedStates;
     int32 PromptVisibleLineCount = 1;
     FString CachedSelectionSummary;
+    TArray<FString> LastNonEmptySelection;
     FString ChatSearchFilter;
     bool bIncludeArchivedChats = false;
     bool bIsRefreshingChats = false;

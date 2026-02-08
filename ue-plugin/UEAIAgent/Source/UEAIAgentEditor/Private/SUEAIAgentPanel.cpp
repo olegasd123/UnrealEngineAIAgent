@@ -25,6 +25,24 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
 
+namespace
+{
+    bool IsReferentialPrompt(const FString& Prompt)
+    {
+        const FString Lower = Prompt.ToLower();
+        return Lower.Contains(TEXT(" it ")) ||
+            Lower.StartsWith(TEXT("it ")) ||
+            Lower.EndsWith(TEXT(" it")) ||
+            Lower.Contains(TEXT(" them ")) ||
+            Lower.StartsWith(TEXT("them ")) ||
+            Lower.EndsWith(TEXT(" them")) ||
+            Lower.Contains(TEXT(" selected")) ||
+            Lower.Contains(TEXT(" selection")) ||
+            Lower.Contains(TEXT(" previous")) ||
+            Lower.Contains(TEXT(" same "));
+    }
+}
+
 void SUEAIAgentPanel::Construct(const FArguments& InArgs)
 {
     ProviderItems.Empty();
@@ -285,12 +303,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
             ]
             + SVerticalBox::Slot()
-            .AutoHeight()
+            .FillHeight(1.0f)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(PlanText, STextBlock)
-                .AutoWrapText(true)
-                .Text(FText::FromString(TEXT("Plan: not requested")))
+                SNew(SBox)
+                .MinDesiredHeight(180.0f)
+                [
+                    SAssignNew(PlanText, SMultiLineEditableTextBox)
+                    .IsReadOnly(true)
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(TEXT("Plan: not requested")))
+                ]
             ]
         ]
         + SWidgetSwitcher::Slot()
@@ -661,6 +684,15 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     }
 
     const TArray<FString> SelectedActors = CollectSelectedActorNames();
+    TArray<FString> RequestActors = SelectedActors;
+    if (SelectedActors.Num() > 0)
+    {
+        LastNonEmptySelection = SelectedActors;
+    }
+    else if (IsReferentialPrompt(Prompt) && LastNonEmptySelection.Num() > 0)
+    {
+        RequestActors = LastNonEmptySelection;
+    }
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const FString Mode = GetSelectedModeCode();
 
@@ -671,7 +703,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         Transport.StartSession(
             Prompt,
             TEXT("agent"),
-            SelectedActors,
+            RequestActors,
             FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
         return FReply::Handled();
     }
@@ -681,7 +713,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     Transport.PlanTask(
         Prompt,
         TEXT("chat"),
-        SelectedActors,
+        RequestActors,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
     return FReply::Handled();
@@ -1070,7 +1102,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     {
         CurrentSessionStatus = ESessionStatus::AwaitingApproval;
         UpdateActionApprovalUi();
-        PlanText->SetText(FText::FromString(TEXT("Agent: local execute failed\n") + ExecuteMessage + TEXT("\nFix selection or action and click Resume.")));
+        PlanText->SetText(FText::FromString(TEXT("Agent: local execute failed\n") + ExecuteMessage + TEXT("\nFix selection/target and click Resume.")));
         return;
     }
 
@@ -1769,7 +1801,12 @@ bool SUEAIAgentPanel::ShouldShowApprovalUi() const
     {
         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
             Transport.GetNextPendingActionIndex() != INDEX_NONE;
-        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval;
+        const int32 PendingActionIndex = Transport.GetNextPendingActionIndex();
+        const bool bPendingNeedsApproval = PendingActionIndex != INDEX_NONE &&
+            !Transport.IsPlannedActionApproved(PendingActionIndex);
+        return bHasPendingSessionAction &&
+            bPendingNeedsApproval &&
+            CurrentSessionStatus == ESessionStatus::AwaitingApproval;
     }
 
     return false;

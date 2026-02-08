@@ -46,6 +46,55 @@ function stringifyJson(value: unknown): string | null {
   return JSON.stringify(value);
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
+}
+
+function readSelectionNamesFromContext(value: unknown): string[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const context = value as Record<string, unknown>;
+  const names: string[] = [];
+
+  const selectionNames = context.selectionNames;
+  if (Array.isArray(selectionNames)) {
+    for (const item of selectionNames) {
+      if (typeof item === "string") {
+        names.push(item);
+      }
+    }
+  }
+
+  const selection = context.selection;
+  if (Array.isArray(selection)) {
+    for (const item of selection) {
+      if (typeof item === "string") {
+        names.push(item);
+        continue;
+      }
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        if (typeof record.name === "string") {
+          names.push(record.name);
+        }
+      }
+    }
+  }
+
+  return uniqueStrings(names);
+}
+
+function readSelectionNamesFromPayload(value: unknown): string[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const payload = value as Record<string, unknown>;
+  return readSelectionNamesFromContext(payload.context);
+}
+
 function makeAutoTitleFromSummary(summary: string): string {
   const normalized = summary.replace(/\s+/g, " ").trim();
   if (!normalized) {
@@ -223,6 +272,30 @@ export class ChatStore {
 
   public appendDone(chatId: string, route: string, summary: string, payload?: unknown): ChatHistoryEntry {
     return this.appendHistory(chatId, "done", route, summary, payload);
+  }
+
+  public getLatestSelectionNames(chatId: string, limit = 30): string[] {
+    this.getChat(chatId);
+    const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json
+         FROM chat_history
+         WHERE chat_id = ? AND kind = 'asked'
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?`
+      )
+      .all(chatId, normalizedLimit) as Array<{ payload_json?: string | null }>;
+
+    for (const row of rows) {
+      const payload = parseJson(row.payload_json ?? null);
+      const selectionNames = readSelectionNamesFromPayload(payload);
+      if (selectionNames.length > 0) {
+        return selectionNames;
+      }
+    }
+
+    return [];
   }
 
   private appendHistory(
