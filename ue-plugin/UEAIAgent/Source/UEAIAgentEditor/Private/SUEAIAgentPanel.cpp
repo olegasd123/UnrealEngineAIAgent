@@ -66,24 +66,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SNew(SBox)
-                .HeightOverride_Lambda([this]()
-                {
-                    const int32 Lines = FMath::Clamp(PromptVisibleLineCount, 1, 10);
-                    return 16.0f + (16.0f * Lines);
-                })
-                [
-                    SAssignNew(PromptInput, SMultiLineEditableTextBox)
-                    .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
-                    .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
-                    .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
-                    .Padding(FMargin(8.0f, 8.0f, 8.0f, 8.0f))
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot()
                 .AutoWidth()
@@ -146,12 +128,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SBox)
-                .HeightOverride(100.0f)
+                .HeightOverride_Lambda([this]()
+                {
+                    const int32 Lines = FMath::Clamp(PromptVisibleLineCount, 1, 10);
+                    return 16.0f + (16.0f * Lines);
+                })
                 [
-                    SAssignNew(ChatHistoryText, SMultiLineEditableTextBox)
-                    .IsReadOnly(true)
-                    .SelectAllTextWhenFocused(false)
-                    .Text(FText::FromString(TEXT("Chat history: no chat selected.")))
+                    SAssignNew(PromptInput, SMultiLineEditableTextBox)
+                    .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
+                    .Text(FText::FromString(TEXT("Move selected actors +250 on X")))
+                    .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
+                    .Padding(FMargin(8.0f, 8.0f, 8.0f, 8.0f))
                 ]
             ]
             + SVerticalBox::Slot()
@@ -1006,7 +993,7 @@ void SUEAIAgentPanel::HandleChatOperationResult(bool bOk, const FString& Message
 {
     if (!bOk)
     {
-        UpdateChatHistoryText(TEXT("Chat: error\n") + Message + TEXT("\n"));
+        UpdateChatHistoryText(TEXT("Chat error: ") + Message + TEXT("\n"));
         return;
     }
 
@@ -1017,14 +1004,17 @@ void SUEAIAgentPanel::HandleChatOperationResult(bool bOk, const FString& Message
     {
         NewChatTitleInput->SetText(FText::GetEmpty());
     }
-
-    UpdateChatHistoryText(TEXT("Chat: ok\n") + Message + TEXT("\n"));
 }
 
 void SUEAIAgentPanel::HandleChatHistoryResult(bool bOk, const FString& Message)
 {
-    const FString Prefix = bOk ? TEXT("Chat history: ok\n") : TEXT("Chat history: error\n");
-    UpdateChatHistoryText(Prefix + Message + TEXT("\n"));
+    if (!bOk)
+    {
+        UpdateChatHistoryText(TEXT("Chat history error: ") + Message + TEXT("\n"));
+        return;
+    }
+
+    UpdateChatHistoryText();
 }
 
 void SUEAIAgentPanel::RefreshChatUiFromTransport(bool bKeepCurrentSelection)
@@ -1087,7 +1077,6 @@ void SUEAIAgentPanel::UpdateChatHistoryText(const FString& PrefixMessage)
     const FString ActiveId = Transport.GetActiveChatId();
     if (ActiveId.IsEmpty())
     {
-        ResultText += TEXT("Chat history: no chat selected.");
         ChatHistoryText->SetText(FText::FromString(ResultText));
         return;
     }
