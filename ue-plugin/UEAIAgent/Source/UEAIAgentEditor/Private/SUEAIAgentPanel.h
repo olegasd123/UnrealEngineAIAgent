@@ -108,6 +108,7 @@ private:
     bool BeginRenameSelectedChat();
     FString BuildSelectionSummary() const;
     FString BuildActionDetailText(int32 ActionIndex) const;
+    bool ShouldShowApprovalUi() const;
     ESessionStatus ParseSessionStatusFromMessage(const FString& Message) const;
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();

@@ -181,10 +181,16 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     .WidthOverride(220.0f)
                     .Visibility_Lambda([this]()
                     {
+                        if (GetSelectedModeCode() != TEXT("agent"))
+                        {
+                            return EVisibility::Collapsed;
+                        }
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
                             Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        return bHasPendingSessionAction ? EVisibility::Visible : EVisibility::Collapsed;
+                        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                            ? EVisibility::Visible
+                            : EVisibility::Collapsed;
                     })
                     [
                         SAssignNew(ResumeButton, SButton)
@@ -245,23 +251,9 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SHorizontalBox)
-                .Visibility_Lambda([]()
+                .Visibility_Lambda([this]()
                 {
-                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                    const int32 ActionCount = Transport.GetPlannedActionCount();
-                    if (ActionCount <= 0)
-                    {
-                        return EVisibility::Collapsed;
-                    }
-
-                    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
-                    {
-                        if (!Transport.IsPlannedActionApproved(ActionIndex))
-                        {
-                            return EVisibility::Visible;
-                        }
-                    }
-                    return EVisibility::Collapsed;
+                    return ShouldShowApprovalUi() ? EVisibility::Visible : EVisibility::Collapsed;
                 })
                 + SHorizontalBox::Slot()
                 .AutoWidth()
@@ -283,7 +275,14 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(ActionListBox, SVerticalBox)
+                SNew(SBox)
+                .Visibility_Lambda([this]()
+                {
+                    return ShouldShowApprovalUi() ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                [
+                    SAssignNew(ActionListBox, SVerticalBox)
+                ]
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
@@ -1069,6 +1068,8 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     const bool bOkExecute = ExecutePlannedAction(NextAction, ExecuteMessage);
     if (!bOkExecute)
     {
+        CurrentSessionStatus = ESessionStatus::AwaitingApproval;
+        UpdateActionApprovalUi();
         PlanText->SetText(FText::FromString(TEXT("Agent: local execute failed\n") + ExecuteMessage + TEXT("\nFix selection or action and click Resume.")));
         return;
     }
@@ -1278,7 +1279,27 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         OutMessage = TEXT("Skipped modify action with no target actors.");
         return false;
     }
-    return FUEAIAgentSceneTools::SceneModifyActor(Params, OutMessage);
+    const bool bOkModifyByName = FUEAIAgentSceneTools::SceneModifyActor(Params, OutMessage);
+    if (bOkModifyByName)
+    {
+        return true;
+    }
+
+    // Fallback for planner byName misses when the user's active selection is the intended target.
+    if (OutMessage.Contains(TEXT("No target actors found."), ESearchCase::IgnoreCase))
+    {
+        Params.ActorNames.Empty();
+        Params.bUseSelectionIfActorNamesEmpty = true;
+        FString FallbackMessage;
+        const bool bOkSelectionFallback = FUEAIAgentSceneTools::SceneModifyActor(Params, FallbackMessage);
+        if (bOkSelectionFallback)
+        {
+            OutMessage = FString::Printf(TEXT("%s (fallback: used current selection)"), *FallbackMessage);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)
@@ -1727,6 +1748,31 @@ FString SUEAIAgentPanel::BuildActionDetailText(int32 ActionIndex) const
         Action.AttemptCount,
         Action.bApproved ? TEXT("true") : TEXT("false"),
         *Targets);
+}
+
+bool SUEAIAgentPanel::ShouldShowApprovalUi() const
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const int32 ActionCount = Transport.GetPlannedActionCount();
+    if (ActionCount <= 0)
+    {
+        return false;
+    }
+
+    const FString Mode = GetSelectedModeCode();
+    if (Mode == TEXT("chat"))
+    {
+        return true;
+    }
+
+    if (Mode == TEXT("agent"))
+    {
+        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval;
+    }
+
+    return false;
 }
 
 void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState)
