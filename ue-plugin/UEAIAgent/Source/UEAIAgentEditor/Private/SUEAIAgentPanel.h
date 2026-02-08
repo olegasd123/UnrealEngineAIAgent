@@ -10,6 +10,7 @@ class SEditableTextBox;
 class SMultiLineEditableTextBox;
 class SCheckBox;
 class SVerticalBox;
+class SScrollBox;
 class SWidgetSwitcher;
 template<typename OptionType>
 class SComboBox;
@@ -30,7 +31,8 @@ private:
     enum class EPanelView : uint8
     {
         Main,
-        Settings
+        Settings,
+        History
     };
 
     enum class ESessionStatus : uint8
@@ -47,9 +49,11 @@ private:
     FReply OnTestApiKeyClicked();
     FReply OnRefreshProviderStatusClicked();
     FReply OnOpenSettingsClicked();
+    FReply OnOpenHistoryClicked();
     FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnCreateChatClicked();
+    FReply OnRenameSelectedChatClicked();
     FReply OnRefreshChatsClicked();
     FReply OnArchiveChatClicked();
     FReply OnResumeAgentLoopClicked();
@@ -68,14 +72,13 @@ private:
     FString GetSelectedModeLabel() const;
     TSharedRef<SWidget> HandleProviderComboGenerateWidget(TSharedPtr<FString> InItem) const;
     TSharedRef<SWidget> HandleModeComboGenerateWidget(TSharedPtr<FString> InItem) const;
-    TSharedRef<SWidget> HandleChatComboGenerateWidget(TSharedPtr<FString> InItem) const;
     void HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
-    void HandleChatComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
     void RefreshChatUiFromTransport(bool bKeepCurrentSelection);
     void RefreshActiveChatHistory();
     void UpdateChatHistoryText(const FString& PrefixMessage = TEXT(""));
+    void RebuildChatListUi();
     ESessionStatus ParseSessionStatusFromMessage(const FString& Message) const;
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();
@@ -88,17 +91,14 @@ private:
     TSharedPtr<SMultiLineEditableTextBox> CredentialText;
     TSharedPtr<SEditableTextBox> ApiKeyInput;
     TSharedPtr<SWidgetSwitcher> ViewSwitcher;
+    TSharedPtr<SVerticalBox> ChatListBox;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ModeCombo;
-    TSharedPtr<SComboBox<TSharedPtr<FString>>> ChatCombo;
     TArray<TSharedPtr<FString>> ProviderItems;
     TArray<TSharedPtr<FString>> ModeItems;
-    TArray<TSharedPtr<FString>> ChatItems;
-    TMap<FString, FString> ChatLabelToId;
     TSharedPtr<FString> SelectedProviderItem;
     TSharedPtr<FString> SelectedModeItem;
-    TSharedPtr<FString> SelectedChatItem;
-    TSharedPtr<SEditableTextBox> NewChatTitleInput;
+    TSharedPtr<SEditableTextBox> RenameChatTitleInput;
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<STextBlock> PlanText;
     TSharedPtr<SMultiLineEditableTextBox> ChatHistoryText;

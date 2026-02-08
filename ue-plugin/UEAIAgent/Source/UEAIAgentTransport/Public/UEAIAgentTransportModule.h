@@ -144,6 +144,7 @@ public:
     void GetProviderStatus(const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void RefreshChats(bool bIncludeArchived, const FOnUEAIAgentChatOpFinished& Callback) const;
     void CreateChat(const FString& Title, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void RenameActiveChat(const FString& NewTitle, const FOnUEAIAgentChatOpFinished& Callback) const;
     void ArchiveActiveChat(const FOnUEAIAgentChatOpFinished& Callback) const;
     void LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const;
     const TArray<FUEAIAgentChatSummary>& GetChats() const;
@@ -176,6 +177,7 @@ private:
     FString BuildChatsUrl(bool bIncludeArchived) const;
     FString BuildCreateChatUrl() const;
     FString BuildChatDeleteUrl(const FString& ChatId) const;
+    FString BuildChatUpdateUrl(const FString& ChatId) const;
     FString BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const;
     bool ParseSessionDecision(
         const TSharedPtr<FJsonObject>& ResponseJson,

@@ -904,6 +904,11 @@ FString FUEAIAgentTransportModule::BuildChatDeleteUrl(const FString& ChatId) con
     return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId);
 }
 
+FString FUEAIAgentTransportModule::BuildChatUpdateUrl(const FString& ChatId) const
+{
+    return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId);
+}
+
 FString FUEAIAgentTransportModule::BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const
 {
     const int32 SafeLimit = FMath::Clamp(Limit, 1, 200);
@@ -2436,6 +2441,92 @@ void FUEAIAgentTransportModule::CreateChat(const FString& Title, const FOnUEAIAg
                 }
 
                 Callback.ExecuteIfBound(true, TEXT("Chat created."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::RenameActiveChat(const FString& NewTitle, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ActiveChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active chat selected."));
+        return;
+    }
+
+    const FString TrimmedTitle = NewTitle.TrimStartAndEnd();
+    if (TrimmedTitle.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("Title must not be empty."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("title"), TrimmedTitle);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatUpdateUrl(ActiveChatId));
+    Request->SetVerb(TEXT("PATCH"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Rename chat failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Rename chat response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned a rename chat error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* ChatObj = nullptr;
+                if (ResponseJson->TryGetObjectField(TEXT("chat"), ChatObj) && ChatObj && ChatObj->IsValid())
+                {
+                    FString ChatId;
+                    (*ChatObj)->TryGetStringField(TEXT("id"), ChatId);
+                    FString ChatTitle;
+                    (*ChatObj)->TryGetStringField(TEXT("title"), ChatTitle);
+
+                    for (FUEAIAgentChatSummary& Chat : Chats)
+                    {
+                        if (Chat.Id == ChatId)
+                        {
+                            Chat.Title = ChatTitle;
+                            break;
+                        }
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Chat title updated."));
             });
         });
 

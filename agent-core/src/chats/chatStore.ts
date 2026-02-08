@@ -46,6 +46,19 @@ function stringifyJson(value: unknown): string | null {
   return JSON.stringify(value);
 }
 
+function makeAutoTitleFromSummary(summary: string): string {
+  const normalized = summary.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "New chat";
+  }
+
+  const maxLen = 80;
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
+}
+
 export class ChatStore {
   private readonly db: DatabaseSync;
 
@@ -57,6 +70,7 @@ export class ChatStore {
       CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        title_auto INTEGER NOT NULL DEFAULT 1,
         archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -80,19 +94,22 @@ export class ChatStore {
       CREATE INDEX IF NOT EXISTS idx_chats_last_activity
       ON chats(last_activity_at DESC);
     `);
+
+    this.ensureSchemaMigrations();
   }
 
   public createChat(title?: string): ChatRecord {
     const id = randomUUID();
     const now = toIsoNow();
     const normalizedTitle = title?.trim() ? title.trim() : "New chat";
+    const titleAuto = title?.trim() ? 0 : 1;
 
     this.db
       .prepare(
-        `INSERT INTO chats (id, title, archived, created_at, updated_at, last_activity_at)
-         VALUES (?, ?, 0, ?, ?, ?)`
+        `INSERT INTO chats (id, title, title_auto, archived, created_at, updated_at, last_activity_at)
+         VALUES (?, ?, ?, 0, ?, ?, ?)`
       )
-      .run(id, normalizedTitle, now, now, now);
+      .run(id, normalizedTitle, titleAuto, now, now, now);
 
     return this.getChat(id);
   }
@@ -152,7 +169,7 @@ export class ChatStore {
       }
 
       this.db
-        .prepare(`UPDATE chats SET title = ?, archived = ?, updated_at = ? WHERE id = ?`)
+        .prepare(`UPDATE chats SET title = ?, title_auto = 0, archived = ?, updated_at = ? WHERE id = ?`)
         .run(normalizedTitle, updates.archived ? 1 : 0, now, chatId);
 
       return this.getChat(chatId);
@@ -164,7 +181,7 @@ export class ChatStore {
         throw new Error("Title must not be empty.");
       }
 
-      this.db.prepare(`UPDATE chats SET title = ?, updated_at = ? WHERE id = ?`).run(normalizedTitle, now, chatId);
+      this.db.prepare(`UPDATE chats SET title = ?, title_auto = 0, updated_at = ? WHERE id = ?`).run(normalizedTitle, now, chatId);
       return this.getChat(chatId);
     }
 
@@ -200,6 +217,7 @@ export class ChatStore {
   }
 
   public appendAsked(chatId: string, route: string, summary: string, payload?: unknown): ChatHistoryEntry {
+    this.tryAutoSetTitleFromSummary(chatId, summary);
     return this.appendHistory(chatId, "asked", route, summary, payload);
   }
 
@@ -262,5 +280,27 @@ export class ChatStore {
       payload: parseJson((row.payload_json as string | null) ?? null),
       createdAt: String(row.created_at)
     };
+  }
+
+  private ensureSchemaMigrations(): void {
+    const columns = this.db.prepare(`PRAGMA table_info(chats)`).all() as Array<{ name?: string }>;
+    const hasTitleAuto = columns.some((column) => String(column.name) === "title_auto");
+    if (!hasTitleAuto) {
+      this.db.exec(`ALTER TABLE chats ADD COLUMN title_auto INTEGER NOT NULL DEFAULT 1;`);
+      this.db.exec(`UPDATE chats SET title_auto = CASE WHEN title = 'New chat' THEN 1 ELSE 0 END;`);
+    }
+  }
+
+  private tryAutoSetTitleFromSummary(chatId: string, summary: string): void {
+    const row = this.db.prepare(`SELECT title_auto FROM chats WHERE id = ?`).get(chatId) as { title_auto?: number } | undefined;
+    if (!row || Number(row.title_auto) !== 1) {
+      return;
+    }
+
+    const autoTitle = makeAutoTitleFromSummary(summary);
+    const now = toIsoNow();
+    this.db
+      .prepare(`UPDATE chats SET title = ?, title_auto = 0, updated_at = ? WHERE id = ?`)
+      .run(autoTitle, now, chatId);
   }
 }
