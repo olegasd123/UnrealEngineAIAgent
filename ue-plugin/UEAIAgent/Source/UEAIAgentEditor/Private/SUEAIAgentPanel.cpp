@@ -247,7 +247,21 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 SNew(SHorizontalBox)
                 .Visibility_Lambda([]()
                 {
-                    return FUEAIAgentTransportModule::Get().GetPlannedActionCount() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
+                    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                    const int32 ActionCount = Transport.GetPlannedActionCount();
+                    if (ActionCount <= 0)
+                    {
+                        return EVisibility::Collapsed;
+                    }
+
+                    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+                    {
+                        if (!Transport.IsPlannedActionApproved(ActionIndex))
+                        {
+                            return EVisibility::Visible;
+                        }
+                    }
+                    return EVisibility::Collapsed;
                 })
                 + SHorizontalBox::Slot()
                 .AutoWidth()
@@ -965,6 +979,15 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
     FString PreviewSummary;
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const int32 ActionCount = Transport.GetPlannedActionCount();
+    if (GetSelectedModeCode() == TEXT("chat"))
+    {
+        for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+        {
+            Transport.SetPlannedActionApproved(ActionIndex, false);
+        }
+        UpdateActionApprovalUi();
+    }
+
     for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
     {
         PreviewSummary += Transport.GetPlannedActionPreviewText(ActionIndex) + TEXT("\n");

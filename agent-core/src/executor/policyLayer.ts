@@ -15,8 +15,8 @@ const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
   "CameraActor"
 ]);
 
-function shouldAutoApprove(risk: PlanAction["risk"]): boolean {
-  return risk === "low";
+function shouldAutoApprove(mode: "chat" | "agent", risk: PlanAction["risk"]): boolean {
+  return mode === "agent" && risk === "low";
 }
 
 function normalizeAssetPath(path: string): string {
@@ -95,9 +95,9 @@ function hardDeny(action: PlanAction, reason: string, policy: PolicyRuntimeConfi
   };
 }
 
-function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig): LocalPolicyDecision {
+function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode: "chat" | "agent"): LocalPolicyDecision {
   let risk: PlanAction["risk"] = action.risk;
-  let approved = shouldAutoApprove(risk);
+  let approved = shouldAutoApprove(mode, risk);
   let message: string | undefined;
 
   if (action.command === "scene.createActor") {
@@ -226,10 +226,18 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig): Loca
 }
 
 export function buildSessionActions(actions: PlanAction[], policy: PolicyRuntimeConfig): SessionAction[] {
+  return buildSessionActionsForMode(actions, policy, "agent");
+}
+
+export function buildSessionActionsForMode(
+  actions: PlanAction[],
+  policy: PolicyRuntimeConfig,
+  mode: "chat" | "agent"
+): SessionAction[] {
   let consumedChangeUnits = 0;
 
   return actions.map((action) => {
-    const decision = applyLocalPolicy(action, policy);
+    const decision = applyLocalPolicy(action, policy, mode);
     let state: SessionAction["state"] = "pending";
     let approved = decision.approved;
     let lastMessage = decision.message;

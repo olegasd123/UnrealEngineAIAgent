@@ -11,7 +11,7 @@ import type {
 } from "../contracts.js";
 import type { PolicyRuntimeConfig } from "../config.js";
 import { applySessionResult, makeSessionDecision } from "../executor/decisionLayer.js";
-import { buildSessionActions } from "../executor/policyLayer.js";
+import { buildSessionActionsForMode } from "../executor/policyLayer.js";
 import type { SessionData, SessionDecision } from "./sessionTypes.js";
 
 const DEFAULT_POLICY: PolicyRuntimeConfig = {
@@ -52,13 +52,16 @@ export class SessionStore {
 
     session.currentIteration += 1;
     session.iterationStartActionIndex = nextPendingIndex;
-    session.checkpointPending = true;
-    session.checkpointActionIndex = nextPendingIndex;
+    session.checkpointPending = false;
+    session.checkpointActionIndex = undefined;
 
     const checkpointAction = session.actions[nextPendingIndex];
     if (checkpointAction.state === "pending") {
-      checkpointAction.approved = false;
-      checkpointAction.lastMessage = `Iteration ${session.currentIteration} checkpoint: explicit approval required before continuing.`;
+      if (!checkpointAction.approved) {
+        session.checkpointPending = true;
+        session.checkpointActionIndex = nextPendingIndex;
+        checkpointAction.lastMessage = `Iteration ${session.currentIteration} checkpoint: explicit approval required before continuing.`;
+      }
     }
   }
 
@@ -78,7 +81,7 @@ export class SessionStore {
       input: requestInput,
       plan,
       maxRetries: input.maxRetries,
-      actions: buildSessionActions(plan.actions, this.policy),
+      actions: buildSessionActionsForMode(plan.actions, this.policy, input.mode),
       currentIteration: 1,
       maxIterations,
       actionsPerIteration,
