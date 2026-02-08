@@ -157,6 +157,7 @@ public:
     int32 GetPlannedActionAttemptCount(int32 ActionIndex) const;
     void SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const;
     bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const;
+    bool GetPlannedAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
     bool GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
     void UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const;
     int32 GetNextPendingActionIndex() const;

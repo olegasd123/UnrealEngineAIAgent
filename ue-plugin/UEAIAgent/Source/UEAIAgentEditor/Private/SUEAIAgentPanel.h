@@ -10,12 +10,21 @@ class SEditableTextBox;
 class SMultiLineEditableTextBox;
 class SCheckBox;
 class SVerticalBox;
-class SScrollBox;
 class SWidgetSwitcher;
+class SButton;
+class SInlineEditableTextBlock;
+class ITableRow;
+class STableViewBase;
+template<typename ItemType>
+class SListView;
 template<typename OptionType>
 class SComboBox;
+struct FGeometry;
+struct FKeyEvent;
 enum class ECheckBoxState : uint8;
 struct FUEAIAgentPlannedSceneAction;
+struct FUEAIAgentChatSummary;
+struct FUEAIAgentChatHistoryEntry;
 
 class SUEAIAgentPanel : public SCompoundWidget
 {
@@ -26,6 +35,8 @@ public:
     SLATE_END_ARGS()
 
     void Construct(const FArguments& InArgs);
+    virtual bool SupportsKeyboardFocus() const override;
+    virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
     enum class EPanelView : uint8
@@ -53,12 +64,13 @@ private:
     FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnCreateChatClicked();
-    FReply OnRenameSelectedChatClicked();
     FReply OnRefreshChatsClicked();
     FReply OnArchiveChatClicked();
     FReply OnResumeAgentLoopClicked();
     FReply OnRejectCurrentActionClicked();
     FReply OnApplyPlannedActionClicked();
+    FReply OnApproveLowRiskClicked();
+    FReply OnRejectAllClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
     void HandleCredentialOperationResult(bool bOk, const FString& Message);
     void HandlePlanResult(bool bOk, const FString& Message);
@@ -66,6 +78,16 @@ private:
     void HandleChatOperationResult(bool bOk, const FString& Message);
     void HandleChatHistoryResult(bool bOk, const FString& Message);
     void HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState);
+    void HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummary> InItem, ESelectInfo::Type SelectInfo);
+    TSharedRef<ITableRow> HandleGenerateChatRow(
+        TSharedPtr<FUEAIAgentChatSummary> InItem,
+        const TSharedRef<STableViewBase>& OwnerTable);
+    TSharedRef<ITableRow> HandleGenerateChatHistoryRow(
+        TSharedPtr<FUEAIAgentChatHistoryEntry> InItem,
+        const TSharedRef<STableViewBase>& OwnerTable) const;
+    void HandleChatSearchTextChanged(const FText& NewText);
+    void HandleArchivedFilterChanged(ECheckBoxState NewState);
+    void HandleChatTitleCommitted(const FText& NewText, ETextCommit::Type CommitType, FString ChatId);
     FString GetSelectedProviderCode() const;
     FString GetSelectedProviderLabel() const;
     FString GetSelectedModeCode() const;
@@ -75,37 +97,66 @@ private:
     void HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
+    FReply HandlePromptKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
     void RefreshChatUiFromTransport(bool bKeepCurrentSelection);
+    void RebuildChatListItems();
+    void RebuildHistoryItems();
     void RefreshActiveChatHistory();
-    void UpdateChatHistoryText(const FString& PrefixMessage = TEXT(""));
-    void RebuildChatListUi();
+    void UpdateSelectionSummaryText();
+    void UpdateChatListStateText();
+    void UpdateHistoryStateText();
+    bool BeginRenameSelectedChat();
+    FString BuildSelectionSummary() const;
+    FString BuildActionDetailText(int32 ActionIndex) const;
     ESessionStatus ParseSessionStatusFromMessage(const FString& Message) const;
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
     TArray<FString> CollectSelectedActorNames() const;
     EActiveTimerReturnType HandleHealthTimer(double InCurrentTime, float InDeltaTime);
+    EActiveTimerReturnType HandleSelectionTimer(double InCurrentTime, float InDeltaTime);
     void SetCurrentView(EPanelView NewView);
 
     TSharedPtr<STextBlock> StatusText;
     TSharedPtr<SMultiLineEditableTextBox> CredentialText;
     TSharedPtr<SEditableTextBox> ApiKeyInput;
+    TSharedPtr<STextBlock> SelectionSummaryText;
     TSharedPtr<SWidgetSwitcher> ViewSwitcher;
-    TSharedPtr<SVerticalBox> ChatListBox;
+    TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatSummary>>> ChatListView;
+    TArray<TSharedPtr<FUEAIAgentChatSummary>> ChatListItems;
+    TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> ChatHistoryListView;
+    TArray<TSharedPtr<FUEAIAgentChatHistoryEntry>> ChatHistoryItems;
+    TSharedPtr<STextBlock> ChatListStateText;
+    TSharedPtr<STextBlock> HistoryStateText;
+    TSharedPtr<STextBlock> SelectedChatHeaderText;
+    TMap<FString, TWeakPtr<SInlineEditableTextBlock>> ChatTitleEditors;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ModeCombo;
     TArray<TSharedPtr<FString>> ProviderItems;
     TArray<TSharedPtr<FString>> ModeItems;
     TSharedPtr<FString> SelectedProviderItem;
     TSharedPtr<FString> SelectedModeItem;
-    TSharedPtr<SEditableTextBox> RenameChatTitleInput;
+    TSharedPtr<SEditableTextBox> ChatSearchInput;
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
+    TSharedPtr<SButton> RunButton;
+    TSharedPtr<SButton> ResumeButton;
     TSharedPtr<STextBlock> PlanText;
-    TSharedPtr<SMultiLineEditableTextBox> ChatHistoryText;
     TSharedPtr<SVerticalBox> ActionListBox;
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;
+    TArray<TSharedPtr<STextBlock>> ActionDetailTexts;
+    TArray<bool> ActionExpandedStates;
     int32 PromptVisibleLineCount = 1;
+    FString CachedSelectionSummary;
+    FString ChatSearchFilter;
+    bool bIncludeArchivedChats = false;
+    bool bIsRefreshingChats = false;
+    bool bIsLoadingHistory = false;
+    bool bIsRunInFlight = false;
+    bool bIsResumeInFlight = false;
+    bool bSelectNewestChatOnNextRefresh = false;
+    FString ChatListErrorMessage;
+    FString HistoryErrorMessage;
     ESessionStatus CurrentSessionStatus = ESessionStatus::Unknown;
     EPanelView CurrentView = EPanelView::Main;
 };

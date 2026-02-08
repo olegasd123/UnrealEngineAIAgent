@@ -10,19 +10,26 @@ Settings path in UE:
 Quick validation in editor tab:
 - Agent status is checked when tab opens and refreshed every 10 seconds
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
-- mode selector near `Run`: `Chat` or `Agent`
-- chat selector and management:
-  - `New Chat` to create chat
-  - `Refresh Chats` to reload active chat list
-  - `Archive Chat` to archive selected chat
-  - chat history box shows asked/done timeline from Agent Core
-- `Run` to run one flow:
-  - in chat mode: request `/v1/task/plan` and show parsed actions
-  - in agent mode: start session orchestration with `/v1/session/start`
-- prompt input is multi-line and grows up to 10 lines
-- `Resume` to send approvals and continue (`/v1/session/approve` + `/v1/session/resume`)
-- `Apply` to execute approved `scene.modifyActor`, `scene.createActor`, and `scene.deleteActor` actions with Undo support
-- buttons are state-based:
-  - `Run` when there is no pending work
-  - `Resume` when an agent session is waiting on next action
-  - `Apply` when there are planned actions ready for manual apply
+- main view:
+  - mode selector near `Run`: `Chat` or `Agent`
+  - prompt input is multi-line and grows up to 10 lines
+  - selection summary shows selected actors and updates automatically
+  - `Run` starts flow:
+    - in chat mode: request `/v1/task/plan` and show parsed actions
+    - in agent mode: start session orchestration with `/v1/session/start`
+  - `Resume` continues session (`/v1/session/approve` + `/v1/session/resume`)
+  - `Apply` executes approved actions with Undo support
+  - `Approve Low Risk` marks low-risk planned actions as approved
+  - `Reject All` unchecks all planned actions
+  - planned actions are grouped by risk (`High`, `Medium`, `Low`) and each row has `Show details`
+- history view:
+  - `Refresh Chats` reloads chat list
+  - `Archive Selected` archives active chat
+  - `Show Archived` toggles archived list from backend
+  - search box filters chats by title or id
+  - left panel is chat list (sorted by last activity)
+  - chat title supports inline rename (select chat, press `F2` or `Enter`)
+  - right panel shows selected chat history entries (kind, route, timestamp, summary)
+- keyboard shortcuts:
+  - `Ctrl+Enter` / `Cmd+Enter`: run from main view
+  - `Esc`: focus prompt input

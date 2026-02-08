@@ -2925,6 +2925,17 @@ bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlann
     return OutActions.Num() > 0;
 }
 
+bool FUEAIAgentTransportModule::GetPlannedAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const
+{
+    if (!PlannedActions.IsValidIndex(ActionIndex))
+    {
+        return false;
+    }
+
+    OutAction = PlannedActions[ActionIndex];
+    return true;
+}
+
 bool FUEAIAgentTransportModule::GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const
 {
     if (!PlannedActions.IsValidIndex(ActionIndex))
