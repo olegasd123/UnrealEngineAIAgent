@@ -16,6 +16,7 @@ export interface ProviderFactoryConfig {
   selected: ProviderName;
   openai: ProviderRuntimeConfig;
   gemini: ProviderRuntimeConfig;
+  local: ProviderRuntimeConfig;
 }
 
 export interface LlmProvider {

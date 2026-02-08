@@ -9,7 +9,7 @@ import type { ProviderName } from "../config.js";
 const execFileAsync = promisify(execFile);
 
 function toProviderKey(provider: ProviderName): string {
-  return provider === "openai" ? "openai" : "gemini";
+  return provider;
 }
 
 function getServiceName(provider: ProviderName): string {

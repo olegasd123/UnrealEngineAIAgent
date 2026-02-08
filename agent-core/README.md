@@ -38,7 +38,7 @@ npm run generate:commands
 Optional environment:
 - `AGENT_HOST` (default `127.0.0.1`)
 - `AGENT_PORT` (default `4317`)
-- `AGENT_PROVIDER` (`openai` or `gemini`, default `openai`)
+- `AGENT_PROVIDER` (`openai`, `gemini`, or `local`, default `local`)
 - `AGENT_TASK_LOG_PATH` (default `data`; used as log directory, legacy file path still works)
 - `AGENT_DB_PATH` (default `data/agent.db`; SQLite database for chats/history)
 - `OPENAI_API_KEY` (optional in stub mode)
@@ -51,6 +51,11 @@ Optional environment:
 - `GEMINI_BASE_URL` (optional)
 - `GEMINI_TEMPERATURE` (default `0.2`)
 - `GEMINI_MAX_TOKENS` (default `1200`)
+- `LOCAL_API_KEY` (optional, used as `Bearer` token for local server if needed)
+- `LOCAL_MODEL` (default `openai/gpt-oss-20b`)
+- `LOCAL_BASE_URL` (default `http://127.0.0.1:1234/v1`)
+- `LOCAL_TEMPERATURE` (default `0.2`)
+- `LOCAL_MAX_TOKENS` (default `1200`)
 - `AGENT_POLICY_MAX_CREATE_COUNT` (default `50`)
 - `AGENT_POLICY_MAX_DUPLICATE_COUNT` (default `10`)
 - `AGENT_POLICY_MAX_TARGET_NAMES` (default `50`)
@@ -68,12 +73,13 @@ Optional environment:
 - macOS stores keys in Keychain.
 - Windows stores keys in user-protected encrypted file (DPAPI via PowerShell).
 - Linux/other platforms store keys in `~/.ueaiagent/secrets` (local file fallback).
-- `OPENAI_API_KEY` and `GEMINI_API_KEY` env vars still work and have priority.
+- `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `LOCAL_API_KEY` env vars still work and have priority.
 
 ## Provider behavior
 
-- If API key exists for selected provider, Agent Core makes a real provider call.
-- If key is missing or call fails, Agent Core falls back to local rule-based planning.
+- OpenAI/Gemini require API keys for live calls.
+- Local provider uses LM Studio/OpenAI-compatible endpoint and does not require API key by default.
+- If provider call fails, Agent Core falls back to local rule-based planning.
 
 ## Task log store
 

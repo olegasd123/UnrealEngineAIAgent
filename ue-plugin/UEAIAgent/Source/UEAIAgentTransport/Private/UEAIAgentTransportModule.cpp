@@ -2256,7 +2256,10 @@ void FUEAIAgentTransportModule::GetProviderStatus(const FOnUEAIAgentCredentialOp
                         *Model);
                 };
 
-                const FString Message = BuildLine(TEXT("openai")) + TEXT("\n") + BuildLine(TEXT("gemini"));
+                const FString Message =
+                    BuildLine(TEXT("openai")) + TEXT("\n") +
+                    BuildLine(TEXT("gemini")) + TEXT("\n") +
+                    BuildLine(TEXT("local"));
                 Callback.ExecuteIfBound(true, Message);
             });
         });

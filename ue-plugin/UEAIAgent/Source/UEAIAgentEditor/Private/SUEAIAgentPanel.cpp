@@ -48,6 +48,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     ProviderItems.Empty();
     ProviderItems.Add(MakeShared<FString>(TEXT("OpenAI")));
     ProviderItems.Add(MakeShared<FString>(TEXT("Gemini")));
+    ProviderItems.Add(MakeShared<FString>(TEXT("Local")));
     ModeItems.Empty();
     ModeItems.Add(MakeShared<FString>(TEXT("Chat")));
     ModeItems.Add(MakeShared<FString>(TEXT("Agent")));
@@ -57,6 +58,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     if (Settings && Settings->DefaultProvider == EUEAIAgentProvider::Gemini)
     {
         SelectedProviderItem = ProviderItems[1];
+    }
+    else if (Settings && Settings->DefaultProvider == EUEAIAgentProvider::Local)
+    {
+        SelectedProviderItem = ProviderItems[2];
     }
     else
     {
@@ -2017,17 +2022,24 @@ FString SUEAIAgentPanel::GetSelectedProviderCode() const
 {
     if (!SelectedProviderItem.IsValid())
     {
+        return TEXT("local");
+    }
+    if (SelectedProviderItem->Equals(TEXT("Gemini"), ESearchCase::IgnoreCase))
+    {
+        return TEXT("gemini");
+    }
+    if (SelectedProviderItem->Equals(TEXT("OpenAI"), ESearchCase::IgnoreCase))
+    {
         return TEXT("openai");
     }
-
-    return SelectedProviderItem->Equals(TEXT("Gemini"), ESearchCase::IgnoreCase) ? TEXT("gemini") : TEXT("openai");
+    return TEXT("local");
 }
 
 FString SUEAIAgentPanel::GetSelectedProviderLabel() const
 {
     if (!SelectedProviderItem.IsValid())
     {
-        return TEXT("OpenAI");
+        return TEXT("Local");
     }
 
     return *SelectedProviderItem;

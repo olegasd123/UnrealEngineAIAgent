@@ -37,7 +37,7 @@ const agentService = new AgentService(
   new ExecutionLayer(sessionStore)
 );
 
-const ProviderSchema = z.enum(["openai", "gemini"]);
+const ProviderSchema = z.enum(["openai", "gemini", "local"]);
 const CredentialSetSchema = z.object({
   provider: ProviderSchema,
   apiKey: z.string().trim().min(1)
@@ -68,12 +68,18 @@ async function resolveProviderApiKey(provider: ProviderName): Promise<string | u
   if (provider === "openai") {
     return config.providers.openai.apiKey ?? (await credentialStore.get("openai"));
   }
-  return config.providers.gemini.apiKey ?? (await credentialStore.get("gemini"));
+  if (provider === "gemini") {
+    return config.providers.gemini.apiKey ?? (await credentialStore.get("gemini"));
+  }
+  return config.providers.local.apiKey ?? (await credentialStore.get("local"));
 }
 
 async function resolveProvider(selected: ProviderName = config.provider) {
-  const openaiKey = await resolveProviderApiKey("openai");
-  const geminiKey = await resolveProviderApiKey("gemini");
+  const [openaiKey, geminiKey, localKey] = await Promise.all([
+    resolveProviderApiKey("openai"),
+    resolveProviderApiKey("gemini"),
+    resolveProviderApiKey("local")
+  ]);
   return createProvider({
     selected,
     openai: {
@@ -83,6 +89,10 @@ async function resolveProvider(selected: ProviderName = config.provider) {
     gemini: {
       ...config.providers.gemini,
       apiKey: geminiKey
+    },
+    local: {
+      ...config.providers.local,
+      apiKey: localKey
     }
   });
 }
@@ -100,6 +110,10 @@ async function readProviderStatus() {
     gemini: {
       configured: Boolean(geminiKey),
       model: config.providers.gemini.model
+    },
+    local: {
+      configured: true,
+      model: config.providers.local.model
     }
   };
 }

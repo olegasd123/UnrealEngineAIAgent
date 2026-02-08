@@ -5,7 +5,7 @@
 - Target: Unreal Engine 5.7
 - Platforms: Windows + macOS
 - Run local-first: all orchestration runs on user machine
-- Model providers in V1: OpenAI GPT + Google Gemini
+- Model providers in V1: OpenAI GPT + Google Gemini + local OpenAI-compatible server (LM Studio)
 - User gives API credentials
 - Two modes:
   - Chat mode: suggest and optionally run small actions
@@ -70,6 +70,7 @@ Subsystems:
 3. `Provider Adapters`
    - OpenAI adapter
    - Gemini adapter
+   - Local adapter (LM Studio/OpenAI-compatible)
    - Unified model interface
 4. `Policy/Safety`
    - Allowed action checks
@@ -178,7 +179,7 @@ interface LlmProvider {
 ```
 
 Provider configs:
-- `provider`: `openai` | `gemini`
+- `provider`: `openai` | `gemini` | `local`
 - `model`: user-selected
 - `temperature`, `max_tokens`
 
@@ -224,7 +225,6 @@ Default localhost port configurable (ex: `127.0.0.1:4317`).
 
 ## 11) Out of Scope for V1
 
-- Local LLM inference
 - Multiplayer/editor collaboration sync
 - Runtime (in-game) agent actions
 - Full C++ code generation pipeline

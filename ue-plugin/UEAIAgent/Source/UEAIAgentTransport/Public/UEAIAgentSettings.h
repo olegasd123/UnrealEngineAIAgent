@@ -8,7 +8,8 @@ UENUM()
 enum class EUEAIAgentProvider : uint8
 {
     OpenAI UMETA(DisplayName = "OpenAI"),
-    Gemini UMETA(DisplayName = "Gemini")
+    Gemini UMETA(DisplayName = "Gemini"),
+    Local UMETA(DisplayName = "Local")
 };
 
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "UE AI Agent"))

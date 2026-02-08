@@ -10,6 +10,7 @@ Settings path in UE:
 Quick validation in editor tab:
 - Agent status is checked when tab opens and refreshed every 10 seconds
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
+- provider selector supports `OpenAI`, `Gemini`, and `Local`
 - main view:
   - mode selector near `Run`: `Chat` or `Agent`
   - prompt input is multi-line and grows up to 10 lines

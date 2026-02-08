@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const ProviderSchema = z.enum(["openai", "gemini"]);
+const ProviderSchema = z.enum(["openai", "gemini", "local"]);
 
 const PortSchema = z.preprocess(
   (value) => {
@@ -45,7 +45,7 @@ const PositiveIntSchema = z.preprocess(
 const RawEnvSchema = z.object({
   AGENT_HOST: z.string().trim().min(1).default("127.0.0.1"),
   AGENT_PORT: PortSchema,
-  AGENT_PROVIDER: ProviderSchema.default("openai"),
+  AGENT_PROVIDER: ProviderSchema.default("local"),
   AGENT_TASK_LOG_PATH: z.string().trim().min(1).default("data"),
   AGENT_DB_PATH: z.string().trim().min(1).default("data/agent.db"),
 
@@ -60,6 +60,12 @@ const RawEnvSchema = z.object({
   GEMINI_BASE_URL: z.string().trim().optional(),
   GEMINI_TEMPERATURE: TemperatureSchema,
   GEMINI_MAX_TOKENS: MaxTokensSchema,
+
+  LOCAL_API_KEY: z.string().trim().optional(),
+  LOCAL_MODEL: z.string().trim().min(1).default("openai/gpt-oss-20b"),
+  LOCAL_BASE_URL: z.string().trim().optional(),
+  LOCAL_TEMPERATURE: TemperatureSchema,
+  LOCAL_MAX_TOKENS: MaxTokensSchema,
 
   AGENT_POLICY_MAX_CREATE_COUNT: PositiveIntSchema.default(50),
   AGENT_POLICY_MAX_DUPLICATE_COUNT: PositiveIntSchema.default(10),
@@ -118,6 +124,13 @@ export const config = {
       baseUrl: optionalNonEmpty(env.GEMINI_BASE_URL),
       temperature: env.GEMINI_TEMPERATURE,
       maxTokens: env.GEMINI_MAX_TOKENS
+    },
+    local: {
+      apiKey: optionalNonEmpty(env.LOCAL_API_KEY),
+      model: env.LOCAL_MODEL,
+      baseUrl: optionalNonEmpty(env.LOCAL_BASE_URL),
+      temperature: env.LOCAL_TEMPERATURE,
+      maxTokens: env.LOCAL_MAX_TOKENS
     }
   },
   policy: {
