@@ -126,7 +126,7 @@ export class ChatStore {
         last_activity_at TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS chat_history (
+      CREATE TABLE IF NOT EXISTS chat_details (
         id TEXT PRIMARY KEY,
         chat_id TEXT NOT NULL,
         kind TEXT NOT NULL CHECK(kind IN ('asked', 'done')),
@@ -137,8 +137,8 @@ export class ChatStore {
         FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
       );
 
-      CREATE INDEX IF NOT EXISTS idx_chat_history_chat_created
-      ON chat_history(chat_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_chat_details_chat_created
+      ON chat_details(chat_id, created_at DESC);
 
       CREATE INDEX IF NOT EXISTS idx_chats_last_activity
       ON chats(last_activity_at DESC);
@@ -255,7 +255,7 @@ export class ChatStore {
     const rows = this.db
       .prepare(
         `SELECT id, chat_id, kind, route, summary, payload_json, created_at
-         FROM chat_history
+         FROM chat_details
          WHERE chat_id = ?
          ORDER BY created_at ASC
          LIMIT ?`
@@ -280,7 +280,7 @@ export class ChatStore {
     const rows = this.db
       .prepare(
         `SELECT payload_json
-         FROM chat_history
+         FROM chat_details
          WHERE chat_id = ? AND kind = 'asked'
          ORDER BY created_at DESC, rowid DESC
          LIMIT ?`
@@ -312,7 +312,7 @@ export class ChatStore {
 
     this.db
       .prepare(
-        `INSERT INTO chat_history (id, chat_id, kind, route, summary, payload_json, created_at)
+        `INSERT INTO chat_details (id, chat_id, kind, route, summary, payload_json, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(id, chatId, kind, route, summary, stringifyJson(payload), now);
@@ -324,7 +324,7 @@ export class ChatStore {
     const row = this.db
       .prepare(
         `SELECT id, chat_id, kind, route, summary, payload_json, created_at
-         FROM chat_history
+         FROM chat_details
          WHERE id = ?`
       )
       .get(id);

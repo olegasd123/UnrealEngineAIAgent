@@ -103,7 +103,7 @@ Optional environment:
 - Chats and chat history are stored in SQLite.
 - Tables are auto-created at startup:
   - `chats`
-  - `chat_history`
+  - `chat_details`
 - Manage chats:
   - `POST /v1/chats` (optional body: `{"title":"Lighting chat"}`)
   - `GET /v1/chats?includeArchived=true|false`
