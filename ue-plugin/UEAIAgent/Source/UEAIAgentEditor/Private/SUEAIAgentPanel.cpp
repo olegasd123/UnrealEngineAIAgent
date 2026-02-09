@@ -769,7 +769,6 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     {
         RequestActors = LastNonEmptySelection;
     }
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const FString Mode = GetSelectedModeCode();
     const FString Provider = GetSelectedModelProvider();
     const FString Model = GetSelectedModelName();
@@ -780,11 +779,100 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     }
 
     PromptInput->SetText(FText::GetEmpty());
+    bIsRunInFlight = true;
+    EnsureActiveChatAndRun(
+        Prompt,
+        Mode,
+        RequestActors,
+        Provider,
+        Model);
+    return FReply::Handled();
+}
 
+void SUEAIAgentPanel::EnsureActiveChatAndRun(
+    const FString& Prompt,
+    const FString& Mode,
+    const TArray<FString>& RequestActors,
+    const FString& Provider,
+    const FString& Model)
+{
+    if (TryRestoreLatestChatFromTransport())
+    {
+        RunWithActiveChat(Prompt, Mode, RequestActors, Provider, Model);
+        return;
+    }
+
+    if (PlanText.IsValid())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Chat: loading...")));
+    }
+
+    bIsRefreshingChats = true;
+    ChatListErrorMessage.Reset();
+    UpdateChatListStateText();
+    FUEAIAgentTransportModule::Get().RefreshChats(
+        bIncludeArchivedChats,
+        FOnUEAIAgentChatOpFinished::CreateLambda([this, Prompt, Mode, RequestActors, Provider, Model](bool bOk, const FString& Message)
+        {
+            HandleChatOperationResult(bOk, Message);
+            if (!bOk)
+            {
+                bIsRunInFlight = false;
+                if (PlanText.IsValid())
+                {
+                    PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
+                }
+                return;
+            }
+
+            if (TryRestoreLatestChatFromTransport())
+            {
+                RunWithActiveChat(Prompt, Mode, RequestActors, Provider, Model);
+                return;
+            }
+
+            if (PlanText.IsValid())
+            {
+                PlanText->SetText(FText::FromString(TEXT("Chat: creating...")));
+            }
+
+            bIsRefreshingChats = true;
+            ChatListErrorMessage.Reset();
+            UpdateChatListStateText();
+            FUEAIAgentTransportModule::Get().CreateChat(
+                TEXT(""),
+                FOnUEAIAgentChatOpFinished::CreateLambda([this, Prompt, Mode, RequestActors, Provider, Model](bool bCreateOk, const FString& CreateMessage)
+                {
+                    HandleChatOperationResult(bCreateOk, CreateMessage);
+                    if (!bCreateOk)
+                    {
+                        bIsRunInFlight = false;
+                        if (PlanText.IsValid())
+                        {
+                            PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + CreateMessage));
+                        }
+                        return;
+                    }
+
+                    RunWithActiveChat(Prompt, Mode, RequestActors, Provider, Model);
+                }));
+        }));
+}
+
+void SUEAIAgentPanel::RunWithActiveChat(
+    const FString& Prompt,
+    const FString& Mode,
+    const TArray<FString>& RequestActors,
+    const FString& Provider,
+    const FString& Model)
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Mode == TEXT("agent"))
     {
-        bIsRunInFlight = true;
-        PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
+        if (PlanText.IsValid())
+        {
+            PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
+        }
         Transport.StartSession(
             Prompt,
             TEXT("agent"),
@@ -792,11 +880,13 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
             Provider,
             Model,
             FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
-        return FReply::Handled();
+        return;
     }
 
-    bIsRunInFlight = true;
-    PlanText->SetText(FText::FromString(TEXT("Plan: requesting...")));
+    if (PlanText.IsValid())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Plan: requesting...")));
+    }
     Transport.PlanTask(
         Prompt,
         TEXT("chat"),
@@ -804,8 +894,45 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         Provider,
         Model,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
+}
 
-    return FReply::Handled();
+bool SUEAIAgentPanel::TryRestoreLatestChatFromTransport()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!Transport.GetActiveChatId().IsEmpty())
+    {
+        return true;
+    }
+
+    const TArray<FUEAIAgentChatSummary>& Chats = Transport.GetChats();
+    if (Chats.Num() == 0)
+    {
+        return false;
+    }
+
+    const FUEAIAgentChatSummary* LatestChat = &Chats[0];
+    for (const FUEAIAgentChatSummary& Chat : Chats)
+    {
+        if (Chat.LastActivityAt > LatestChat->LastActivityAt)
+        {
+            LatestChat = &Chat;
+            continue;
+        }
+        if (Chat.LastActivityAt == LatestChat->LastActivityAt && Chat.Id < LatestChat->Id)
+        {
+            LatestChat = &Chat;
+        }
+    }
+
+    if (LatestChat->Id.IsEmpty())
+    {
+        return false;
+    }
+
+    Transport.SetActiveChatId(LatestChat->Id);
+    RefreshChatUiFromTransport(true);
+    RefreshActiveChatHistory();
+    return true;
 }
 
 FReply SUEAIAgentPanel::OnCreateChatClicked()

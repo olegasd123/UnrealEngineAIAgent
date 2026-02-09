@@ -103,6 +103,19 @@ private:
     void HandleModelComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
     void PersistPreferredModels();
+    void EnsureActiveChatAndRun(
+        const FString& Prompt,
+        const FString& Mode,
+        const TArray<FString>& RequestActors,
+        const FString& Provider,
+        const FString& Model);
+    void RunWithActiveChat(
+        const FString& Prompt,
+        const FString& Mode,
+        const TArray<FString>& RequestActors,
+        const FString& Provider,
+        const FString& Model);
+    bool TryRestoreLatestChatFromTransport();
     void RebuildModelUi();
     FString BuildModelOptionKey(const FUEAIAgentModelOption& Option) const;
     FString BuildModelItemLabel(const FUEAIAgentModelOption& Option) const;
