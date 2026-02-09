@@ -41,7 +41,7 @@ export class OpenAiProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.runtime.model,
         temperature: this.runtime.temperature,
-        max_tokens: this.runtime.maxTokens,
+        max_completion_tokens: this.runtime.maxTokens,
         response_format: { type: "json_object" },
         messages: [
           {

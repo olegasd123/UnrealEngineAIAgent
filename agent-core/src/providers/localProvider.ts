@@ -42,7 +42,6 @@ export class LocalProvider implements LlmProvider {
         model: this.runtime.model,
         temperature: this.runtime.temperature,
         max_tokens: this.runtime.maxTokens,
-        response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
