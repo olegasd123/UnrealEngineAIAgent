@@ -4,6 +4,7 @@
 #include "Async/Async.h"
 #include "Components/ActorComponent.h"
 #include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "Editor.h"
 #include "Engine/Level.h"
 #include "EngineUtils.h"
@@ -865,6 +866,20 @@ FString FUEAIAgentTransportModule::BuildCredentialsTestUrl() const
     return BuildBaseUrl() + TEXT("/v1/credentials/test");
 }
 
+FString FUEAIAgentTransportModule::BuildModelsUrl(const FString& Provider) const
+{
+    if (Provider.IsEmpty())
+    {
+        return BuildBaseUrl() + TEXT("/v1/models");
+    }
+    return BuildBaseUrl() + TEXT("/v1/models?provider=") + FGenericPlatformHttp::UrlEncode(Provider);
+}
+
+FString FUEAIAgentTransportModule::BuildModelPreferencesUrl() const
+{
+    return BuildBaseUrl() + TEXT("/v1/models/preferences");
+}
+
 FString FUEAIAgentTransportModule::BuildSessionStartUrl() const
 {
     return BuildBaseUrl() + TEXT("/v1/session/start");
@@ -977,6 +992,8 @@ void FUEAIAgentTransportModule::PlanTask(
     const FString& Prompt,
     const FString& Mode,
     const TArray<FString>& SelectedActors,
+    const FString& Provider,
+    const FString& Model,
     const FOnUEAIAgentTaskPlanned& Callback) const
 {
     PlannedActions.Empty();
@@ -988,6 +1005,14 @@ void FUEAIAgentTransportModule::PlanTask(
     Root->SetStringField(TEXT("prompt"), Prompt);
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("chat") : Mode);
     Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
+    if (!Provider.IsEmpty())
+    {
+        Root->SetStringField(TEXT("provider"), Provider);
+    }
+    if (!Model.IsEmpty())
+    {
+        Root->SetStringField(TEXT("model"), Model);
+    }
     if (!ActiveChatId.IsEmpty())
     {
         Root->SetStringField(TEXT("chatId"), ActiveChatId);
@@ -1824,6 +1849,8 @@ void FUEAIAgentTransportModule::StartSession(
     const FString& Prompt,
     const FString& Mode,
     const TArray<FString>& SelectedActors,
+    const FString& Provider,
+    const FString& Model,
     const FOnUEAIAgentSessionUpdated& Callback) const
 {
     PlannedActions.Empty();
@@ -1836,6 +1863,14 @@ void FUEAIAgentTransportModule::StartSession(
     Root->SetStringField(TEXT("mode"), Mode.IsEmpty() ? TEXT("agent") : Mode);
     Root->SetNumberField(TEXT("maxRetries"), 2);
     Root->SetObjectField(TEXT("context"), BuildContextObject(SelectedActors));
+    if (!Provider.IsEmpty())
+    {
+        Root->SetStringField(TEXT("provider"), Provider);
+    }
+    if (!Model.IsEmpty())
+    {
+        Root->SetStringField(TEXT("model"), Model);
+    }
     if (!ActiveChatId.IsEmpty())
     {
         Root->SetStringField(TEXT("chatId"), ActiveChatId);
@@ -2079,9 +2114,9 @@ void FUEAIAgentTransportModule::SetProviderApiKey(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2119,9 +2154,9 @@ void FUEAIAgentTransportModule::DeleteProviderApiKey(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2159,9 +2194,9 @@ void FUEAIAgentTransportModule::TestProviderApiKey(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2261,6 +2296,194 @@ void FUEAIAgentTransportModule::GetProviderStatus(const FOnUEAIAgentCredentialOp
                     BuildLine(TEXT("gemini")) + TEXT("\n") +
                     BuildLine(TEXT("local"));
                 Callback.ExecuteIfBound(true, Message);
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::RefreshModelOptions(
+    const FString& Provider,
+    const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    const FString ProviderValue = Provider;
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildModelsUrl(ProviderValue));
+    Request->SetVerb(TEXT("GET"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback, ProviderValue](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, ProviderValue, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Load models failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Model response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Model request failed.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                AvailableModels.Empty();
+                PreferredModels.Empty();
+
+                const TArray<TSharedPtr<FJsonValue>>* AvailableArray = nullptr;
+                FString SelectedProvider;
+                ResponseJson->TryGetStringField(TEXT("provider"), SelectedProvider);
+                if (ResponseJson->TryGetArrayField(TEXT("models"), AvailableArray) && AvailableArray)
+                {
+                    for (const TSharedPtr<FJsonValue>& Value : *AvailableArray)
+                    {
+                        FString ModelName;
+                        if (!Value.IsValid() || !Value->TryGetString(ModelName) || ModelName.IsEmpty())
+                        {
+                            continue;
+                        }
+                            FUEAIAgentModelOption Option;
+                            Option.Provider = SelectedProvider.IsEmpty() ? ProviderValue : SelectedProvider;
+                            Option.Model = ModelName;
+                            AvailableModels.Add(Option);
+                        }
+                    }
+
+                const TArray<TSharedPtr<FJsonValue>>* PreferredArray = nullptr;
+                if (ResponseJson->TryGetArrayField(TEXT("preferredModels"), PreferredArray) && PreferredArray)
+                {
+                    for (const TSharedPtr<FJsonValue>& Value : *PreferredArray)
+                    {
+                        const TSharedPtr<FJsonObject> ItemObj = Value.IsValid() ? Value->AsObject() : nullptr;
+                        if (!ItemObj.IsValid())
+                        {
+                            continue;
+                        }
+
+                        FString Provider;
+                        FString Model;
+                        if (!ItemObj->TryGetStringField(TEXT("provider"), Provider) ||
+                            !ItemObj->TryGetStringField(TEXT("model"), Model) ||
+                            Provider.IsEmpty() ||
+                            Model.IsEmpty())
+                        {
+                            continue;
+                        }
+
+                        FUEAIAgentModelOption Option;
+                        Option.Provider = Provider;
+                        Option.Model = Model;
+                        PreferredModels.Add(Option);
+                    }
+                }
+
+                Callback.ExecuteIfBound(
+                    true,
+                    FString::Printf(TEXT("Models loaded: available %d, preferred %d"), AvailableModels.Num(), PreferredModels.Num()));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::SavePreferredModels(
+    const TArray<FUEAIAgentModelOption>& Models,
+    const FOnUEAIAgentCredentialOpFinished& Callback) const
+{
+    TArray<TSharedPtr<FJsonValue>> ModelValues;
+    for (const FUEAIAgentModelOption& Item : Models)
+    {
+        if (Item.Provider.IsEmpty() || Item.Model.IsEmpty())
+        {
+            continue;
+        }
+        TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+        Row->SetStringField(TEXT("provider"), Item.Provider);
+        Row->SetStringField(TEXT("model"), Item.Model);
+        ModelValues.Add(MakeShared<FJsonValueObject>(Row));
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetArrayField(TEXT("models"), ModelValues);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildModelPreferencesUrl());
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Save models failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (FJsonSerializer::Deserialize(Reader, ResponseJson) && ResponseJson.IsValid())
+                {
+                    const TArray<TSharedPtr<FJsonValue>>* PreferredArray = nullptr;
+                    if (ResponseJson->TryGetArrayField(TEXT("preferredModels"), PreferredArray) && PreferredArray)
+                    {
+                        PreferredModels.Empty();
+                        for (const TSharedPtr<FJsonValue>& Value : *PreferredArray)
+                        {
+                            const TSharedPtr<FJsonObject> ItemObj = Value.IsValid() ? Value->AsObject() : nullptr;
+                            if (!ItemObj.IsValid())
+                            {
+                                continue;
+                            }
+
+                            FString Provider;
+                            FString Model;
+                            if (!ItemObj->TryGetStringField(TEXT("provider"), Provider) ||
+                                !ItemObj->TryGetStringField(TEXT("model"), Model) ||
+                                Provider.IsEmpty() ||
+                                Model.IsEmpty())
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentModelOption Option;
+                            Option.Provider = Provider;
+                            Option.Model = Model;
+                            PreferredModels.Add(Option);
+                        }
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Preferred models saved."));
             });
         });
 
@@ -2665,6 +2888,16 @@ const TArray<FUEAIAgentChatSummary>& FUEAIAgentTransportModule::GetChats() const
 const TArray<FUEAIAgentChatHistoryEntry>& FUEAIAgentTransportModule::GetActiveChatHistory() const
 {
     return ActiveChatHistory;
+}
+
+const TArray<FUEAIAgentModelOption>& FUEAIAgentTransportModule::GetAvailableModels() const
+{
+    return AvailableModels;
+}
+
+const TArray<FUEAIAgentModelOption>& FUEAIAgentTransportModule::GetPreferredModels() const
+{
+    return PreferredModels;
 }
 
 void FUEAIAgentTransportModule::SetActiveChatId(const FString& ChatId) const

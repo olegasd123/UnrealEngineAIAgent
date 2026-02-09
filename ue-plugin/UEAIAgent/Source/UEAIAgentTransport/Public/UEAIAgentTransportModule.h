@@ -116,6 +116,12 @@ struct FUEAIAgentChatHistoryEntry
     FString CreatedAt;
 };
 
+struct FUEAIAgentModelOption
+{
+    FString Provider;
+    FString Model;
+};
+
 class UEAIAGENTTRANSPORT_API FUEAIAgentTransportModule : public IModuleInterface
 {
 public:
@@ -133,8 +139,20 @@ public:
     virtual void ShutdownModule() override;
 
     void CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const;
-    void PlanTask(const FString& Prompt, const FString& Mode, const TArray<FString>& SelectedActors, const FOnUEAIAgentTaskPlanned& Callback) const;
-    void StartSession(const FString& Prompt, const FString& Mode, const TArray<FString>& SelectedActors, const FOnUEAIAgentSessionUpdated& Callback) const;
+    void PlanTask(
+        const FString& Prompt,
+        const FString& Mode,
+        const TArray<FString>& SelectedActors,
+        const FString& Provider,
+        const FString& Model,
+        const FOnUEAIAgentTaskPlanned& Callback) const;
+    void StartSession(
+        const FString& Prompt,
+        const FString& Mode,
+        const TArray<FString>& SelectedActors,
+        const FString& Provider,
+        const FString& Model,
+        const FOnUEAIAgentSessionUpdated& Callback) const;
     void NextSession(bool bHasResult, bool bResultOk, const FString& ResultMessage, const FOnUEAIAgentSessionUpdated& Callback) const;
     void ApproveCurrentSessionAction(bool bApproved, const FOnUEAIAgentSessionUpdated& Callback) const;
     void ResumeSession(const FOnUEAIAgentSessionUpdated& Callback) const;
@@ -142,6 +160,8 @@ public:
     void DeleteProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void TestProviderApiKey(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void GetProviderStatus(const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void RefreshModelOptions(const FString& Provider, const FOnUEAIAgentCredentialOpFinished& Callback) const;
+    void SavePreferredModels(const TArray<FUEAIAgentModelOption>& Models, const FOnUEAIAgentCredentialOpFinished& Callback) const;
     void RefreshChats(bool bIncludeArchived, const FOnUEAIAgentChatOpFinished& Callback) const;
     void CreateChat(const FString& Title, const FOnUEAIAgentChatOpFinished& Callback) const;
     void RenameActiveChat(const FString& NewTitle, const FOnUEAIAgentChatOpFinished& Callback) const;
@@ -149,6 +169,8 @@ public:
     void LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const;
     const TArray<FUEAIAgentChatSummary>& GetChats() const;
     const TArray<FUEAIAgentChatHistoryEntry>& GetActiveChatHistory() const;
+    const TArray<FUEAIAgentModelOption>& GetAvailableModels() const;
+    const TArray<FUEAIAgentModelOption>& GetPreferredModels() const;
     void SetActiveChatId(const FString& ChatId) const;
     FString GetActiveChatId() const;
     int32 GetPlannedActionCount() const;
@@ -171,6 +193,8 @@ private:
     FString BuildCredentialsSetUrl() const;
     FString BuildCredentialsDeleteUrl() const;
     FString BuildCredentialsTestUrl() const;
+    FString BuildModelsUrl(const FString& Provider) const;
+    FString BuildModelPreferencesUrl() const;
     FString BuildSessionStartUrl() const;
     FString BuildSessionNextUrl() const;
     FString BuildSessionApproveUrl() const;
@@ -191,5 +215,7 @@ private:
     mutable TArray<FString> ActiveSessionSelectedActors;
     mutable TArray<FUEAIAgentChatSummary> Chats;
     mutable TArray<FUEAIAgentChatHistoryEntry> ActiveChatHistory;
+    mutable TArray<FUEAIAgentModelOption> AvailableModels;
+    mutable TArray<FUEAIAgentModelOption> PreferredModels;
     mutable FString ActiveChatId;
 };

@@ -50,19 +50,16 @@ const RawEnvSchema = z.object({
   AGENT_DB_PATH: z.string().trim().min(1).default("data/agent.db"),
 
   OPENAI_API_KEY: z.string().trim().optional(),
-  OPENAI_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
   OPENAI_BASE_URL: z.string().trim().optional(),
   OPENAI_TEMPERATURE: TemperatureSchema,
   OPENAI_MAX_TOKENS: MaxTokensSchema,
 
   GEMINI_API_KEY: z.string().trim().optional(),
-  GEMINI_MODEL: z.string().trim().min(1).default("gemini-2.0-flash"),
   GEMINI_BASE_URL: z.string().trim().optional(),
   GEMINI_TEMPERATURE: TemperatureSchema,
   GEMINI_MAX_TOKENS: MaxTokensSchema,
 
   LOCAL_API_KEY: z.string().trim().optional(),
-  LOCAL_MODEL: z.string().trim().min(1).default("openai/gpt-oss-20b"),
   LOCAL_BASE_URL: z.string().trim().optional(),
   LOCAL_TEMPERATURE: TemperatureSchema,
   LOCAL_MAX_TOKENS: MaxTokensSchema,
@@ -95,6 +92,13 @@ export interface ProviderRuntimeConfig {
   maxTokens: number;
 }
 
+export interface ProviderBaseRuntimeConfig {
+  apiKey?: string;
+  baseUrl?: string;
+  temperature: number;
+  maxTokens: number;
+}
+
 export interface PolicyRuntimeConfig {
   maxCreateCount: number;
   maxDuplicateCount: number;
@@ -113,21 +117,18 @@ export const config = {
   providers: {
     openai: {
       apiKey: optionalNonEmpty(env.OPENAI_API_KEY),
-      model: env.OPENAI_MODEL,
       baseUrl: optionalNonEmpty(env.OPENAI_BASE_URL),
       temperature: env.OPENAI_TEMPERATURE,
       maxTokens: env.OPENAI_MAX_TOKENS
     },
     gemini: {
       apiKey: optionalNonEmpty(env.GEMINI_API_KEY),
-      model: env.GEMINI_MODEL,
       baseUrl: optionalNonEmpty(env.GEMINI_BASE_URL),
       temperature: env.GEMINI_TEMPERATURE,
       maxTokens: env.GEMINI_MAX_TOKENS
     },
     local: {
       apiKey: optionalNonEmpty(env.LOCAL_API_KEY),
-      model: env.LOCAL_MODEL,
       baseUrl: optionalNonEmpty(env.LOCAL_BASE_URL),
       temperature: env.LOCAL_TEMPERATURE,
       maxTokens: env.LOCAL_MAX_TOKENS

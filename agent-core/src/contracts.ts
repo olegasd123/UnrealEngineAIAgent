@@ -122,10 +122,14 @@ export const TaskContextSchema = z
   })
   .strict();
 
+export const ProviderNameSchema = z.enum(["openai", "gemini", "local"]);
+
 export const TaskRequestSchema = z.object({
   prompt: z.string().min(1),
   mode: z.enum(["chat", "agent"]).default("chat"),
   context: TaskContextSchema.default({}),
+  provider: ProviderNameSchema.optional(),
+  model: z.string().trim().min(1).optional(),
   chatId: z.string().uuid().optional()
 });
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UEAIAgentTransportModule.h"
 #include "Types/SlateEnums.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/SWidget.h"
@@ -92,11 +93,19 @@ private:
     FString GetSelectedProviderLabel() const;
     FString GetSelectedModeCode() const;
     FString GetSelectedModeLabel() const;
+    FString GetSelectedModelProvider() const;
+    FString GetSelectedModelName() const;
     TSharedRef<SWidget> HandleProviderComboGenerateWidget(TSharedPtr<FString> InItem) const;
     TSharedRef<SWidget> HandleModeComboGenerateWidget(TSharedPtr<FString> InItem) const;
+    TSharedRef<SWidget> HandleModelComboGenerateWidget(TSharedPtr<FString> InItem) const;
     void HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
+    void HandleModelComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
+    void PersistPreferredModels();
+    void RebuildModelUi();
+    FString BuildModelOptionKey(const FUEAIAgentModelOption& Option) const;
+    FString BuildModelItemLabel(const FUEAIAgentModelOption& Option) const;
     FReply HandlePromptKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
     void RefreshChatUiFromTransport(bool bKeepCurrentSelection);
     void RebuildChatListItems();
@@ -133,10 +142,17 @@ private:
     TMap<FString, TWeakPtr<SInlineEditableTextBlock>> ChatTitleEditors;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ModeCombo;
+    TSharedPtr<SComboBox<TSharedPtr<FString>>> ModelCombo;
     TArray<TSharedPtr<FString>> ProviderItems;
     TArray<TSharedPtr<FString>> ModeItems;
+    TArray<TSharedPtr<FString>> ModelItems;
     TSharedPtr<FString> SelectedProviderItem;
     TSharedPtr<FString> SelectedModeItem;
+    TSharedPtr<FString> SelectedModelItem;
+    TSharedPtr<SVerticalBox> ModelChecksBox;
+    TMap<FString, FUEAIAgentModelOption> ModelLabelToOption;
+    TMap<FString, FUEAIAgentModelOption> ModelKeyToOption;
+    TMap<FString, TSharedPtr<SCheckBox>> ModelChecks;
     TSharedPtr<SEditableTextBox> ChatSearchInput;
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<SButton> RunButton;

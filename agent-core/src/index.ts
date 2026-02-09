@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AgentService } from "./agent/agentService.js";
 import {
   ChatCreateRequestSchema,
+  ProviderNameSchema,
   ChatUpdateRequestSchema,
   SessionApproveRequestSchema,
   SessionNextRequestSchema,
@@ -19,6 +20,8 @@ import { ExecutionLayer } from "./executor/executionLayer.js";
 import { IntentLayer } from "./intent/intentLayer.js";
 import { SessionLogStore } from "./logs/sessionLogStore.js";
 import { TaskLogStore } from "./logs/taskLogStore.js";
+import { normalizeModelRef, type ModelRef } from "./models/modelCatalog.js";
+import { ModelPreferenceStore } from "./models/modelPreferenceStore.js";
 import { PlanningLayer } from "./planner/planningLayer.js";
 import { createProvider } from "./providers/createProvider.js";
 import { SessionStore } from "./sessions/sessionStore.js";
@@ -28,6 +31,7 @@ import { WorldStateCollector } from "./worldState/worldStateCollector.js";
 const taskLogStore = new TaskLogStore(config.taskLogPath);
 const sessionLogStore = new SessionLogStore(config.taskLogPath);
 const chatStore = new ChatStore(config.dbPath);
+const modelPreferenceStore = new ModelPreferenceStore(config.dbPath);
 const credentialStore = new CredentialStore();
 const sessionStore = new SessionStore(config.policy);
 const agentService = new AgentService(
@@ -37,7 +41,7 @@ const agentService = new AgentService(
   new ExecutionLayer(sessionStore)
 );
 
-const ProviderSchema = z.enum(["openai", "gemini", "local"]);
+const ProviderSchema = ProviderNameSchema;
 const CredentialSetSchema = z.object({
   provider: ProviderSchema,
   apiKey: z.string().trim().min(1)
@@ -46,10 +50,21 @@ const CredentialDeleteSchema = z.object({
   provider: ProviderSchema
 });
 const CredentialTestSchema = z.object({
-  provider: ProviderSchema.optional()
+  provider: ProviderSchema.optional(),
+  model: z.string().trim().min(1).optional()
 });
 
 type ProviderName = z.infer<typeof ProviderSchema>;
+
+const ModelPreferenceItemSchema = z.object({
+  provider: ProviderSchema,
+  model: z.string().trim().min(1)
+});
+const ModelPreferencesSetSchema = z.object({
+  models: z.array(ModelPreferenceItemSchema).default([])
+});
+
+const MODEL_REQUEST_TIMEOUT_MS = 12_000;
 
 function sendJson(res: http.ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -74,7 +89,150 @@ async function resolveProviderApiKey(provider: ProviderName): Promise<string | u
   return config.providers.local.apiKey ?? (await credentialStore.get("local"));
 }
 
-async function resolveProvider(selected: ProviderName = config.provider) {
+function getOpenAiCompatibleBaseUrl(provider: "openai" | "local"): string {
+  if (provider === "openai") {
+    return config.providers.openai.baseUrl?.replace(/\/+$/, "") ?? "https://api.openai.com/v1";
+  }
+  return config.providers.local.baseUrl?.replace(/\/+$/, "") ?? "http://127.0.0.1:1234/v1";
+}
+
+function getGeminiBaseUrl(): string {
+  return config.providers.gemini.baseUrl?.replace(/\/+$/, "") ?? "https://generativelanguage.googleapis.com/v1beta";
+}
+
+function uniqueModels(items: string[]): string[] {
+  const seen = new Set<string>();
+  for (const item of items) {
+    const normalized = item.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+function dedupeModelRefs(items: ModelRef[]): ModelRef[] {
+  const seen = new Set<string>();
+  const out: ModelRef[] = [];
+  for (const item of items) {
+    const normalized = normalizeModelRef(item);
+    if (!normalized) {
+      continue;
+    }
+    const key = `${normalized.provider}:${normalized.model.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(normalized);
+  }
+  return out;
+}
+
+async function fetchOpenAiCompatibleModels(provider: "openai" | "local", apiKey?: string): Promise<string[]> {
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetch(`${getOpenAiCompatibleBaseUrl(provider)}/models`, {
+    method: "GET",
+    headers,
+    signal: AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) {
+    throw new Error(`${provider} models request failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as { data?: Array<{ id?: unknown }> };
+  const models: string[] = [];
+  if (Array.isArray(payload.data)) {
+    for (const entry of payload.data) {
+      if (typeof entry?.id === "string" && entry.id.trim()) {
+        models.push(entry.id.trim());
+      }
+    }
+  }
+  return uniqueModels(models);
+}
+
+async function fetchGeminiModels(apiKey: string | undefined): Promise<string[]> {
+  if (!apiKey) {
+    return [];
+  }
+
+  const response = await fetch(`${getGeminiBaseUrl()}/models?key=${encodeURIComponent(apiKey)}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) {
+    throw new Error(`gemini models request failed (${response.status}).`);
+  }
+
+  const payload = (await response.json()) as { models?: Array<{ name?: unknown }> };
+  const models: string[] = [];
+  if (Array.isArray(payload.models)) {
+    for (const entry of payload.models) {
+      if (typeof entry?.name !== "string" || !entry.name.trim()) {
+        continue;
+      }
+      const normalized = entry.name.startsWith("models/") ? entry.name.slice("models/".length) : entry.name;
+      if (normalized.trim()) {
+        models.push(normalized.trim());
+      }
+    }
+  }
+  return uniqueModels(models);
+}
+
+async function readAvailableModelsForProvider(provider: ProviderName): Promise<{
+  provider: ProviderName;
+  configured: boolean;
+  models: string[];
+}> {
+  if (provider === "openai") {
+    const apiKey = await resolveProviderApiKey("openai");
+    if (!apiKey) {
+      return { provider, configured: false, models: [] };
+    }
+    const models = await fetchOpenAiCompatibleModels("openai", apiKey);
+    return { provider, configured: true, models };
+  }
+
+  if (provider === "gemini") {
+    const apiKey = await resolveProviderApiKey("gemini");
+    if (!apiKey) {
+      return { provider, configured: false, models: [] };
+    }
+    const models = await fetchGeminiModels(apiKey);
+    return { provider, configured: true, models };
+  }
+
+  const apiKey = await resolveProviderApiKey("local");
+  const models = await fetchOpenAiCompatibleModels("local", apiKey);
+  return { provider, configured: true, models };
+}
+
+async function resolveRequestedModel(provider: ProviderName, requestedModel?: string): Promise<string | undefined> {
+  const requested = requestedModel?.trim();
+  if (requested) {
+    return requested;
+  }
+
+  const preferred = modelPreferenceStore.list().find((item) => item.provider === provider)?.model.trim();
+  if (preferred) {
+    return preferred;
+  }
+
+  return undefined;
+}
+
+async function resolveProvider(
+  selected: ProviderName = config.provider,
+  requestedModel?: string
+) {
+  const model = (await resolveRequestedModel(selected, requestedModel)) ?? "model-not-selected";
   const [openaiKey, geminiKey, localKey] = await Promise.all([
     resolveProviderApiKey("openai"),
     resolveProviderApiKey("gemini"),
@@ -84,36 +242,38 @@ async function resolveProvider(selected: ProviderName = config.provider) {
     selected,
     openai: {
       ...config.providers.openai,
+      model,
       apiKey: openaiKey
     },
     gemini: {
       ...config.providers.gemini,
+      model,
       apiKey: geminiKey
     },
     local: {
       ...config.providers.local,
+      model,
       apiKey: localKey
     }
   });
 }
 
 async function readProviderStatus() {
-  const [openaiKey, geminiKey] = await Promise.all([
+  const [openaiKey, geminiKey, localKey] = await Promise.all([
     resolveProviderApiKey("openai"),
-    resolveProviderApiKey("gemini")
+    resolveProviderApiKey("gemini"),
+    resolveProviderApiKey("local")
   ]);
   return {
     openai: {
-      configured: Boolean(openaiKey),
-      model: config.providers.openai.model
+      configured: Boolean(openaiKey)
     },
     gemini: {
-      configured: Boolean(geminiKey),
-      model: config.providers.gemini.model
+      configured: Boolean(geminiKey)
     },
     local: {
       configured: true,
-      model: config.providers.local.model
+      hasApiKey: Boolean(localKey)
     }
   };
 }
@@ -164,6 +324,48 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return sendJson(res, 500, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "GET" && pathname === "/v1/models") {
+    try {
+      const preferredModels = dedupeModelRefs(modelPreferenceStore.list());
+      const providerParam = requestUrl.searchParams.get("provider");
+      if (!providerParam) {
+        return sendJson(res, 200, {
+          ok: true,
+          preferredModels
+        });
+      }
+
+      const provider = ProviderSchema.parse(providerParam);
+      const providerState = await readAvailableModelsForProvider(provider);
+      return sendJson(res, 200, {
+        ok: true,
+        provider: providerState.provider,
+        configured: providerState.configured,
+        models: providerState.models,
+        preferredModels
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/v1/models/preferences") {
+    try {
+      const rawBody = await readBody(req);
+      const parsed = ModelPreferencesSetSchema.parse(rawBody ? JSON.parse(rawBody) : {});
+      const saved = modelPreferenceStore.replace(parsed.models);
+      return sendJson(res, 200, {
+        ok: true,
+        savedCount: saved.length,
+        preferredModels: dedupeModelRefs(saved)
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return sendJson(res, 400, { ok: false, error: message });
     }
   }
 
@@ -268,7 +470,16 @@ const server = http.createServer(async (req, res) => {
       const rawBody = await readBody(req);
       const parsed = CredentialTestSchema.parse(rawBody ? JSON.parse(rawBody) : {});
       const providerName = parsed.provider ?? config.provider;
-      const provider = await resolveProvider(providerName);
+      const selectedModel = await resolveRequestedModel(providerName, parsed.model);
+      if (!selectedModel) {
+        return sendJson(res, 400, {
+          ok: false,
+          provider: providerName,
+          configured: false,
+          message: "No model selected. Select a model in Settings."
+        });
+      }
+      const provider = await resolveProvider(providerName, selectedModel);
 
       if (!provider.hasApiKey) {
         return sendJson(res, 200, {
@@ -283,7 +494,9 @@ const server = http.createServer(async (req, res) => {
         {
           prompt: "Move selected actors +1 on X",
           mode: "chat",
-          context: { selection: ["PreviewActor"] }
+          context: { selection: ["PreviewActor"] },
+          provider: providerName,
+          model: selectedModel
         },
         provider
       );
@@ -363,13 +576,20 @@ const server = http.createServer(async (req, res) => {
         ...parsed,
         context: resolvedContext
       };
+      const selectedProvider = parsed.provider ?? config.provider;
+      const selectedModel = await resolveRequestedModel(selectedProvider, parsed.model);
+      if (!selectedModel) {
+        return sendJson(res, 400, { ok: false, error: "No model selected. Select a model in Settings." });
+      }
       if (parsed.chatId) {
         chatStore.appendAsked(parsed.chatId, "/v1/session/start", parsed.prompt, {
           mode: parsed.mode,
-          context: resolvedContext
+          context: resolvedContext,
+          provider: selectedProvider,
+          model: selectedModel
         });
       }
-      const provider = await resolveProvider();
+      const provider = await resolveProvider(selectedProvider, selectedModel);
       const decision = await agentService.startSession(requestWithResolvedContext, provider);
 
       if (parsed.chatId) {
@@ -617,18 +837,27 @@ const server = http.createServer(async (req, res) => {
     let provider: Awaited<ReturnType<typeof resolveProvider>> | undefined;
 
     try {
-      provider = await resolveProvider();
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
+      const selectedProvider = parsed.provider ?? config.provider;
+      const selectedModel = await resolveRequestedModel(selectedProvider, parsed.model);
+      if (!selectedModel) {
+        return sendJson(res, 400, { ok: false, error: "No model selected. Select a model in Settings." });
+      }
+      provider = await resolveProvider(selectedProvider, selectedModel);
       const resolvedContext = resolveContextWithChatMemory(parsed, chatStore);
       const requestWithResolvedContext = {
         ...parsed,
-        context: resolvedContext
+        context: resolvedContext,
+        provider: selectedProvider,
+        model: selectedModel
       };
       if (parsed.chatId) {
         chatStore.appendAsked(parsed.chatId, "/v1/task/plan", parsed.prompt, {
           mode: parsed.mode,
-          context: resolvedContext
+          context: resolvedContext,
+          provider: selectedProvider,
+          model: selectedModel
         });
       }
       const { plan } = await agentService.planTask(requestWithResolvedContext, provider);

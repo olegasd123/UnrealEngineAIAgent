@@ -17,6 +17,7 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SBoxPanel.h"
@@ -40,6 +41,23 @@ namespace
             Lower.Contains(TEXT(" selection")) ||
             Lower.Contains(TEXT(" previous")) ||
             Lower.Contains(TEXT(" same "));
+    }
+
+    FString ProviderCodeToLabel(const FString& ProviderCode)
+    {
+        if (ProviderCode.Equals(TEXT("openai"), ESearchCase::IgnoreCase))
+        {
+            return TEXT("OpenAI");
+        }
+        if (ProviderCode.Equals(TEXT("gemini"), ESearchCase::IgnoreCase))
+        {
+            return TEXT("Gemini");
+        }
+        if (ProviderCode.Equals(TEXT("local"), ESearchCase::IgnoreCase))
+        {
+            return TEXT("Local");
+        }
+        return ProviderCode;
     }
 }
 
@@ -113,14 +131,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SAssignNew(SelectionSummaryText, STextBlock)
-                .AutoWrapText(true)
-                .Text(FText::FromString(TEXT("Selection: 0 actor(s)")))
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
                 SNew(SBox)
                 .HeightOverride_Lambda([this]()
                 {
@@ -129,7 +139,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 })
                 [
                     SAssignNew(PromptInput, SMultiLineEditableTextBox)
-                    .HintText(FText::FromString(TEXT("Describe what to do with selected actors")))
+                    .HintText(FText::FromString(TEXT("Let's build something great")))
                     .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
                     .OnKeyDownHandler(FOnKeyDown::CreateSP(this, &SUEAIAgentPanel::HandlePromptKeyDown))
                     .Padding(FMargin(8.0f, 8.0f, 8.0f, 8.0f))
@@ -140,6 +150,39 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(280.0f)
+                    .Visibility_Lambda([this]()
+                    {
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
+                        return (bHasPendingSessionAction || bHasPlannedActions) ? EVisibility::Collapsed : EVisibility::Visible;
+                    })
+                    [
+                        SAssignNew(ModelCombo, SComboBox<TSharedPtr<FString>>)
+                        .OptionsSource(&ModelItems)
+                        .InitiallySelectedItem(SelectedModelItem)
+                        .OnGenerateWidget(this, &SUEAIAgentPanel::HandleModelComboGenerateWidget)
+                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleModelComboSelectionChanged)
+                        [
+                            SNew(STextBlock)
+                            .Text_Lambda([this]()
+                            {
+                                if (SelectedModelItem.IsValid())
+                                {
+                                    return FText::FromString(*SelectedModelItem);
+                                }
+                                return FText::FromString(TEXT("Select model"));
+                            })
+                        ]
+                    ]
+                ]
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
@@ -415,6 +458,27 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Preferred Models")))
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SBox)
+                .HeightOverride(240.0f)
+                [
+                    SNew(SScrollBox)
+                    + SScrollBox::Slot()
+                    [
+                        SAssignNew(ModelChecksBox, SVerticalBox)
+                    ]
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
                 SNew(SBox)
                 .HeightOverride(88.0f)
                 [
@@ -573,6 +637,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     UpdateChatListStateText();
     UpdateHistoryStateText();
     OnRefreshChatsClicked();
+    FUEAIAgentTransportModule::Get().RefreshModelOptions(
+        TEXT(""),
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    RebuildModelUi();
 
     UpdateActionApprovalUi();
 }
@@ -649,6 +717,9 @@ FReply SUEAIAgentPanel::OnOpenSettingsClicked()
     }
     FUEAIAgentTransportModule::Get().GetProviderStatus(
         FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    FUEAIAgentTransportModule::Get().RefreshModelOptions(
+        GetSelectedProviderCode(),
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
     return FReply::Handled();
 }
 
@@ -700,6 +771,15 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     }
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const FString Mode = GetSelectedModeCode();
+    const FString Provider = GetSelectedModelProvider();
+    const FString Model = GetSelectedModelName();
+    if (Provider.IsEmpty() || Model.IsEmpty())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Plan: please select a model in Settings first.")));
+        return FReply::Handled();
+    }
+
+    PromptInput->SetText(FText::GetEmpty());
 
     if (Mode == TEXT("agent"))
     {
@@ -709,6 +789,8 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
             Prompt,
             TEXT("agent"),
             RequestActors,
+            Provider,
+            Model,
             FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
         return FReply::Handled();
     }
@@ -719,6 +801,8 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         Prompt,
         TEXT("chat"),
         RequestActors,
+        Provider,
+        Model,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
 
     return FReply::Handled();
@@ -786,7 +870,14 @@ FReply SUEAIAgentPanel::OnSaveApiKeyClicked()
     FUEAIAgentTransportModule::Get().SetProviderApiKey(
         GetSelectedProviderCode(),
         ApiKey,
-        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+        FOnUEAIAgentCredentialOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            HandleCredentialOperationResult(bOk, Message);
+            if (!bOk)
+            {
+                return;
+            }
+        }));
     return FReply::Handled();
 }
 
@@ -800,7 +891,14 @@ FReply SUEAIAgentPanel::OnRemoveApiKeyClicked()
     CredentialText->SetText(FText::FromString(TEXT("Credential: removing key...")));
     FUEAIAgentTransportModule::Get().DeleteProviderApiKey(
         GetSelectedProviderCode(),
-        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+        FOnUEAIAgentCredentialOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            HandleCredentialOperationResult(bOk, Message);
+            if (!bOk)
+            {
+                return;
+            }
+        }));
     return FReply::Handled();
 }
 
@@ -829,6 +927,53 @@ FReply SUEAIAgentPanel::OnRefreshProviderStatusClicked()
     FUEAIAgentTransportModule::Get().GetProviderStatus(
         FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
     return FReply::Handled();
+}
+
+void SUEAIAgentPanel::PersistPreferredModels()
+{
+    if (!CredentialText.IsValid())
+    {
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    TArray<FUEAIAgentModelOption> SelectedModels;
+    const FString CurrentProvider = GetSelectedProviderCode();
+
+    for (const FUEAIAgentModelOption& Existing : Transport.GetPreferredModels())
+    {
+        if (!Existing.Provider.Equals(CurrentProvider, ESearchCase::IgnoreCase))
+        {
+            SelectedModels.Add(Existing);
+        }
+    }
+
+    for (const TPair<FString, TSharedPtr<SCheckBox>>& Entry : ModelChecks)
+    {
+        if (!Entry.Value.IsValid() || !Entry.Value->IsChecked())
+        {
+            continue;
+        }
+
+        const FUEAIAgentModelOption* Option = ModelKeyToOption.Find(Entry.Key);
+        if (!Option)
+        {
+            continue;
+        }
+        SelectedModels.Add(*Option);
+    }
+
+    CredentialText->SetText(FText::FromString(TEXT("Credential: saving preferred models...")));
+    FUEAIAgentTransportModule::Get().SavePreferredModels(
+        SelectedModels,
+        FOnUEAIAgentCredentialOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            HandleCredentialOperationResult(bOk, Message);
+            if (!bOk)
+            {
+                return;
+            }
+        }));
 }
 
 FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
@@ -990,8 +1135,21 @@ void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
         return;
     }
 
+    FString DisplayMessage = Message;
+    const FString ProviderPrefix = TEXT("Provider:");
+    int32 ProviderIndex = INDEX_NONE;
+    if (DisplayMessage.FindChar(TEXT('\n'), ProviderIndex))
+    {
+        DisplayMessage = DisplayMessage.Left(ProviderIndex);
+    }
+    const int32 ProviderToken = DisplayMessage.Find(ProviderPrefix, ESearchCase::IgnoreCase);
+    if (ProviderToken != INDEX_NONE)
+    {
+        DisplayMessage = DisplayMessage.Left(ProviderToken).TrimEnd();
+    }
+
     const FString Prefix = bOk ? TEXT("Status: ok - ") : TEXT("Status: error - ");
-    StatusText->SetText(FText::FromString(Prefix + Message));
+    StatusText->SetText(FText::FromString(Prefix + DisplayMessage));
 }
 
 void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
@@ -1341,6 +1499,8 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
 
 void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)
 {
+    RebuildModelUi();
+
     if (!CredentialText.IsValid())
     {
         return;
@@ -1752,7 +1912,7 @@ FString SUEAIAgentPanel::BuildSelectionSummary() const
     const TArray<FString> SelectedActors = CollectSelectedActorNames();
     if (SelectedActors.Num() == 0)
     {
-        return TEXT("Selection: 0 actor(s)");
+        return TEXT("");
     }
 
     FString NamesText = SelectedActors[0];
@@ -2065,6 +2225,28 @@ FString SUEAIAgentPanel::GetSelectedModeLabel() const
     return *SelectedModeItem;
 }
 
+FString SUEAIAgentPanel::GetSelectedModelProvider() const
+{
+    if (!SelectedModelItem.IsValid())
+    {
+        return TEXT("");
+    }
+
+    const FUEAIAgentModelOption* Option = ModelLabelToOption.Find(*SelectedModelItem);
+    return Option ? Option->Provider : TEXT("");
+}
+
+FString SUEAIAgentPanel::GetSelectedModelName() const
+{
+    if (!SelectedModelItem.IsValid())
+    {
+        return TEXT("");
+    }
+
+    const FUEAIAgentModelOption* Option = ModelLabelToOption.Find(*SelectedModelItem);
+    return Option ? Option->Model : TEXT("");
+}
+
 TSharedRef<SWidget> SUEAIAgentPanel::HandleProviderComboGenerateWidget(TSharedPtr<FString> InItem) const
 {
     return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
@@ -2075,14 +2257,23 @@ TSharedRef<SWidget> SUEAIAgentPanel::HandleModeComboGenerateWidget(TSharedPtr<FS
     return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
 }
 
+TSharedRef<SWidget> SUEAIAgentPanel::HandleModelComboGenerateWidget(TSharedPtr<FString> InItem) const
+{
+    return SNew(STextBlock).Text(FText::FromString(InItem.IsValid() ? *InItem : TEXT("Unknown")));
+}
+
 void SUEAIAgentPanel::HandleProviderComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
 {
+    (void)SelectInfo;
     if (!NewValue.IsValid())
     {
         return;
     }
 
     SelectedProviderItem = NewValue;
+    FUEAIAgentTransportModule::Get().RefreshModelOptions(
+        GetSelectedProviderCode(),
+        FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
 }
 
 void SUEAIAgentPanel::HandleModeComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
@@ -2093,6 +2284,132 @@ void SUEAIAgentPanel::HandleModeComboSelectionChanged(TSharedPtr<FString> NewVal
     }
 
     SelectedModeItem = NewValue;
+}
+
+void SUEAIAgentPanel::HandleModelComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo)
+{
+    if (!NewValue.IsValid())
+    {
+        return;
+    }
+
+    SelectedModelItem = NewValue;
+}
+
+FString SUEAIAgentPanel::BuildModelItemLabel(const FUEAIAgentModelOption& Option) const
+{
+    return FString::Printf(TEXT("%s | %s"), *ProviderCodeToLabel(Option.Provider), *Option.Model);
+}
+
+FString SUEAIAgentPanel::BuildModelOptionKey(const FUEAIAgentModelOption& Option) const
+{
+    return Option.Provider + TEXT("::") + Option.Model;
+}
+
+void SUEAIAgentPanel::RebuildModelUi()
+{
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const TArray<FUEAIAgentModelOption>& Available = Transport.GetAvailableModels();
+    const TArray<FUEAIAgentModelOption>& Preferred = Transport.GetPreferredModels();
+    const FString PreviousSelection = SelectedModelItem.IsValid() ? *SelectedModelItem : FString();
+
+    ModelItems.Empty();
+    ModelLabelToOption.Empty();
+    for (const FUEAIAgentModelOption& Option : Preferred)
+    {
+        const FString Label = BuildModelItemLabel(Option);
+        if (ModelLabelToOption.Contains(Label))
+        {
+            continue;
+        }
+        ModelItems.Add(MakeShared<FString>(Label));
+        ModelLabelToOption.Add(Label, Option);
+    }
+
+    if (ModelItems.Num() == 0)
+    {
+        for (const FUEAIAgentModelOption& Option : Available)
+        {
+            const FString Label = BuildModelItemLabel(Option);
+            if (ModelLabelToOption.Contains(Label))
+            {
+                continue;
+            }
+            ModelItems.Add(MakeShared<FString>(Label));
+            ModelLabelToOption.Add(Label, Option);
+        }
+    }
+
+    SelectedModelItem.Reset();
+    for (const TSharedPtr<FString>& Item : ModelItems)
+    {
+        if (Item.IsValid() && *Item == PreviousSelection)
+        {
+            SelectedModelItem = Item;
+            break;
+        }
+    }
+    if (!SelectedModelItem.IsValid() && ModelItems.Num() > 0)
+    {
+        SelectedModelItem = ModelItems[0];
+    }
+
+    if (ModelCombo.IsValid())
+    {
+        ModelCombo->RefreshOptions();
+        ModelCombo->SetSelectedItem(SelectedModelItem);
+    }
+
+    if (!ModelChecksBox.IsValid())
+    {
+        return;
+    }
+
+    ModelChecks.Empty();
+    ModelKeyToOption.Empty();
+    ModelChecksBox->ClearChildren();
+    if (Available.Num() == 0)
+    {
+        ModelChecksBox->AddSlot()
+        .AutoHeight()
+        [
+            SNew(STextBlock)
+            .Text(FText::FromString(TEXT("No models available. Add an API key or run local provider.")))
+        ];
+        return;
+    }
+
+    TSet<FString> PreferredLabels;
+    for (const FUEAIAgentModelOption& Option : Preferred)
+    {
+        PreferredLabels.Add(BuildModelOptionKey(Option));
+    }
+
+    for (const FUEAIAgentModelOption& Option : Available)
+    {
+        const FString OptionKey = BuildModelOptionKey(Option);
+        TSharedPtr<SCheckBox> CheckBox;
+        ModelChecksBox->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 0.0f, 0.0f, 2.0f)
+        [
+            SAssignNew(CheckBox, SCheckBox)
+            .IsChecked(PreferredLabels.Contains(OptionKey) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+            .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState)
+            {
+                (void)NewState;
+                PersistPreferredModels();
+            })
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(Option.Model))
+            ]
+        ];
+        ModelChecks.Add(OptionKey, CheckBox);
+        ModelKeyToOption.Add(OptionKey, Option);
+        const FString Label = BuildModelItemLabel(Option);
+        ModelLabelToOption.FindOrAdd(Label, Option);
+    }
 }
 
 void SUEAIAgentPanel::HandlePromptTextChanged(const FText& NewText)

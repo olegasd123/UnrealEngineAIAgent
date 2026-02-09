@@ -42,17 +42,14 @@ Optional environment:
 - `AGENT_TASK_LOG_PATH` (default `data`; used as log directory, legacy file path still works)
 - `AGENT_DB_PATH` (default `data/agent.db`; SQLite database for chats/history)
 - `OPENAI_API_KEY` (optional in stub mode)
-- `OPENAI_MODEL` (default `gpt-4.1-mini`)
 - `OPENAI_BASE_URL` (optional)
 - `OPENAI_TEMPERATURE` (default `0.2`)
 - `OPENAI_MAX_TOKENS` (default `1200`)
 - `GEMINI_API_KEY` (optional in stub mode)
-- `GEMINI_MODEL` (default `gemini-2.0-flash`)
 - `GEMINI_BASE_URL` (optional)
 - `GEMINI_TEMPERATURE` (default `0.2`)
 - `GEMINI_MAX_TOKENS` (default `1200`)
 - `LOCAL_API_KEY` (optional, used as `Bearer` token for local server if needed)
-- `LOCAL_MODEL` (default `openai/gpt-oss-20b`)
 - `LOCAL_BASE_URL` (default `http://127.0.0.1:1234/v1`)
 - `LOCAL_TEMPERATURE` (default `0.2`)
 - `LOCAL_MAX_TOKENS` (default `1200`)
@@ -70,10 +67,14 @@ Optional environment:
   - `POST /v1/credentials/set`
   - `POST /v1/credentials/delete`
   - `POST /v1/credentials/test`
+  - `GET /v1/models?provider=openai|gemini|local`
+  - `POST /v1/models/preferences`
 - macOS stores keys in Keychain.
 - Windows stores keys in user-protected encrypted file (DPAPI via PowerShell).
 - Linux/other platforms store keys in `~/.ueaiagent/secrets` (local file fallback).
 - `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `LOCAL_API_KEY` env vars still work and have priority.
+- Preferred models are saved in SQLite (`preferred_models` table in `AGENT_DB_PATH` database).
+- Model list is requested live from provider API; no hardcoded model catalog is used.
 
 ## Provider behavior
 
