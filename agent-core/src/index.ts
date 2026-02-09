@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { AgentService } from "./agent/agentService.js";
 import {
+  type PlanOutput,
   ChatCreateRequestSchema,
   ProviderNameSchema,
   ChatUpdateRequestSchema,
@@ -25,6 +26,7 @@ import { ModelPreferenceStore } from "./models/modelPreferenceStore.js";
 import { PlanningLayer } from "./planner/planningLayer.js";
 import { createProvider } from "./providers/createProvider.js";
 import { SessionStore } from "./sessions/sessionStore.js";
+import type { SessionDecision, SessionStatus } from "./sessions/sessionTypes.js";
 import { ValidationLayer } from "./validator/validationLayer.js";
 import { WorldStateCollector } from "./worldState/worldStateCollector.js";
 
@@ -291,6 +293,96 @@ function parseChatRoute(pathname: string): { chatId: string; isHistory: boolean 
     return undefined;
   }
   return { chatId: decodeURIComponent(match[1] ?? ""), isHistory: match[2] === "history" };
+}
+
+function normalizePromptForDisplay(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : "User prompt";
+}
+
+function summarizeProgress(message: string): string | undefined {
+  const match = /Progress:\s*(\d+)\/(\d+)\s+actions completed\./i.exec(message);
+  if (!match) {
+    return undefined;
+  }
+  return `Completed ${match[1]}/${match[2]} actions.`;
+}
+
+function summarizeSessionMessage(status: SessionStatus, message: string): string | undefined {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (status === "completed") {
+    return summarizeProgress(normalized) ?? "Completed.";
+  }
+  if (status === "awaiting_approval") {
+    return "Waiting for your approval on the next action.";
+  }
+  if (status === "failed") {
+    if (/Rejected by user\./i.test(normalized)) {
+      return "Stopped because action was rejected.";
+    }
+    const progress = summarizeProgress(normalized);
+    return progress ? `Failed. ${progress}` : `Failed. ${normalized}`;
+  }
+  if (status === "ready_to_execute") {
+    return "Working on the plan.";
+  }
+
+  return normalized;
+}
+
+function buildSessionAssistantReply(decision: SessionDecision): { summary: string; text: string } {
+  const summary = decision.summary.trim() || "Session updated.";
+  const note = summarizeSessionMessage(decision.status, decision.message);
+  const text = note ? `${summary}\n${note}` : summary;
+  return { summary, text };
+}
+
+function buildPlanAssistantReply(plan: PlanOutput): { summary: string; text: string } {
+  const summary = plan.summary.trim() || "Plan is ready.";
+  const details: string[] = [`Prepared ${plan.actions.length} action(s).`];
+  for (const step of plan.steps.slice(0, 3)) {
+    details.push(step);
+  }
+  return {
+    summary,
+    text: [summary, ...details].join("\n")
+  };
+}
+
+function appendUserPromptHistory(
+  chatId: string,
+  route: string,
+  prompt: string,
+  payload?: Record<string, unknown>
+): void {
+  const displayPrompt = normalizePromptForDisplay(prompt);
+  chatStore.appendAsked(chatId, route, displayPrompt, {
+    ...payload,
+    displayRole: "user",
+    displayText: displayPrompt
+  });
+}
+
+function appendAssistantHistory(
+  chatId: string,
+  route: string,
+  summary: string,
+  text: string,
+  payload?: Record<string, unknown>
+): void {
+  chatStore.appendDone(chatId, route, summary, {
+    ...payload,
+    displayRole: "assistant",
+    displayText: text
+  });
+}
+
+function shouldStoreSessionDecision(decision: SessionDecision): boolean {
+  return decision.status !== "ready_to_execute";
 }
 
 const server = http.createServer(async (req, res) => {
@@ -582,7 +674,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { ok: false, error: "No model selected. Select a model in Settings." });
       }
       if (parsed.chatId) {
-        chatStore.appendAsked(parsed.chatId, "/v1/session/start", parsed.prompt, {
+        appendUserPromptHistory(parsed.chatId, "/v1/session/start", parsed.prompt, {
           mode: parsed.mode,
           context: resolvedContext,
           provider: selectedProvider,
@@ -592,8 +684,9 @@ const server = http.createServer(async (req, res) => {
       const provider = await resolveProvider(selectedProvider, selectedModel);
       const decision = await agentService.startSession(requestWithResolvedContext, provider);
 
-      if (parsed.chatId) {
-        chatStore.appendDone(parsed.chatId, "/v1/session/start", `Session ${decision.status}`, {
+      if (parsed.chatId && shouldStoreSessionDecision(decision)) {
+        const assistant = buildSessionAssistantReply(decision);
+        appendAssistantHistory(parsed.chatId, "/v1/session/start", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -617,7 +710,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionStartRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/start", `Error: ${message}`, { error: message });
+          appendAssistantHistory(
+            parsedBody.data.chatId,
+            "/v1/session/start",
+            "Request failed.",
+            `Request failed.\n${message}`,
+            { error: message }
+          );
         }
       } catch {
         // ignore chat log write/read error
@@ -648,15 +747,11 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionNextRequestSchema.parse(JSON.parse(rawBody));
-      if (parsed.chatId) {
-        chatStore.appendAsked(parsed.chatId, "/v1/session/next", `Session ${parsed.sessionId} next`, {
-          result: parsed.result
-        });
-      }
       const decision = agentService.next(parsed);
 
-      if (parsed.chatId) {
-        chatStore.appendDone(parsed.chatId, "/v1/session/next", `Session ${decision.status}`, {
+      if (parsed.chatId && shouldStoreSessionDecision(decision)) {
+        const assistant = buildSessionAssistantReply(decision);
+        appendAssistantHistory(parsed.chatId, "/v1/session/next", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -680,7 +775,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionNextRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/next", `Error: ${message}`, { error: message });
+          appendAssistantHistory(
+            parsedBody.data.chatId,
+            "/v1/session/next",
+            "Request failed.",
+            `Request failed.\n${message}`,
+            { error: message }
+          );
         }
       } catch {
         // ignore chat log write/read error
@@ -711,18 +812,11 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionApproveRequestSchema.parse(JSON.parse(rawBody));
-      if (parsed.chatId) {
-        chatStore.appendAsked(
-          parsed.chatId,
-          "/v1/session/approve",
-          `Session ${parsed.sessionId} action ${parsed.actionIndex} approval=${parsed.approved}`,
-          {}
-        );
-      }
       const decision = agentService.approve(parsed);
 
-      if (parsed.chatId) {
-        chatStore.appendDone(parsed.chatId, "/v1/session/approve", `Session ${decision.status}`, {
+      if (parsed.chatId && shouldStoreSessionDecision(decision)) {
+        const assistant = buildSessionAssistantReply(decision);
+        appendAssistantHistory(parsed.chatId, "/v1/session/approve", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -746,7 +840,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionApproveRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/approve", `Error: ${message}`, { error: message });
+          appendAssistantHistory(
+            parsedBody.data.chatId,
+            "/v1/session/approve",
+            "Request failed.",
+            `Request failed.\n${message}`,
+            { error: message }
+          );
         }
       } catch {
         // ignore chat log write/read error
@@ -777,13 +877,11 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionResumeRequestSchema.parse(JSON.parse(rawBody));
-      if (parsed.chatId) {
-        chatStore.appendAsked(parsed.chatId, "/v1/session/resume", `Session ${parsed.sessionId} resume`, {});
-      }
       const decision = agentService.resume(parsed);
 
-      if (parsed.chatId) {
-        chatStore.appendDone(parsed.chatId, "/v1/session/resume", `Session ${decision.status}`, {
+      if (parsed.chatId && shouldStoreSessionDecision(decision)) {
+        const assistant = buildSessionAssistantReply(decision);
+        appendAssistantHistory(parsed.chatId, "/v1/session/resume", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -807,7 +905,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionResumeRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          chatStore.appendDone(parsedBody.data.chatId, "/v1/session/resume", `Error: ${message}`, { error: message });
+          appendAssistantHistory(
+            parsedBody.data.chatId,
+            "/v1/session/resume",
+            "Request failed.",
+            `Request failed.\n${message}`,
+            { error: message }
+          );
         }
       } catch {
         // ignore chat log write/read error
@@ -853,7 +957,7 @@ const server = http.createServer(async (req, res) => {
         model: selectedModel
       };
       if (parsed.chatId) {
-        chatStore.appendAsked(parsed.chatId, "/v1/task/plan", parsed.prompt, {
+        appendUserPromptHistory(parsed.chatId, "/v1/task/plan", parsed.prompt, {
           mode: parsed.mode,
           context: resolvedContext,
           provider: selectedProvider,
@@ -863,7 +967,8 @@ const server = http.createServer(async (req, res) => {
       const { plan } = await agentService.planTask(requestWithResolvedContext, provider);
 
       if (parsed.chatId) {
-        chatStore.appendDone(parsed.chatId, "/v1/task/plan", "Plan built", {
+        const assistant = buildPlanAssistantReply(plan);
+        appendAssistantHistory(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
           summary: plan.summary,
           actions: plan.actions.length
         });
@@ -888,7 +993,13 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? TaskRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          chatStore.appendDone(parsedBody.data.chatId, "/v1/task/plan", `Error: ${message}`, { error: message });
+          appendAssistantHistory(
+            parsedBody.data.chatId,
+            "/v1/task/plan",
+            "Planning failed.",
+            `Planning failed.\n${message}`,
+            { error: message }
+          );
         }
       } catch {
         // ignore chat log write/read error

@@ -147,9 +147,11 @@ private:
     TSharedPtr<SWidgetSwitcher> ViewSwitcher;
     TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatSummary>>> ChatListView;
     TArray<TSharedPtr<FUEAIAgentChatSummary>> ChatListItems;
+    TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> MainChatHistoryListView;
     TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> ChatHistoryListView;
     TArray<TSharedPtr<FUEAIAgentChatHistoryEntry>> ChatHistoryItems;
     TSharedPtr<STextBlock> ChatListStateText;
+    TSharedPtr<STextBlock> MainHistoryStateText;
     TSharedPtr<STextBlock> HistoryStateText;
     TSharedPtr<STextBlock> SelectedChatHeaderText;
     TMap<FString, TWeakPtr<SInlineEditableTextBlock>> ChatTitleEditors;

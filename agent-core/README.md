@@ -113,7 +113,9 @@ Optional environment:
   - `GET /v1/chats/:chatId/history?limit=100` (max 200)
 - History write model:
   - send optional `chatId` in `/v1/task/plan` and `/v1/session/*` request body
-  - each call writes `asked` when request starts and `done` on success/error
+  - user prompt is stored as `asked` with display fields (`displayRole=user`, `displayText`)
+  - assistant reply is stored as `done` with display fields (`displayRole=assistant`, `displayText`)
+  - session internal loops keep only user-facing milestones (ready-to-execute updates are skipped)
 
 ## Log file naming
 

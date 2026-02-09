@@ -22,6 +22,7 @@
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/SInlineEditableTextBlock.h"
+#include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
@@ -354,13 +355,34 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .FillHeight(1.0f)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SNew(SBox)
-                .MinDesiredHeight(180.0f)
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
                 [
-                    SAssignNew(PlanText, SMultiLineEditableTextBox)
-                    .IsReadOnly(true)
+                    SNew(SBox)
+                    .MinDesiredHeight(72.0f)
+                    [
+                        SAssignNew(PlanText, SMultiLineEditableTextBox)
+                        .IsReadOnly(true)
+                        .AutoWrapText(true)
+                        .Text(FText::FromString(TEXT("")))
+                    ]
+                ]
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+                [
+                    SAssignNew(MainHistoryStateText, STextBlock)
                     .AutoWrapText(true)
-                    .Text(FText::FromString(TEXT("")))
+                ]
+                + SVerticalBox::Slot()
+                .FillHeight(1.0f)
+                .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+                [
+                    SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
+                    .ListItemsSource(&ChatHistoryItems)
+                    .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
+                    .SelectionMode(ESelectionMode::None)
                 ]
             ]
         ]
@@ -1336,7 +1358,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (!bOk)
     {
         CurrentSessionStatus = ESessionStatus::Failed;
-        PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        PlanText->SetText(FText::FromString(TEXT("Agent: failed. Check chat for details.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1344,13 +1366,13 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     CurrentSessionStatus = ParseSessionStatusFromMessage(Message);
     if (CurrentSessionStatus == ESessionStatus::Failed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: failed\n") + Message + TEXT("\nClick Run to start over.")));
+        PlanText->SetText(FText::FromString(TEXT("Agent: failed. Check chat for details.")));
         RefreshActiveChatHistory();
         return;
     }
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: completed\n") + Message + TEXT("\nClick Run to start over.")));
+        PlanText->SetText(FText::FromString(TEXT("Agent: completed.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1358,7 +1380,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Transport.GetPlannedActionCount() <= 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1366,7 +1388,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     const int32 PendingActionIndex = Transport.GetNextPendingActionIndex();
     if (PendingActionIndex == INDEX_NONE)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1374,14 +1396,14 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     FUEAIAgentPlannedSceneAction NextAction;
     if (!Transport.GetPendingAction(PendingActionIndex, NextAction))
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update\n") + Message));
+        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
         RefreshActiveChatHistory();
         return;
     }
 
     if (!NextAction.bApproved)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: awaiting approval\n") + Message));
+        PlanText->SetText(FText::FromString(TEXT("Agent: waiting for approval.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1396,7 +1418,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         return;
     }
 
-    PlanText->SetText(FText::FromString(TEXT("Agent: executed action, syncing...\n") + ExecuteMessage));
+    PlanText->SetText(FText::FromString(TEXT("Agent: action executed, syncing...")));
     Transport.NextSession(
         true,
         true,
@@ -1783,6 +1805,10 @@ void SUEAIAgentPanel::RebuildHistoryItems()
     {
         ChatHistoryListView->RequestListRefresh();
     }
+    if (MainChatHistoryListView.IsValid())
+    {
+        MainChatHistoryListView->RequestListRefresh();
+    }
 }
 
 void SUEAIAgentPanel::RefreshActiveChatHistory()
@@ -1797,6 +1823,10 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
         if (ChatHistoryListView.IsValid())
         {
             ChatHistoryListView->RequestListRefresh();
+        }
+        if (MainChatHistoryListView.IsValid())
+        {
+            MainChatHistoryListView->RequestListRefresh();
         }
         UpdateHistoryStateText();
         return;
@@ -1853,36 +1883,48 @@ void SUEAIAgentPanel::UpdateChatListStateText()
 
 void SUEAIAgentPanel::UpdateHistoryStateText()
 {
-    if (!HistoryStateText.IsValid())
+    if (!HistoryStateText.IsValid() && !MainHistoryStateText.IsValid())
     {
         return;
     }
 
+    auto SetStateText = [this](const FString& Value)
+    {
+        if (HistoryStateText.IsValid())
+        {
+            HistoryStateText->SetText(FText::FromString(Value));
+        }
+        if (MainHistoryStateText.IsValid())
+        {
+            MainHistoryStateText->SetText(FText::FromString(Value));
+        }
+    };
+
     if (bIsLoadingHistory)
     {
-        HistoryStateText->SetText(FText::FromString(TEXT("Loading history...")));
+        SetStateText(TEXT("Loading history..."));
         return;
     }
 
     if (!HistoryErrorMessage.IsEmpty())
     {
-        HistoryStateText->SetText(FText::FromString(HistoryErrorMessage));
+        SetStateText(HistoryErrorMessage);
         return;
     }
 
     if (FUEAIAgentTransportModule::Get().GetActiveChatId().IsEmpty())
     {
-        HistoryStateText->SetText(FText::FromString(TEXT("Select a chat to see history.")));
+        SetStateText(TEXT("Select a chat to see history."));
         return;
     }
 
     if (ChatHistoryItems.Num() == 0)
     {
-        HistoryStateText->SetText(FText::FromString(TEXT("Chat history is empty.")));
+        SetStateText(TEXT(""));
         return;
     }
 
-    HistoryStateText->SetText(FText::GetEmpty());
+    SetStateText(TEXT(""));
 }
 
 void SUEAIAgentPanel::HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummary> InItem, ESelectInfo::Type SelectInfo)
@@ -1956,27 +1998,33 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         ];
     }
 
-    const FString Header = FString::Printf(TEXT("%s | %s | %s"), *InItem->Kind, *InItem->Route, *InItem->CreatedAt);
+    const bool bIsUserMessage = InItem->DisplayRole.Equals(TEXT("user"), ESearchCase::IgnoreCase) ||
+        (InItem->DisplayRole.IsEmpty() && InItem->Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase));
+    const FString MessageText = InItem->DisplayText.IsEmpty() ? InItem->Summary : InItem->DisplayText;
+    const FLinearColor BubbleColor = bIsUserMessage
+        ? FLinearColor(0.12f, 0.28f, 0.55f, 0.60f)
+        : FLinearColor(0.18f, 0.18f, 0.18f, 0.80f);
+
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
+    .Padding(FMargin(2.0f, 3.0f))
     [
-        SNew(SBorder)
-        .Padding(8.0f)
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .HAlign(bIsUserMessage ? HAlign_Right : HAlign_Left)
         [
-            SNew(SVerticalBox)
-            + SVerticalBox::Slot()
-            .AutoHeight()
+            SNew(SBox)
+            .MaxDesiredWidth(760.0f)
             [
-                SNew(STextBlock)
-                .Text(FText::FromString(Header))
-                .ColorAndOpacity(FLinearColor(0.8f, 0.8f, 0.8f))
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 0.0f)
-            [
-                SNew(STextBlock)
-                .AutoWrapText(true)
-                .Text(FText::FromString(InItem->Summary))
+                SNew(SBorder)
+                .Padding(10.0f)
+                .BorderBackgroundColor(BubbleColor)
+                [
+                    SNew(SMultiLineEditableText)
+                    .IsReadOnly(true)
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(MessageText))
+                ]
             ]
         ]
     ];

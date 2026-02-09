@@ -2868,6 +2868,22 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                         EntryObj->TryGetStringField(TEXT("kind"), Entry.Kind);
                         EntryObj->TryGetStringField(TEXT("route"), Entry.Route);
                         EntryObj->TryGetStringField(TEXT("summary"), Entry.Summary);
+                        const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
+                        if (EntryObj->TryGetObjectField(TEXT("payload"), PayloadObj) && PayloadObj && PayloadObj->IsValid())
+                        {
+                            (*PayloadObj)->TryGetStringField(TEXT("displayRole"), Entry.DisplayRole);
+                            (*PayloadObj)->TryGetStringField(TEXT("displayText"), Entry.DisplayText);
+                        }
+                        if (Entry.DisplayRole.IsEmpty())
+                        {
+                            Entry.DisplayRole = Entry.Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase)
+                                ? TEXT("user")
+                                : TEXT("assistant");
+                        }
+                        if (Entry.DisplayText.IsEmpty())
+                        {
+                            Entry.DisplayText = Entry.Summary;
+                        }
                         EntryObj->TryGetStringField(TEXT("createdAt"), Entry.CreatedAt);
                         ActiveChatHistory.Add(Entry);
                     }
