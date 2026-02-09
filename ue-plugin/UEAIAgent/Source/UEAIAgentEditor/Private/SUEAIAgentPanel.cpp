@@ -360,7 +360,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     SAssignNew(PlanText, SMultiLineEditableTextBox)
                     .IsReadOnly(true)
                     .AutoWrapText(true)
-                    .Text(FText::FromString(TEXT("Plan: not requested")))
+                    .Text(FText::FromString(TEXT("")))
                 ]
             ]
         ]
