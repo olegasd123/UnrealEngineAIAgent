@@ -1,6 +1,8 @@
 import { PlanOutputSchema, type PlanOutput, AllowedCommands } from "../contracts.js";
 import type { PlanInput } from "../providers/types.js";
 
+const PlanningAllowedCommands = AllowedCommands.filter((command) => !command.startsWith("session."));
+
 function stripCodeFence(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed.startsWith("```")) {
@@ -143,7 +145,7 @@ export function buildPlanPrompt(input: PlanInput): string {
     "Before finalizing actions, verify the plan against normalizedIntent.successCriteria and update steps/actions to satisfy them.",
     "If constraints and successCriteria conflict or are not satisfiable from context, return actions: [] and explain the blocker in steps.",
     "Allowed actions in this version:",
-    ...AllowedCommands.map((command) => `- ${command}`),
+    ...PlanningAllowedCommands.map((command) => `- ${command}`),
     "Use Unreal axis defaults: X forward, Y right, Z up.",
     "If the prompt has both create and transform intent, include both actions in correct order.",
     "If intent is unclear, return actions: [] and explain uncertainty in steps.",
@@ -290,23 +292,6 @@ export function buildPlanPrompt(input: PlanInput): string {
               offset: { x: 100, y: 0, z: 0 }
             },
             risk: "medium"
-          },
-          {
-            command: "session.beginTransaction",
-            params: {
-              description: "UE AI Agent Session"
-            },
-            risk: "low"
-          },
-          {
-            command: "session.commitTransaction",
-            params: {},
-            risk: "low"
-          },
-          {
-            command: "session.rollbackTransaction",
-            params: {},
-            risk: "low"
           }
         ]
       },
@@ -331,9 +316,7 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- scene.setActorFolder: include folderPath (can be empty to clear).",
     "- scene.addActorLabelPrefix: include prefix.",
     "- scene.duplicateActors: include count (1-20). Optional offset.",
-    "- session.beginTransaction: optional description.",
-    "- session.commitTransaction: params is empty object {}.",
-    "- session.rollbackTransaction: params is empty object {}.",
+    "- session transaction begin/commit/rollback are internal. Do not include any session.* action.",
     "- risk must be low|medium|high.",
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",
     "- Never invent non-existing commands or extra fields.",
@@ -367,11 +350,6 @@ export function buildPlanPrompt(input: PlanInput): string {
           stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
           actions: [
             {
-              command: "session.beginTransaction",
-              params: { description: "UE AI Agent Session" },
-              risk: "low"
-            },
-            {
               command: "scene.createActor",
               params: {
                 actorClass: "StaticMeshActor",
@@ -379,11 +357,6 @@ export function buildPlanPrompt(input: PlanInput): string {
                 rotation: { pitch: 0, yaw: 30, roll: 0 },
                 count: 5
               },
-              risk: "low"
-            },
-            {
-              command: "session.commitTransaction",
-              params: {},
               risk: "low"
             }
           ]
@@ -397,7 +370,7 @@ export function buildPlanPrompt(input: PlanInput): string {
         prompt: "delete selected actors",
         output: {
           summary: "Delete current selection.",
-          steps: ["Preview delete impact", "Require explicit approval", "Delete selected actors in transaction"],
+          steps: ["Preview delete impact", "Require explicit approval", "Delete selected actors (internal transaction)"],
           goal: { id: "goal_scene_delete", description: "Delete selected actors.", priority: "high" },
           subgoals: [
             { id: "sg_validate_scope", description: "Validate delete scope.", dependsOn: [] },

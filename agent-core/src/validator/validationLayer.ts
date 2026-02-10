@@ -60,18 +60,6 @@ function toByNameIfSelectionTargeted(plan: PlanOutput, actorNames: string[]): nu
 }
 
 function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
-  if (
-    action.command === "session.beginTransaction" ||
-    action.command === "session.commitTransaction" ||
-    action.command === "session.rollbackTransaction"
-  ) {
-    if (action.risk !== "low") {
-      action.risk = "low";
-      return true;
-    }
-    return false;
-  }
-
   if (action.command === "scene.modifyActor") {
     if (action.risk !== "low") {
       action.risk = "low";

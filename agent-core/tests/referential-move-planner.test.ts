@@ -80,19 +80,9 @@ test("Validation normalizes safe action risk to low", () => {
     steps: ["step"],
     actions: [
       {
-        command: "session.beginTransaction",
-        params: { description: "tx" },
-        risk: "medium"
-      },
-      {
         command: "scene.modifyActor",
         params: { target: "selection", deltaLocation: { x: 10, y: 0, z: 0 } },
         risk: "medium"
-      },
-      {
-        command: "session.commitTransaction",
-        params: {},
-        risk: "high"
       }
     ],
     goal: { id: "g1", description: "d", priority: "medium" },
@@ -103,6 +93,4 @@ test("Validation normalizes safe action risk to low", () => {
 
   const validated = validator.validatePlan(intent, candidate);
   assert.equal(validated.plan.actions[0]?.risk, "low");
-  assert.equal(validated.plan.actions[1]?.risk, "low");
-  assert.equal(validated.plan.actions[2]?.risk, "low");
 });

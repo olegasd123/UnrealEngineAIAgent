@@ -6,8 +6,11 @@ import { SessionStore } from "../src/sessions/sessionStore.js";
 
 function makeAction(risk: "low" | "medium" | "high"): PlanAction {
   return {
-    command: "session.beginTransaction",
-    params: { description: `Risk ${risk}` },
+    command: "scene.modifyActor",
+    params: {
+      target: "selection",
+      deltaLocation: { x: 1, y: 0, z: 0 }
+    },
     risk
   };
 }

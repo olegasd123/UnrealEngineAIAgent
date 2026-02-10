@@ -334,32 +334,6 @@ export const SceneDuplicateActorsActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
-const SessionBeginTransactionParamsSchema = z.object({
-  description: z.string().min(1).optional()
-});
-
-const SessionCommitTransactionParamsSchema = z.object({});
-
-const SessionRollbackTransactionParamsSchema = z.object({});
-
-export const SessionBeginTransactionActionSchema = z.object({
-  command: z.literal("session.beginTransaction"),
-  params: SessionBeginTransactionParamsSchema,
-  risk: z.enum(["low", "medium", "high"])
-});
-
-export const SessionCommitTransactionActionSchema = z.object({
-  command: z.literal("session.commitTransaction"),
-  params: SessionCommitTransactionParamsSchema,
-  risk: z.enum(["low", "medium", "high"])
-});
-
-export const SessionRollbackTransactionActionSchema = z.object({
-  command: z.literal("session.rollbackTransaction"),
-  params: SessionRollbackTransactionParamsSchema,
-  risk: z.enum(["low", "medium", "high"])
-});
-
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneModifyActorActionSchema,
   SceneCreateActorActionSchema,
@@ -370,10 +344,7 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneAddActorTagActionSchema,
   SceneSetActorFolderActionSchema,
   SceneAddActorLabelPrefixActionSchema,
-  SceneDuplicateActorsActionSchema,
-  SessionBeginTransactionActionSchema,
-  SessionCommitTransactionActionSchema,
-  SessionRollbackTransactionActionSchema
+  SceneDuplicateActorsActionSchema
 ]);
 
 const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");
