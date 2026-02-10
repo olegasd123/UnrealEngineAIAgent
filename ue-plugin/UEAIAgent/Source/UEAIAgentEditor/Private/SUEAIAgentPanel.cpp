@@ -142,7 +142,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 })
                 [
                     SAssignNew(PromptInput, SMultiLineEditableTextBox)
-                    .HintText(FText::FromString(TEXT("Let's build something great")))
+                    .HintText(FText::FromString(TEXT("Type what to do, or ask a question")))
                     .OnTextChanged(this, &SUEAIAgentPanel::HandlePromptTextChanged)
                     .OnKeyDownHandler(FOnKeyDown::CreateSP(this, &SUEAIAgentPanel::HandlePromptKeyDown))
                     .Padding(FMargin(8.0f, 8.0f, 8.0f, 8.0f))
