@@ -8,6 +8,7 @@
 #include "Editor.h"
 #include "Engine/Level.h"
 #include "EngineUtils.h"
+#include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
 #include "HttpModule.h"
@@ -102,6 +103,111 @@ namespace
             return TEXT("agent");
         }
         return TEXT("");
+    }
+
+    bool IsNearlyZeroValue(float Value)
+    {
+        return FMath::Abs(Value) <= KINDA_SMALL_NUMBER;
+    }
+
+    FString FormatSignedFloat(float Value)
+    {
+        if (IsNearlyZeroValue(Value))
+        {
+            return TEXT("0");
+        }
+        return Value > 0.0f
+            ? FString::Printf(TEXT("+%.0f"), Value)
+            : FString::Printf(TEXT("%.0f"), Value);
+    }
+
+    FString ResolveActorLabel(const FString& ActorName)
+    {
+        if (ActorName.IsEmpty() || !GEditor)
+        {
+            return ActorName;
+        }
+
+        UWorld* World = GEditor->GetEditorWorldContext().World();
+        if (!World)
+        {
+            return ActorName;
+        }
+
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            AActor* Actor = *It;
+            if (!Actor)
+            {
+                continue;
+            }
+
+            if (Actor->GetName().Equals(ActorName, ESearchCase::CaseSensitive))
+            {
+                const FString Label = Actor->GetActorLabel();
+                return Label.IsEmpty() ? ActorName : Label;
+            }
+        }
+
+        return ActorName;
+    }
+
+    FString FormatActorTargetShort(const TArray<FString>& ActorNames)
+    {
+        if (ActorNames.Num() <= 0)
+        {
+            return TEXT("selected actor");
+        }
+
+        if (ActorNames.Num() == 1)
+        {
+            return FString::Printf(TEXT("\"%s\""), *ResolveActorLabel(ActorNames[0]));
+        }
+
+        return FString::Printf(TEXT("%d actors"), ActorNames.Num());
+    }
+
+    void AddVectorDeltaParts(TArray<FString>& OutParts, const FVector& Value)
+    {
+        if (!IsNearlyZeroValue(Value.X))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s on X"), *FormatSignedFloat(Value.X)));
+        }
+        if (!IsNearlyZeroValue(Value.Y))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s on Y"), *FormatSignedFloat(Value.Y)));
+        }
+        if (!IsNearlyZeroValue(Value.Z))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s on Z"), *FormatSignedFloat(Value.Z)));
+        }
+    }
+
+    void AddRotationDeltaParts(TArray<FString>& OutParts, const FRotator& Value)
+    {
+        if (!IsNearlyZeroValue(Value.Pitch))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s pitch"), *FormatSignedFloat(Value.Pitch)));
+        }
+        if (!IsNearlyZeroValue(Value.Yaw))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s yaw"), *FormatSignedFloat(Value.Yaw)));
+        }
+        if (!IsNearlyZeroValue(Value.Roll))
+        {
+            OutParts.Add(FString::Printf(TEXT("%s roll"), *FormatSignedFloat(Value.Roll)));
+        }
+    }
+
+    FString BuildActionStatusSuffix(const FUEAIAgentPlannedSceneAction& Action)
+    {
+        const FString Risk = ToRiskText(Action.Risk);
+        const FString State = ToStateText(Action.State);
+        if (Action.AttemptCount > 0)
+        {
+            return FString::Printf(TEXT(" (%s risk, %s, retry %d)"), *Risk, *State, Action.AttemptCount);
+        }
+        return FString::Printf(TEXT(" (%s risk, %s)"), *Risk, *State);
     }
 
     bool ParsePlannedActionFromJson(
@@ -1087,20 +1193,6 @@ void FUEAIAgentTransportModule::PlanTask(
                 FString Summary;
                 (*PlanObj)->TryGetStringField(TEXT("summary"), Summary);
 
-                FString StepsText;
-                const TArray<TSharedPtr<FJsonValue>>* Steps = nullptr;
-                if ((*PlanObj)->TryGetArrayField(TEXT("steps"), Steps) && Steps)
-                {
-                    for (int32 StepIndex = 0; StepIndex < Steps->Num(); ++StepIndex)
-                    {
-                        FString StepValue;
-                        if ((*Steps)[StepIndex].IsValid() && (*Steps)[StepIndex]->TryGetString(StepValue))
-                        {
-                            StepsText += FString::Printf(TEXT("%d. %s\n"), StepIndex + 1, *StepValue);
-                        }
-                    }
-                }
-
                 const TArray<TSharedPtr<FJsonValue>>* Actions = nullptr;
                 if ((*PlanObj)->TryGetArrayField(TEXT("actions"), Actions) && Actions)
                 {
@@ -1745,9 +1837,11 @@ void FUEAIAgentTransportModule::PlanTask(
                     }
                 }
 
-                const FString FinalMessage = StepsText.IsEmpty()
-                    ? Summary
-                    : FString::Printf(TEXT("%s\n%s"), *Summary, *StepsText);
+                const FString SafeSummary = Summary.IsEmpty() ? TEXT("Plan is ready.") : Summary;
+                const FString FinalMessage = FString::Printf(
+                    TEXT("Plan ready.\n%s\nNeeds approval: %d action(s)."),
+                    *SafeSummary,
+                    PlannedActions.Num());
                 Callback.ExecuteIfBound(true, FinalMessage);
             });
         });
@@ -2978,167 +3072,122 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
     }
 
     const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
-    const FString Suffix = FString::Printf(
-        TEXT(" [risk=%s, state=%s, attempts=%d]"),
-        *ToRiskText(Action.Risk),
-        *ToStateText(Action.State),
-        Action.AttemptCount);
+    const FString Suffix = BuildActionStatusSuffix(Action);
+    const FString TargetText = FormatActorTargetShort(Action.ActorNames);
     if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
+        const FString SpawnTarget = Action.SpawnCount == 1
+            ? FString::Printf(TEXT("1 %s"), *Action.ActorClass)
+            : FString::Printf(TEXT("%d %s actors"), Action.SpawnCount, *Action.ActorClass);
         return FString::Printf(
-            TEXT("Action %d -> scene.createActor count=%d class=%s, Location: X=%.2f Y=%.2f Z=%.2f, Rotation: Pitch=%.2f Yaw=%.2f Roll=%.2f%s"),
+            TEXT("Action %d: Create %s%s"),
             ActionIndex + 1,
-            Action.SpawnCount,
-            *Action.ActorClass,
-            Action.SpawnLocation.X,
-            Action.SpawnLocation.Y,
-            Action.SpawnLocation.Z,
-            Action.SpawnRotation.Pitch,
-            Action.SpawnRotation.Yaw,
-            Action.SpawnRotation.Roll,
+            *SpawnTarget,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::DeleteActor)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.deleteActor on %s (%d actor(s))%s"),
+            TEXT("Action %d: Delete %s%s"),
             ActionIndex + 1,
             *TargetText,
-            Action.ActorNames.Num(),
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::ModifyComponent)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
-        const FString VisibilityText = Action.bComponentVisibilityEdit
-            ? (Action.bComponentVisible ? TEXT("show") : TEXT("hide"))
-            : TEXT("none");
+        TArray<FString> Parts;
+        AddVectorDeltaParts(Parts, Action.ComponentDeltaLocation);
+        AddRotationDeltaParts(Parts, Action.ComponentDeltaRotation);
+        AddVectorDeltaParts(Parts, Action.ComponentDeltaScale);
+        if (Action.bComponentVisibilityEdit)
+        {
+            Parts.Add(Action.bComponentVisible ? TEXT("show") : TEXT("hide"));
+        }
+        const FString ChangeText = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : TEXT("update");
         return FString::Printf(
-            TEXT("Action %d -> scene.modifyComponent on %s, Component: %s, DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f, Scale: X=%.2f Y=%.2f Z=%.2f, Visibility: %s%s"),
+            TEXT("Action %d: Modify component \"%s\" on %s (%s)%s"),
             ActionIndex + 1,
-            *TargetText,
             *Action.ComponentName,
-            Action.ComponentDeltaLocation.X,
-            Action.ComponentDeltaLocation.Y,
-            Action.ComponentDeltaLocation.Z,
-            Action.ComponentDeltaRotation.Pitch,
-            Action.ComponentDeltaRotation.Yaw,
-            Action.ComponentDeltaRotation.Roll,
-            Action.ComponentDeltaScale.X,
-            Action.ComponentDeltaScale.Y,
-            Action.ComponentDeltaScale.Z,
-            Action.ComponentScale.X,
-            Action.ComponentScale.Y,
-            Action.ComponentScale.Z,
-            *VisibilityText,
+            *TargetText,
+            *ChangeText,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetComponentMaterial)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.setComponentMaterial on %s, Component: %s, Material: %s, Slot: %d%s"),
+            TEXT("Action %d: Set material on \"%s\" for %s%s"),
             ActionIndex + 1,
-            *TargetText,
             *Action.ComponentName,
-            *Action.MaterialPath,
-            Action.MaterialSlot,
+            *TargetText,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetComponentStaticMesh)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.setComponentStaticMesh on %s, Component: %s, Mesh: %s%s"),
+            TEXT("Action %d: Set static mesh on \"%s\" for %s%s"),
             ActionIndex + 1,
-            *TargetText,
             *Action.ComponentName,
-            *Action.MeshPath,
+            *TargetText,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::AddActorTag)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.addActorTag on %s tag=%s%s"),
+            TEXT("Action %d: Add tag \"%s\" to %s%s"),
             ActionIndex + 1,
-            *TargetText,
             *Action.ActorTag,
+            *TargetText,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetActorFolder)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
+        const FString FolderText = Action.FolderPath.IsEmpty() ? TEXT("root") : Action.FolderPath;
         return FString::Printf(
-            TEXT("Action %d -> scene.setActorFolder on %s folder=%s%s"),
+            TEXT("Action %d: Set folder \"%s\" for %s%s"),
             ActionIndex + 1,
+            *FolderText,
             *TargetText,
-            *Action.FolderPath,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::AddActorLabelPrefix)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.addActorLabelPrefix on %s prefix=%s%s"),
+            TEXT("Action %d: Add label prefix \"%s\" for %s%s"),
             ActionIndex + 1,
-            *TargetText,
             *Action.LabelPrefix,
+            *TargetText,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::DuplicateActors)
     {
-        const FString TargetText = Action.ActorNames.Num() > 0
-            ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-            : TEXT("selection");
         return FString::Printf(
-            TEXT("Action %d -> scene.duplicateActors on %s count=%d, Offset: X=%.2f Y=%.2f Z=%.2f%s"),
+            TEXT("Action %d: Duplicate %s x%d%s"),
             ActionIndex + 1,
             *TargetText,
             Action.DuplicateCount,
-            Action.DuplicateOffset.X,
-            Action.DuplicateOffset.Y,
-            Action.DuplicateOffset.Z,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
     {
-        const FString Label = Action.TransactionDescription.IsEmpty() ? TEXT("UE AI Agent Session") : Action.TransactionDescription;
         return FString::Printf(
-            TEXT("Action %d -> session.beginTransaction description=%s%s"),
+            TEXT("Action %d: Prepare internal transaction%s"),
             ActionIndex + 1,
-            *Label,
             *Suffix);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionCommitTransaction)
     {
         return FString::Printf(
-            TEXT("Action %d -> session.commitTransaction%s"),
+            TEXT("Action %d: Finalize internal transaction%s"),
             ActionIndex + 1,
             *Suffix);
     }
@@ -3146,28 +3195,21 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
     if (Action.Type == EUEAIAgentPlannedActionType::SessionRollbackTransaction)
     {
         return FString::Printf(
-            TEXT("Action %d -> session.rollbackTransaction%s"),
+            TEXT("Action %d: Roll back internal transaction%s"),
             ActionIndex + 1,
             *Suffix);
     }
 
-    const FString ModifyTargetText = Action.ActorNames.Num() > 0
-        ? FString::Printf(TEXT("names: %s"), *FString::Join(Action.ActorNames, TEXT(", ")))
-        : TEXT("selection");
+    TArray<FString> Parts;
+    AddVectorDeltaParts(Parts, Action.DeltaLocation);
+    AddRotationDeltaParts(Parts, Action.DeltaRotation);
+    AddVectorDeltaParts(Parts, Action.DeltaScale);
+    const FString ChangeText = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : TEXT("update");
     return FString::Printf(
-        TEXT("Action %d -> scene.modifyActor on %s (%d actor(s)), DeltaLocation: X=%.2f Y=%.2f Z=%.2f, DeltaRotation: Pitch=%.2f Yaw=%.2f Roll=%.2f, DeltaScale: X=%.2f Y=%.2f Z=%.2f%s"),
+        TEXT("Action %d: Move %s (%s)%s"),
         ActionIndex + 1,
-        *ModifyTargetText,
-        Action.ActorNames.Num(),
-        Action.DeltaLocation.X,
-        Action.DeltaLocation.Y,
-        Action.DeltaLocation.Z,
-        Action.DeltaRotation.Pitch,
-        Action.DeltaRotation.Yaw,
-        Action.DeltaRotation.Roll,
-        Action.DeltaScale.X,
-        Action.DeltaScale.Y,
-        Action.DeltaScale.Z,
+        *TargetText,
+        *ChangeText,
         *Suffix);
 }
 
