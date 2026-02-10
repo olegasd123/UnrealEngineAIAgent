@@ -329,14 +329,14 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Approve Low Risk")))
+                    .Text(FText::FromString(TEXT("Check all")))
                     .OnClicked(this, &SUEAIAgentPanel::OnApproveLowRiskClicked)
                 ]
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 [
                     SNew(SButton)
-                    .Text(FText::FromString(TEXT("Reject All")))
+                    .Text(FText::FromString(TEXT("Uncheck all")))
                     .OnClicked(this, &SUEAIAgentPanel::OnRejectAllClicked)
                 ]
             ]
@@ -1172,14 +1172,7 @@ FReply SUEAIAgentPanel::OnApproveLowRiskClicked()
     const int32 ActionCount = Transport.GetPlannedActionCount();
     for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
     {
-        FUEAIAgentPlannedSceneAction Action;
-        if (!Transport.GetPlannedAction(ActionIndex, Action))
-        {
-            continue;
-        }
-
-        const bool bApprove = Action.Risk == EUEAIAgentRiskLevel::Low;
-        Transport.SetPlannedActionApproved(ActionIndex, bApprove);
+        Transport.SetPlannedActionApproved(ActionIndex, true);
     }
 
     UpdateActionApprovalUi();
@@ -1394,7 +1387,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
 
     if (!NextAction.bApproved)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: waiting for approval.")));
+        PlanText->SetText(FText::FromString(FString::Printf(TEXT("Needs approval: %d action(s)"), Transport.GetPlannedActionCount())));
         RefreshActiveChatHistory();
         return;
     }
@@ -2300,11 +2293,7 @@ bool SUEAIAgentPanel::ShouldShowApprovalUi() const
     {
         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
             Transport.GetNextPendingActionIndex() != INDEX_NONE;
-        const int32 PendingActionIndex = Transport.GetNextPendingActionIndex();
-        const bool bPendingNeedsApproval = PendingActionIndex != INDEX_NONE &&
-            !Transport.IsPlannedActionApproved(PendingActionIndex);
         return bHasPendingSessionAction &&
-            bPendingNeedsApproval &&
             CurrentSessionStatus == ESessionStatus::AwaitingApproval;
     }
 

@@ -108,6 +108,18 @@ namespace
             return ActorName;
         }
 
+        FString LookupName = ActorName;
+        LookupName.TrimStartAndEndInline();
+        int32 SplitIndex = INDEX_NONE;
+        if (LookupName.FindLastChar(TEXT('.'), SplitIndex))
+        {
+            LookupName = LookupName.Mid(SplitIndex + 1);
+        }
+        if (LookupName.FindLastChar(TEXT('/'), SplitIndex))
+        {
+            LookupName = LookupName.Mid(SplitIndex + 1);
+        }
+
         for (TActorIterator<AActor> It(World); It; ++It)
         {
             AActor* Actor = *It;
@@ -116,7 +128,10 @@ namespace
                 continue;
             }
 
-            if (Actor->GetName().Equals(ActorName, ESearchCase::CaseSensitive))
+            if (
+                Actor->GetName().Equals(LookupName, ESearchCase::IgnoreCase) ||
+                Actor->GetActorLabel().Equals(LookupName, ESearchCase::IgnoreCase) ||
+                Actor->GetPathName().EndsWith(LookupName, ESearchCase::IgnoreCase))
             {
                 const FString Label = Actor->GetActorLabel();
                 return Label.IsEmpty() ? ActorName : Label;
