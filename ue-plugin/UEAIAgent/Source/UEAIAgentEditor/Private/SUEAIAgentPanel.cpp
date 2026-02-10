@@ -1141,7 +1141,6 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         return FReply::Handled();
     }
 
-    FString ExecuteSummary;
     int32 SuccessCount = 0;
     for (const FUEAIAgentPlannedSceneAction& PlannedAction : ApprovedActions)
     {
@@ -1152,13 +1151,17 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         {
             ++SuccessCount;
         }
-
-        ExecuteSummary += FString::Printf(TEXT("- %s\n"), *ResultMessage);
     }
 
     UpdateActionApprovalUi();
-    const FString Prefix = SuccessCount > 0 ? TEXT("Execute: ok\n") : TEXT("Execute: error\n");
-    PlanText->SetText(FText::FromString(Prefix + ExecuteSummary));
+    if (SuccessCount == ApprovedActions.Num())
+    {
+        PlanText->SetText(FText::FromString(TEXT("Operation completed")));
+    }
+    else
+    {
+        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo approved actions were executed.")));
+    }
 
     return FReply::Handled();
 }
@@ -1371,7 +1374,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     }
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: completed.")));
+        PlanText->SetText(FText::FromString(TEXT("Operation completed")));
         RefreshActiveChatHistory();
         return;
     }
