@@ -7,6 +7,7 @@
 #include "Widgets/SWidget.h"
 
 class STextBlock;
+class SEditableText;
 class SEditableTextBox;
 class SMultiLineEditableTextBox;
 class SCheckBox;
@@ -151,7 +152,6 @@ private:
     TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> ChatHistoryListView;
     TArray<TSharedPtr<FUEAIAgentChatHistoryEntry>> ChatHistoryItems;
     TSharedPtr<STextBlock> ChatListStateText;
-    TSharedPtr<STextBlock> MainHistoryStateText;
     TSharedPtr<STextBlock> HistoryStateText;
     TSharedPtr<STextBlock> SelectedChatHeaderText;
     TMap<FString, TWeakPtr<SInlineEditableTextBlock>> ChatTitleEditors;
@@ -172,7 +172,7 @@ private:
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<SButton> RunButton;
     TSharedPtr<SButton> ResumeButton;
-    TSharedPtr<SMultiLineEditableTextBox> PlanText;
+    TSharedPtr<SEditableText> PlanText;
     TSharedPtr<SVerticalBox> ActionListBox;
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
     TArray<TSharedPtr<STextBlock>> ActionTexts;

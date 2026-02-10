@@ -8,12 +8,14 @@
 #include "UEAIAgentTransportModule.h"
 #include "Misc/MessageDialog.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Styling/CoreStyle.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
+#include "Widgets/Input/SEditableText.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBox.h"
@@ -360,24 +362,16 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .AutoHeight()
                 [
                     SNew(SBox)
-                    .MinDesiredHeight(72.0f)
+                    .MinDesiredHeight(32.0f)
                     [
-                        SAssignNew(PlanText, SMultiLineEditableTextBox)
+                        SAssignNew(PlanText, SEditableText)
                         .IsReadOnly(true)
-                        .AutoWrapText(true)
+                        .Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
                         .Text(FText::FromString(TEXT("")))
                     ]
                 ]
                 + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0.0f, 8.0f, 0.0f, 0.0f)
-                [
-                    SAssignNew(MainHistoryStateText, STextBlock)
-                    .AutoWrapText(true)
-                ]
-                + SVerticalBox::Slot()
                 .FillHeight(1.0f)
-                .Padding(0.0f, 8.0f, 0.0f, 0.0f)
                 [
                     SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
                     .ListItemsSource(&ChatHistoryItems)
@@ -1297,8 +1291,13 @@ void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
         DisplayMessage = DisplayMessage.Left(ProviderToken).TrimEnd();
     }
 
-    const FString Prefix = bOk ? TEXT("Status: ok - ") : TEXT("Status: error - ");
-    StatusText->SetText(FText::FromString(Prefix + DisplayMessage));
+    if (bOk)
+    {
+        StatusText->SetText(FText::GetEmpty());
+        return;
+    }
+
+    StatusText->SetText(FText::FromString(DisplayMessage));
 }
 
 void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
@@ -1883,48 +1882,36 @@ void SUEAIAgentPanel::UpdateChatListStateText()
 
 void SUEAIAgentPanel::UpdateHistoryStateText()
 {
-    if (!HistoryStateText.IsValid() && !MainHistoryStateText.IsValid())
+    if (!HistoryStateText.IsValid())
     {
         return;
     }
 
-    auto SetStateText = [this](const FString& Value)
-    {
-        if (HistoryStateText.IsValid())
-        {
-            HistoryStateText->SetText(FText::FromString(Value));
-        }
-        if (MainHistoryStateText.IsValid())
-        {
-            MainHistoryStateText->SetText(FText::FromString(Value));
-        }
-    };
-
     if (bIsLoadingHistory)
     {
-        SetStateText(TEXT("Loading history..."));
+        HistoryStateText->SetText(FText::FromString(TEXT("Loading history...")));
         return;
     }
 
     if (!HistoryErrorMessage.IsEmpty())
     {
-        SetStateText(HistoryErrorMessage);
+        HistoryStateText->SetText(FText::FromString(HistoryErrorMessage));
         return;
     }
 
     if (FUEAIAgentTransportModule::Get().GetActiveChatId().IsEmpty())
     {
-        SetStateText(TEXT("Select a chat to see history."));
+        HistoryStateText->SetText(FText::FromString(TEXT("Select a chat to see history.")));
         return;
     }
 
     if (ChatHistoryItems.Num() == 0)
     {
-        SetStateText(TEXT(""));
+        HistoryStateText->SetText(FText::GetEmpty());
         return;
     }
 
-    SetStateText(TEXT(""));
+    HistoryStateText->SetText(FText::GetEmpty());
 }
 
 void SUEAIAgentPanel::HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummary> InItem, ESelectInfo::Type SelectInfo)
