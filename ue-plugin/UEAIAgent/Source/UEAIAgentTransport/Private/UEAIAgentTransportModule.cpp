@@ -66,32 +66,6 @@ namespace
         return EUEAIAgentRiskLevel::Low;
     }
 
-    FString ToRiskText(EUEAIAgentRiskLevel Risk)
-    {
-        if (Risk == EUEAIAgentRiskLevel::High)
-        {
-            return TEXT("high");
-        }
-        if (Risk == EUEAIAgentRiskLevel::Medium)
-        {
-            return TEXT("medium");
-        }
-        return TEXT("low");
-    }
-
-    FString ToStateText(EUEAIAgentActionState State)
-    {
-        if (State == EUEAIAgentActionState::Succeeded)
-        {
-            return TEXT("succeeded");
-        }
-        if (State == EUEAIAgentActionState::Failed)
-        {
-            return TEXT("failed");
-        }
-        return TEXT("pending");
-    }
-
     FString NormalizeChatType(const FString& Value)
     {
         if (Value.Equals(TEXT("chat"), ESearchCase::IgnoreCase))
@@ -197,17 +171,6 @@ namespace
         {
             OutParts.Add(FString::Printf(TEXT("%s roll"), *FormatSignedFloat(Value.Roll)));
         }
-    }
-
-    FString BuildActionStatusSuffix(const FUEAIAgentPlannedSceneAction& Action)
-    {
-        const FString Risk = ToRiskText(Action.Risk);
-        const FString State = ToStateText(Action.State);
-        if (Action.AttemptCount > 0)
-        {
-            return FString::Printf(TEXT(" (%s risk, %s, retry %d)"), *Risk, *State, Action.AttemptCount);
-        }
-        return FString::Printf(TEXT(" (%s risk, %s)"), *Risk, *State);
     }
 
     bool ParsePlannedActionFromJson(
@@ -1837,11 +1800,7 @@ void FUEAIAgentTransportModule::PlanTask(
                     }
                 }
 
-                const FString SafeSummary = Summary.IsEmpty() ? TEXT("Plan is ready.") : Summary;
-                const FString FinalMessage = FString::Printf(
-                    TEXT("Plan ready.\n%s\nNeeds approval: %d action(s)."),
-                    *SafeSummary,
-                    PlannedActions.Num());
+                const FString FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
                 Callback.ExecuteIfBound(true, FinalMessage);
             });
         });
@@ -3072,7 +3031,6 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
     }
 
     const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
-    const FString Suffix = BuildActionStatusSuffix(Action);
     const FString TargetText = FormatActorTargetShort(Action.ActorNames);
     if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
@@ -3080,19 +3038,17 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             ? FString::Printf(TEXT("1 %s"), *Action.ActorClass)
             : FString::Printf(TEXT("%d %s actors"), Action.SpawnCount, *Action.ActorClass);
         return FString::Printf(
-            TEXT("Action %d: Create %s%s"),
+            TEXT("Action %d: Create %s"),
             ActionIndex + 1,
-            *SpawnTarget,
-            *Suffix);
+            *SpawnTarget);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::DeleteActor)
     {
         return FString::Printf(
-            TEXT("Action %d: Delete %s%s"),
+            TEXT("Action %d: Delete %s"),
             ActionIndex + 1,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::ModifyComponent)
@@ -3107,97 +3063,87 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
         }
         const FString ChangeText = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : TEXT("update");
         return FString::Printf(
-            TEXT("Action %d: Modify component \"%s\" on %s (%s)%s"),
+            TEXT("Action %d: Modify component \"%s\" on %s (%s)"),
             ActionIndex + 1,
             *Action.ComponentName,
             *TargetText,
-            *ChangeText,
-            *Suffix);
+            *ChangeText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetComponentMaterial)
     {
         return FString::Printf(
-            TEXT("Action %d: Set material on \"%s\" for %s%s"),
+            TEXT("Action %d: Set material on \"%s\" for %s"),
             ActionIndex + 1,
             *Action.ComponentName,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetComponentStaticMesh)
     {
         return FString::Printf(
-            TEXT("Action %d: Set static mesh on \"%s\" for %s%s"),
+            TEXT("Action %d: Set static mesh on \"%s\" for %s"),
             ActionIndex + 1,
             *Action.ComponentName,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::AddActorTag)
     {
         return FString::Printf(
-            TEXT("Action %d: Add tag \"%s\" to %s%s"),
+            TEXT("Action %d: Add tag \"%s\" to %s"),
             ActionIndex + 1,
             *Action.ActorTag,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SetActorFolder)
     {
         const FString FolderText = Action.FolderPath.IsEmpty() ? TEXT("root") : Action.FolderPath;
         return FString::Printf(
-            TEXT("Action %d: Set folder \"%s\" for %s%s"),
+            TEXT("Action %d: Set folder \"%s\" for %s"),
             ActionIndex + 1,
             *FolderText,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::AddActorLabelPrefix)
     {
         return FString::Printf(
-            TEXT("Action %d: Add label prefix \"%s\" for %s%s"),
+            TEXT("Action %d: Add label prefix \"%s\" for %s"),
             ActionIndex + 1,
             *Action.LabelPrefix,
-            *TargetText,
-            *Suffix);
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::DuplicateActors)
     {
         return FString::Printf(
-            TEXT("Action %d: Duplicate %s x%d%s"),
+            TEXT("Action %d: Duplicate %s x%d"),
             ActionIndex + 1,
             *TargetText,
-            Action.DuplicateCount,
-            *Suffix);
+            Action.DuplicateCount);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
     {
         return FString::Printf(
-            TEXT("Action %d: Prepare internal transaction%s"),
-            ActionIndex + 1,
-            *Suffix);
+            TEXT("Action %d: Prepare internal transaction"),
+            ActionIndex + 1);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionCommitTransaction)
     {
         return FString::Printf(
-            TEXT("Action %d: Finalize internal transaction%s"),
-            ActionIndex + 1,
-            *Suffix);
+            TEXT("Action %d: Finalize internal transaction"),
+            ActionIndex + 1);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionRollbackTransaction)
     {
         return FString::Printf(
-            TEXT("Action %d: Roll back internal transaction%s"),
-            ActionIndex + 1,
-            *Suffix);
+            TEXT("Action %d: Roll back internal transaction"),
+            ActionIndex + 1);
     }
 
     TArray<FString> Parts;
@@ -3206,11 +3152,10 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
     AddVectorDeltaParts(Parts, Action.DeltaScale);
     const FString ChangeText = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : TEXT("update");
     return FString::Printf(
-        TEXT("Action %d: Move %s (%s)%s"),
+        TEXT("Action %d: Move %s (%s)"),
         ActionIndex + 1,
         *TargetText,
-        *ChangeText,
-        *Suffix);
+        *ChangeText);
 }
 
 bool FUEAIAgentTransportModule::IsPlannedActionApproved(int32 ActionIndex) const

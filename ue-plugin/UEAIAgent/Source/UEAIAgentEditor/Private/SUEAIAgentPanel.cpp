@@ -1321,7 +1321,6 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 
     UpdateActionApprovalUi();
 
-    FString PreviewSummary;
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const int32 ActionCount = Transport.GetPlannedActionCount();
     if (GetSelectedModeCode() == TEXT("chat"))
@@ -1333,17 +1332,7 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
         UpdateActionApprovalUi();
     }
 
-    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
-    {
-        PreviewSummary += Transport.GetPlannedActionPreviewText(ActionIndex) + TEXT("\n");
-    }
-
-    if (PreviewSummary.IsEmpty())
-    {
-        PreviewSummary = TEXT("No executable actions were parsed.");
-    }
-
-    PlanText->SetText(FText::FromString(TEXT("Plan: ok\n") + Message + TEXT("\n") + PreviewSummary));
+    PlanText->SetText(FText::FromString(Message));
     RefreshActiveChatHistory();
 }
 
@@ -2419,13 +2408,16 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
             return;
         }
 
-        ActionListBox->AddSlot()
-        .AutoHeight()
-        .Padding(0.0f, 4.0f, 0.0f, 4.0f)
-        [
-            SNew(STextBlock)
-            .Text(FText::FromString(Header))
-        ];
+        if (!Header.IsEmpty())
+        {
+            ActionListBox->AddSlot()
+            .AutoHeight()
+            .Padding(0.0f, 4.0f, 0.0f, 4.0f)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(Header))
+            ];
+        }
 
         for (const int32 ActionIndex : Indexes)
         {
@@ -2498,9 +2490,9 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
         }
     };
 
-    AddSection(EUEAIAgentRiskLevel::High, TEXT("High Risk"));
-    AddSection(EUEAIAgentRiskLevel::Medium, TEXT("Medium Risk"));
-    AddSection(EUEAIAgentRiskLevel::Low, TEXT("Low Risk"));
+    AddSection(EUEAIAgentRiskLevel::High, TEXT(""));
+    AddSection(EUEAIAgentRiskLevel::Medium, TEXT(""));
+    AddSection(EUEAIAgentRiskLevel::Low, TEXT(""));
 }
 
 TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const
