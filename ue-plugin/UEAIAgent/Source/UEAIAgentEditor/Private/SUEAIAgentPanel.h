@@ -90,6 +90,10 @@ private:
     void HandleChatSearchTextChanged(const FText& NewText);
     void HandleArchivedFilterChanged(ECheckBoxState NewState);
     void HandleChatTitleCommitted(const FText& NewText, ETextCommit::Type CommitType, FString ChatId);
+    void TryRestoreRunSelectionsFromHistory();
+    void SelectProviderByCode(const FString& ProviderCode);
+    void SelectModeByCode(const FString& ModeCode);
+    bool SelectModelByProviderAndName(const FString& ProviderCode, const FString& ModelName);
     FString GetSelectedProviderCode() const;
     FString GetSelectedProviderLabel() const;
     FString GetSelectedModeCode() const;
@@ -188,8 +192,11 @@ private:
     bool bIsRunInFlight = false;
     bool bIsResumeInFlight = false;
     bool bSelectNewestChatOnNextRefresh = false;
+    bool bPendingRunSelectionRestore = true;
     FString ChatListErrorMessage;
     FString HistoryErrorMessage;
+    FString PendingRestoredModelProvider;
+    FString PendingRestoredModelName;
     ESessionStatus CurrentSessionStatus = ESessionStatus::Unknown;
     EPanelView CurrentView = EPanelView::Main;
 };

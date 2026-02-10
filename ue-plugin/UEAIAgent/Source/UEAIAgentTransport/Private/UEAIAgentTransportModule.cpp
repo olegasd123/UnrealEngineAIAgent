@@ -91,6 +91,19 @@ namespace
         return TEXT("pending");
     }
 
+    FString NormalizeChatType(const FString& Value)
+    {
+        if (Value.Equals(TEXT("chat"), ESearchCase::IgnoreCase))
+        {
+            return TEXT("chat");
+        }
+        if (Value.Equals(TEXT("agent"), ESearchCase::IgnoreCase))
+        {
+            return TEXT("agent");
+        }
+        return TEXT("");
+    }
+
     bool ParsePlannedActionFromJson(
         const TSharedPtr<FJsonObject>& ActionObj,
         const TArray<FString>& SelectedActors,
@@ -2868,12 +2881,33 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                         EntryObj->TryGetStringField(TEXT("kind"), Entry.Kind);
                         EntryObj->TryGetStringField(TEXT("route"), Entry.Route);
                         EntryObj->TryGetStringField(TEXT("summary"), Entry.Summary);
+                        EntryObj->TryGetStringField(TEXT("provider"), Entry.Provider);
+                        EntryObj->TryGetStringField(TEXT("model"), Entry.Model);
+                        EntryObj->TryGetStringField(TEXT("chatType"), Entry.ChatType);
                         const TSharedPtr<FJsonObject>* PayloadObj = nullptr;
                         if (EntryObj->TryGetObjectField(TEXT("payload"), PayloadObj) && PayloadObj && PayloadObj->IsValid())
                         {
                             (*PayloadObj)->TryGetStringField(TEXT("displayRole"), Entry.DisplayRole);
                             (*PayloadObj)->TryGetStringField(TEXT("displayText"), Entry.DisplayText);
+                            if (Entry.Provider.IsEmpty())
+                            {
+                                (*PayloadObj)->TryGetStringField(TEXT("provider"), Entry.Provider);
+                            }
+                            if (Entry.Model.IsEmpty())
+                            {
+                                (*PayloadObj)->TryGetStringField(TEXT("model"), Entry.Model);
+                            }
+                            if (Entry.ChatType.IsEmpty())
+                            {
+                                FString PayloadChatType;
+                                if (!(*PayloadObj)->TryGetStringField(TEXT("chatType"), PayloadChatType))
+                                {
+                                    (*PayloadObj)->TryGetStringField(TEXT("mode"), PayloadChatType);
+                                }
+                                Entry.ChatType = NormalizeChatType(PayloadChatType);
+                            }
                         }
+                        Entry.ChatType = NormalizeChatType(Entry.ChatType);
                         if (Entry.DisplayRole.IsEmpty())
                         {
                             Entry.DisplayRole = Entry.Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase)

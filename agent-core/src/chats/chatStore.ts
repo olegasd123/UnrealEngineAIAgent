@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type ChatHistoryKind = "asked" | "done";
+export type ChatType = "chat" | "agent";
 
 export interface ChatRecord {
   id: string;
@@ -20,6 +21,9 @@ export interface ChatHistoryEntry {
   kind: ChatHistoryKind;
   route: string;
   summary: string;
+  provider?: string;
+  model?: string;
+  chatType?: ChatType;
   payload?: unknown;
   createdAt: string;
 }
@@ -37,6 +41,52 @@ function parseJson(raw: string | null): unknown {
   } catch {
     return undefined;
   }
+}
+
+function normalizeOptionalText(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeChatType(value: unknown): ChatType | undefined {
+  const normalized = normalizeOptionalText(value)?.toLowerCase();
+  if (normalized === "chat") {
+    return "chat";
+  }
+  if (normalized === "agent") {
+    return "agent";
+  }
+  return undefined;
+}
+
+function readHistoryMetadataFromPayload(payload: unknown): {
+  provider?: string;
+  model?: string;
+  chatType?: ChatType;
+} {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+
+  const record = payload as Record<string, unknown>;
+  const provider = normalizeOptionalText(record.provider)?.toLowerCase();
+  const model = normalizeOptionalText(record.model);
+  const chatType = normalizeChatType(record.chatType ?? record.mode);
+  return { provider, model, chatType };
+}
+
+function fillMissingHistoryMetadata(
+  current: { provider?: string; model?: string; chatType?: ChatType },
+  fallback: { provider?: string; model?: string; chatType?: ChatType }
+): { provider?: string; model?: string; chatType?: ChatType } {
+  return {
+    provider: current.provider ?? fallback.provider,
+    model: current.model ?? fallback.model,
+    chatType: current.chatType ?? fallback.chatType
+  };
 }
 
 function stringifyJson(value: unknown): string | null {
@@ -132,6 +182,9 @@ export class ChatStore {
         kind TEXT NOT NULL CHECK(kind IN ('asked', 'done')),
         route TEXT NOT NULL,
         summary TEXT NOT NULL,
+        provider TEXT,
+        model TEXT,
+        chat_type TEXT CHECK(chat_type IN ('chat', 'agent')),
         payload_json TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
@@ -254,7 +307,7 @@ export class ChatStore {
 
     const rows = this.db
       .prepare(
-        `SELECT id, chat_id, kind, route, summary, payload_json, created_at
+        `SELECT id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at
          FROM chat_details
          WHERE chat_id = ?
          ORDER BY created_at ASC
@@ -309,13 +362,28 @@ export class ChatStore {
 
     const id = randomUUID();
     const now = toIsoNow();
+    let metadata = readHistoryMetadataFromPayload(payload);
+    if (kind === "done") {
+      metadata = fillMissingHistoryMetadata(metadata, this.getLatestHistoryMetadata(chatId));
+    }
 
     this.db
       .prepare(
-        `INSERT INTO chat_details (id, chat_id, kind, route, summary, payload_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO chat_details (id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, chatId, kind, route, summary, stringifyJson(payload), now);
+      .run(
+        id,
+        chatId,
+        kind,
+        route,
+        summary,
+        metadata.provider ?? null,
+        metadata.model ?? null,
+        metadata.chatType ?? null,
+        stringifyJson(payload),
+        now
+      );
 
     this.db
       .prepare(`UPDATE chats SET updated_at = ?, last_activity_at = ? WHERE id = ?`)
@@ -323,13 +391,44 @@ export class ChatStore {
 
     const row = this.db
       .prepare(
-        `SELECT id, chat_id, kind, route, summary, payload_json, created_at
+        `SELECT id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at
          FROM chat_details
          WHERE id = ?`
       )
       .get(id);
 
     return this.mapHistoryRow(row);
+  }
+
+  private getLatestHistoryMetadata(chatId: string, limit = 30): { provider?: string; model?: string; chatType?: ChatType } {
+    const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT provider, model, chat_type, payload_json
+         FROM chat_details
+         WHERE chat_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?`
+      )
+      .all(chatId, normalizedLimit) as Array<{
+      provider?: string | null;
+      model?: string | null;
+      chat_type?: string | null;
+      payload_json?: string | null;
+    }>;
+
+    for (const row of rows) {
+      const payload = parseJson(row.payload_json ?? null);
+      const payloadMetadata = readHistoryMetadataFromPayload(payload);
+      const provider = normalizeOptionalText(row.provider)?.toLowerCase() ?? payloadMetadata.provider;
+      const model = normalizeOptionalText(row.model) ?? payloadMetadata.model;
+      const chatType = normalizeChatType(row.chat_type) ?? payloadMetadata.chatType;
+      if (provider || model || chatType) {
+        return { provider, model, chatType };
+      }
+    }
+
+    return {};
   }
 
   private mapChatRow(row: any): ChatRecord {
@@ -344,13 +443,22 @@ export class ChatStore {
   }
 
   private mapHistoryRow(row: any): ChatHistoryEntry {
+    const payload = parseJson((row.payload_json as string | null) ?? null);
+    const payloadMetadata = readHistoryMetadataFromPayload(payload);
+    const provider = normalizeOptionalText(row.provider)?.toLowerCase() ?? payloadMetadata.provider;
+    const model = normalizeOptionalText(row.model) ?? payloadMetadata.model;
+    const chatType = normalizeChatType(row.chat_type) ?? payloadMetadata.chatType;
+
     return {
       id: String(row.id),
       chatId: String(row.chat_id),
       kind: row.kind as ChatHistoryKind,
       route: String(row.route),
       summary: String(row.summary),
-      payload: parseJson((row.payload_json as string | null) ?? null),
+      provider,
+      model,
+      chatType,
+      payload,
       createdAt: String(row.created_at)
     };
   }

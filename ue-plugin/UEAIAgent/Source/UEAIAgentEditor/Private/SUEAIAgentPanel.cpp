@@ -1689,6 +1689,7 @@ void SUEAIAgentPanel::HandleChatHistoryResult(bool bOk, const FString& Message)
     }
 
     HistoryErrorMessage.Reset();
+    TryRestoreRunSelectionsFromHistory();
     RebuildHistoryItems();
     UpdateHistoryStateText();
 }
@@ -2043,6 +2044,185 @@ void SUEAIAgentPanel::HandleChatTitleCommitted(const FText& NewText, ETextCommit
     ChatListErrorMessage.Reset();
     UpdateChatListStateText();
     Transport.RenameActiveChat(NewTitle, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+}
+
+void SUEAIAgentPanel::TryRestoreRunSelectionsFromHistory()
+{
+    if (!bPendingRunSelectionRestore)
+    {
+        return;
+    }
+    bPendingRunSelectionRestore = false;
+
+    const TArray<FUEAIAgentChatHistoryEntry>& Entries = FUEAIAgentTransportModule::Get().GetActiveChatHistory();
+    FString RestoredProvider;
+    FString RestoredModel;
+    FString RestoredChatType;
+    for (int32 Index = Entries.Num() - 1; Index >= 0; --Index)
+    {
+        const FUEAIAgentChatHistoryEntry& Entry = Entries[Index];
+        if (RestoredProvider.IsEmpty() && !Entry.Provider.IsEmpty())
+        {
+            RestoredProvider = Entry.Provider.TrimStartAndEnd().ToLower();
+        }
+        if (RestoredModel.IsEmpty() && !Entry.Model.IsEmpty())
+        {
+            RestoredModel = Entry.Model.TrimStartAndEnd();
+        }
+        if (RestoredChatType.IsEmpty() && !Entry.ChatType.IsEmpty())
+        {
+            RestoredChatType = Entry.ChatType.TrimStartAndEnd().ToLower();
+        }
+        if (!RestoredProvider.IsEmpty() && !RestoredModel.IsEmpty() && !RestoredChatType.IsEmpty())
+        {
+            break;
+        }
+    }
+
+    if (!RestoredChatType.IsEmpty())
+    {
+        SelectModeByCode(RestoredChatType);
+    }
+
+    if (!RestoredProvider.IsEmpty())
+    {
+        SelectProviderByCode(RestoredProvider);
+    }
+
+    if (!RestoredModel.IsEmpty())
+    {
+        PendingRestoredModelProvider = RestoredProvider.IsEmpty() ? GetSelectedProviderCode() : RestoredProvider;
+        PendingRestoredModelName = RestoredModel;
+        if (SelectModelByProviderAndName(PendingRestoredModelProvider, PendingRestoredModelName))
+        {
+            PendingRestoredModelProvider.Reset();
+            PendingRestoredModelName.Reset();
+            return;
+        }
+
+        FUEAIAgentTransportModule::Get().RefreshModelOptions(
+            PendingRestoredModelProvider,
+            FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+        return;
+    }
+
+    if (!RestoredProvider.IsEmpty())
+    {
+        FUEAIAgentTransportModule::Get().RefreshModelOptions(
+            RestoredProvider,
+            FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
+    }
+}
+
+void SUEAIAgentPanel::SelectProviderByCode(const FString& ProviderCode)
+{
+    const FString Normalized = ProviderCode.TrimStartAndEnd().ToLower();
+    TSharedPtr<FString> NewSelection;
+    for (const TSharedPtr<FString>& Item : ProviderItems)
+    {
+        if (!Item.IsValid())
+        {
+            continue;
+        }
+
+        if (Normalized == TEXT("gemini") && Item->Equals(TEXT("Gemini"), ESearchCase::IgnoreCase))
+        {
+            NewSelection = Item;
+            break;
+        }
+        if (Normalized == TEXT("openai") && Item->Equals(TEXT("OpenAI"), ESearchCase::IgnoreCase))
+        {
+            NewSelection = Item;
+            break;
+        }
+        if (Normalized == TEXT("local") && Item->Equals(TEXT("Local"), ESearchCase::IgnoreCase))
+        {
+            NewSelection = Item;
+            break;
+        }
+    }
+
+    if (!NewSelection.IsValid())
+    {
+        return;
+    }
+
+    SelectedProviderItem = NewSelection;
+    if (ProviderCombo.IsValid())
+    {
+        ProviderCombo->SetSelectedItem(NewSelection);
+    }
+}
+
+void SUEAIAgentPanel::SelectModeByCode(const FString& ModeCode)
+{
+    const FString Normalized = ModeCode.TrimStartAndEnd().ToLower();
+    TSharedPtr<FString> NewSelection;
+    for (const TSharedPtr<FString>& Item : ModeItems)
+    {
+        if (!Item.IsValid())
+        {
+            continue;
+        }
+        if (Normalized == TEXT("chat") && Item->Equals(TEXT("Chat"), ESearchCase::IgnoreCase))
+        {
+            NewSelection = Item;
+            break;
+        }
+        if (Normalized == TEXT("agent") && Item->Equals(TEXT("Agent"), ESearchCase::IgnoreCase))
+        {
+            NewSelection = Item;
+            break;
+        }
+    }
+
+    if (!NewSelection.IsValid())
+    {
+        return;
+    }
+
+    SelectedModeItem = NewSelection;
+    if (ModeCombo.IsValid())
+    {
+        ModeCombo->SetSelectedItem(NewSelection);
+    }
+}
+
+bool SUEAIAgentPanel::SelectModelByProviderAndName(const FString& ProviderCode, const FString& ModelName)
+{
+    const FString NormalizedProvider = ProviderCode.TrimStartAndEnd().ToLower();
+    const FString NormalizedModel = ModelName.TrimStartAndEnd().ToLower();
+    if (NormalizedProvider.IsEmpty() || NormalizedModel.IsEmpty())
+    {
+        return false;
+    }
+
+    for (const TSharedPtr<FString>& Item : ModelItems)
+    {
+        if (!Item.IsValid())
+        {
+            continue;
+        }
+
+        const FUEAIAgentModelOption* Option = ModelLabelToOption.Find(*Item);
+        if (!Option)
+        {
+            continue;
+        }
+
+        if (Option->Provider.Equals(NormalizedProvider, ESearchCase::IgnoreCase) &&
+            Option->Model.Equals(NormalizedModel, ESearchCase::IgnoreCase))
+        {
+            SelectedModelItem = Item;
+            if (ModelCombo.IsValid())
+            {
+                ModelCombo->SetSelectedItem(Item);
+            }
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool SUEAIAgentPanel::BeginRenameSelectedChat()
@@ -2520,6 +2700,15 @@ void SUEAIAgentPanel::RebuildModelUi()
     {
         ModelCombo->RefreshOptions();
         ModelCombo->SetSelectedItem(SelectedModelItem);
+    }
+
+    if (!PendingRestoredModelName.IsEmpty())
+    {
+        if (SelectModelByProviderAndName(PendingRestoredModelProvider, PendingRestoredModelName))
+        {
+            PendingRestoredModelProvider.Reset();
+            PendingRestoredModelName.Reset();
+        }
     }
 
     if (!ModelChecksBox.IsValid())

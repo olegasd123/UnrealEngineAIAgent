@@ -113,6 +113,9 @@ struct FUEAIAgentChatHistoryEntry
     FString Kind;
     FString Route;
     FString Summary;
+    FString Provider;
+    FString Model;
+    FString ChatType;
     FString DisplayRole;
     FString DisplayText;
     FString CreatedAt;
