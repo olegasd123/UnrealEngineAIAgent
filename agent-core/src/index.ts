@@ -300,12 +300,36 @@ function normalizePromptForDisplay(prompt: string): string {
   return normalized.length > 0 ? normalized : "User prompt";
 }
 
-function summarizeProgress(message: string): string | undefined {
-  const match = /Progress:\s*(\d+)\/(\d+)\s+actions completed\./i.exec(message);
-  if (!match) {
+function stripProgressSegment(message: string): string {
+  return message.replace(/\s*Progress:\s*\d+\/\d+\s+actions completed\.\s*/gi, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractFailedReason(message: string): string | undefined {
+  const normalized = stripProgressSegment(message);
+  if (!normalized) {
     return undefined;
   }
-  return `Completed ${match[1]}/${match[2]} actions.`;
+
+  if (/Rejected by user\./i.test(normalized)) {
+    return "action was rejected.";
+  }
+
+  const lastErrorMatch = /Last error:\s*(.+)$/i.exec(normalized);
+  if (lastErrorMatch?.[1]) {
+    return lastErrorMatch[1].trim();
+  }
+
+  const stopConditionMatch = /Stopped by stopCondition=([a-z_]+)\.?/i.exec(normalized);
+  if (stopConditionMatch?.[1]) {
+    return `stopped by ${stopConditionMatch[1].replace(/_/g, " ")}.`;
+  }
+
+  const actionFailedMatch = /Action\s+\d+\s+failed(?:\s+after\s+\d+\s+attempt\(s\))?\.?/i.exec(normalized);
+  if (actionFailedMatch?.[0]) {
+    return actionFailedMatch[0].trim();
+  }
+
+  return normalized;
 }
 
 function summarizeSessionMessage(status: SessionStatus, message: string): string | undefined {
@@ -315,17 +339,14 @@ function summarizeSessionMessage(status: SessionStatus, message: string): string
   }
 
   if (status === "completed") {
-    return summarizeProgress(normalized) ?? "Completed.";
+    return "Completed.";
   }
   if (status === "awaiting_approval") {
     return "Waiting for your approval on the next action.";
   }
   if (status === "failed") {
-    if (/Rejected by user\./i.test(normalized)) {
-      return "Stopped because action was rejected.";
-    }
-    const progress = summarizeProgress(normalized);
-    return progress ? `Failed. ${progress}` : `Failed. ${normalized}`;
+    const reason = extractFailedReason(normalized);
+    return reason ? `Failed: ${reason}` : "Failed.";
   }
   if (status === "ready_to_execute") {
     return "Working on the plan.";

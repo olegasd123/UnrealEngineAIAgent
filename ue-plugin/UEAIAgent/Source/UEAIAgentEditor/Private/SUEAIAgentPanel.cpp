@@ -1993,7 +1993,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         : FLinearColor(0.18f, 0.18f, 0.18f, 0.80f);
 
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
-    .Padding(FMargin(2.0f, 3.0f))
+    .Padding(FMargin(8.0f, 8.0f))
     [
         SNew(SHorizontalBox)
         + SHorizontalBox::Slot()
