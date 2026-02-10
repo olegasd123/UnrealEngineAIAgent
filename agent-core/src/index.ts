@@ -287,12 +287,12 @@ function errorStatusCode(error: unknown): number {
   return 400;
 }
 
-function parseChatRoute(pathname: string): { chatId: string; isHistory: boolean } | undefined {
-  const match = /^\/v1\/chats\/([^/]+)(?:\/(history))?$/.exec(pathname);
+function parseChatRoute(pathname: string): { chatId: string; isDetails: boolean } | undefined {
+  const match = /^\/v1\/chats\/([^/]+)(?:\/(details))?$/.exec(pathname);
   if (!match) {
     return undefined;
   }
-  return { chatId: decodeURIComponent(match[1] ?? ""), isHistory: match[2] === "history" };
+  return { chatId: decodeURIComponent(match[1] ?? ""), isDetails: match[2] === "details" };
 }
 
 function normalizePromptForDisplay(prompt: string): string {
@@ -374,7 +374,7 @@ function buildPlanAssistantReply(plan: PlanOutput): { summary: string; text: str
   };
 }
 
-function appendUserPromptHistory(
+function appendUserPromptDetail(
   chatId: string,
   route: string,
   prompt: string,
@@ -388,7 +388,7 @@ function appendUserPromptHistory(
   });
 }
 
-function appendAssistantHistory(
+function appendAssistantDetail(
   chatId: string,
   route: string,
   summary: string,
@@ -506,7 +506,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   const chatRoute = parseChatRoute(pathname);
-  if (chatRoute && !chatRoute.isHistory) {
+  if (chatRoute && !chatRoute.isDetails) {
     if (req.method === "GET") {
       try {
         const chat = chatStore.getChat(chatRoute.chatId);
@@ -540,14 +540,14 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (chatRoute && chatRoute.isHistory && req.method === "GET") {
+  if (chatRoute && chatRoute.isDetails && req.method === "GET") {
     const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "100");
     const normalizedLimit = Number.isFinite(requestedLimit)
       ? Math.max(1, Math.min(200, Math.trunc(requestedLimit)))
       : 100;
     try {
-      const history = chatStore.listHistory(chatRoute.chatId, normalizedLimit);
-      return sendJson(res, 200, { ok: true, count: history.length, history });
+      const details = chatStore.listDetails(chatRoute.chatId, normalizedLimit);
+      return sendJson(res, 200, { ok: true, count: details.length, details });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return sendJson(res, errorStatusCode(error), { ok: false, error: message });
@@ -695,7 +695,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { ok: false, error: "No model selected. Select a model in Settings." });
       }
       if (parsed.chatId) {
-        appendUserPromptHistory(parsed.chatId, "/v1/session/start", parsed.prompt, {
+        appendUserPromptDetail(parsed.chatId, "/v1/session/start", parsed.prompt, {
           mode: parsed.mode,
           context: resolvedContext,
           provider: selectedProvider,
@@ -707,7 +707,7 @@ const server = http.createServer(async (req, res) => {
 
       if (parsed.chatId && shouldStoreSessionDecision(decision)) {
         const assistant = buildSessionAssistantReply(decision);
-        appendAssistantHistory(parsed.chatId, "/v1/session/start", assistant.summary, assistant.text, {
+        appendAssistantDetail(parsed.chatId, "/v1/session/start", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -731,7 +731,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionStartRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          appendAssistantHistory(
+          appendAssistantDetail(
             parsedBody.data.chatId,
             "/v1/session/start",
             "Request failed.",
@@ -772,7 +772,7 @@ const server = http.createServer(async (req, res) => {
 
       if (parsed.chatId && shouldStoreSessionDecision(decision)) {
         const assistant = buildSessionAssistantReply(decision);
-        appendAssistantHistory(parsed.chatId, "/v1/session/next", assistant.summary, assistant.text, {
+        appendAssistantDetail(parsed.chatId, "/v1/session/next", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -796,7 +796,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionNextRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          appendAssistantHistory(
+          appendAssistantDetail(
             parsedBody.data.chatId,
             "/v1/session/next",
             "Request failed.",
@@ -837,7 +837,7 @@ const server = http.createServer(async (req, res) => {
 
       if (parsed.chatId && shouldStoreSessionDecision(decision)) {
         const assistant = buildSessionAssistantReply(decision);
-        appendAssistantHistory(parsed.chatId, "/v1/session/approve", assistant.summary, assistant.text, {
+        appendAssistantDetail(parsed.chatId, "/v1/session/approve", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -861,7 +861,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionApproveRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          appendAssistantHistory(
+          appendAssistantDetail(
             parsedBody.data.chatId,
             "/v1/session/approve",
             "Request failed.",
@@ -902,7 +902,7 @@ const server = http.createServer(async (req, res) => {
 
       if (parsed.chatId && shouldStoreSessionDecision(decision)) {
         const assistant = buildSessionAssistantReply(decision);
-        appendAssistantHistory(parsed.chatId, "/v1/session/resume", assistant.summary, assistant.text, {
+        appendAssistantDetail(parsed.chatId, "/v1/session/resume", assistant.summary, assistant.text, {
           decision
         });
       }
@@ -926,7 +926,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? SessionResumeRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          appendAssistantHistory(
+          appendAssistantDetail(
             parsedBody.data.chatId,
             "/v1/session/resume",
             "Request failed.",
@@ -978,7 +978,7 @@ const server = http.createServer(async (req, res) => {
         model: selectedModel
       };
       if (parsed.chatId) {
-        appendUserPromptHistory(parsed.chatId, "/v1/task/plan", parsed.prompt, {
+        appendUserPromptDetail(parsed.chatId, "/v1/task/plan", parsed.prompt, {
           mode: parsed.mode,
           context: resolvedContext,
           provider: selectedProvider,
@@ -989,7 +989,7 @@ const server = http.createServer(async (req, res) => {
 
       if (parsed.chatId) {
         const assistant = buildPlanAssistantReply(plan);
-        appendAssistantHistory(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
+        appendAssistantDetail(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
           summary: plan.summary,
           actions: plan.actions.length
         });
@@ -1014,7 +1014,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const parsedBody = rawBody ? TaskRequestSchema.safeParse(JSON.parse(rawBody)) : null;
         if (parsedBody?.success && parsedBody.data.chatId) {
-          appendAssistantHistory(
+          appendAssistantDetail(
             parsedBody.data.chatId,
             "/v1/task/plan",
             "Planning failed.",

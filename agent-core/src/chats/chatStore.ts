@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export type ChatHistoryKind = "asked" | "done";
+export type ChatDetailKind = "asked" | "done";
 export type ChatType = "chat" | "agent";
 
 export interface ChatRecord {
@@ -15,10 +15,10 @@ export interface ChatRecord {
   lastActivityAt: string;
 }
 
-export interface ChatHistoryEntry {
+export interface ChatDetailEntry {
   id: string;
   chatId: string;
-  kind: ChatHistoryKind;
+  kind: ChatDetailKind;
   route: string;
   summary: string;
   provider?: string;
@@ -62,7 +62,7 @@ function normalizeChatType(value: unknown): ChatType | undefined {
   return undefined;
 }
 
-function readHistoryMetadataFromPayload(payload: unknown): {
+function readDetailMetadataFromPayload(payload: unknown): {
   provider?: string;
   model?: string;
   chatType?: ChatType;
@@ -78,7 +78,7 @@ function readHistoryMetadataFromPayload(payload: unknown): {
   return { provider, model, chatType };
 }
 
-function fillMissingHistoryMetadata(
+function fillMissingDetailMetadata(
   current: { provider?: string; model?: string; chatType?: ChatType },
   fallback: { provider?: string; model?: string; chatType?: ChatType }
 ): { provider?: string; model?: string; chatType?: ChatType } {
@@ -301,7 +301,7 @@ export class ChatStore {
     }
   }
 
-  public listHistory(chatId: string, limit = 100): ChatHistoryEntry[] {
+  public listDetails(chatId: string, limit = 100): ChatDetailEntry[] {
     this.getChat(chatId);
     const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
 
@@ -315,16 +315,16 @@ export class ChatStore {
       )
       .all(chatId, normalizedLimit);
 
-    return rows.map((row) => this.mapHistoryRow(row));
+    return rows.map((row) => this.mapDetailRow(row));
   }
 
-  public appendAsked(chatId: string, route: string, summary: string, payload?: unknown): ChatHistoryEntry {
+  public appendAsked(chatId: string, route: string, summary: string, payload?: unknown): ChatDetailEntry {
     this.tryAutoSetTitleFromSummary(chatId, summary);
-    return this.appendHistory(chatId, "asked", route, summary, payload);
+    return this.appendDetail(chatId, "asked", route, summary, payload);
   }
 
-  public appendDone(chatId: string, route: string, summary: string, payload?: unknown): ChatHistoryEntry {
-    return this.appendHistory(chatId, "done", route, summary, payload);
+  public appendDone(chatId: string, route: string, summary: string, payload?: unknown): ChatDetailEntry {
+    return this.appendDetail(chatId, "done", route, summary, payload);
   }
 
   public getLatestSelectionNames(chatId: string, limit = 30): string[] {
@@ -351,20 +351,20 @@ export class ChatStore {
     return [];
   }
 
-  private appendHistory(
+  private appendDetail(
     chatId: string,
-    kind: ChatHistoryKind,
+    kind: ChatDetailKind,
     route: string,
     summary: string,
     payload?: unknown
-  ): ChatHistoryEntry {
+  ): ChatDetailEntry {
     this.getChat(chatId);
 
     const id = randomUUID();
     const now = toIsoNow();
-    let metadata = readHistoryMetadataFromPayload(payload);
+    let metadata = readDetailMetadataFromPayload(payload);
     if (kind === "done") {
-      metadata = fillMissingHistoryMetadata(metadata, this.getLatestHistoryMetadata(chatId));
+      metadata = fillMissingDetailMetadata(metadata, this.getLatestDetailMetadata(chatId));
     }
 
     this.db
@@ -397,10 +397,10 @@ export class ChatStore {
       )
       .get(id);
 
-    return this.mapHistoryRow(row);
+    return this.mapDetailRow(row);
   }
 
-  private getLatestHistoryMetadata(chatId: string, limit = 30): { provider?: string; model?: string; chatType?: ChatType } {
+  private getLatestDetailMetadata(chatId: string, limit = 30): { provider?: string; model?: string; chatType?: ChatType } {
     const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
     const rows = this.db
       .prepare(
@@ -419,7 +419,7 @@ export class ChatStore {
 
     for (const row of rows) {
       const payload = parseJson(row.payload_json ?? null);
-      const payloadMetadata = readHistoryMetadataFromPayload(payload);
+      const payloadMetadata = readDetailMetadataFromPayload(payload);
       const provider = normalizeOptionalText(row.provider)?.toLowerCase() ?? payloadMetadata.provider;
       const model = normalizeOptionalText(row.model) ?? payloadMetadata.model;
       const chatType = normalizeChatType(row.chat_type) ?? payloadMetadata.chatType;
@@ -442,9 +442,9 @@ export class ChatStore {
     };
   }
 
-  private mapHistoryRow(row: any): ChatHistoryEntry {
+  private mapDetailRow(row: any): ChatDetailEntry {
     const payload = parseJson((row.payload_json as string | null) ?? null);
-    const payloadMetadata = readHistoryMetadataFromPayload(payload);
+    const payloadMetadata = readDetailMetadataFromPayload(payload);
     const provider = normalizeOptionalText(row.provider)?.toLowerCase() ?? payloadMetadata.provider;
     const model = normalizeOptionalText(row.model) ?? payloadMetadata.model;
     const chatType = normalizeChatType(row.chat_type) ?? payloadMetadata.chatType;
@@ -452,7 +452,7 @@ export class ChatStore {
     return {
       id: String(row.id),
       chatId: String(row.chat_id),
-      kind: row.kind as ChatHistoryKind,
+      kind: row.kind as ChatDetailKind,
       route: String(row.route),
       summary: String(row.summary),
       provider,

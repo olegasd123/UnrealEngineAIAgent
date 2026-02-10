@@ -941,7 +941,7 @@ FString FUEAIAgentTransportModule::BuildChatHistoryUrl(const FString& ChatId, in
 {
     const int32 SafeLimit = FMath::Clamp(Limit, 1, 200);
     return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId) +
-        FString::Printf(TEXT("/history?limit=%d"), SafeLimit);
+        FString::Printf(TEXT("/details?limit=%d"), SafeLimit);
 }
 
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
@@ -2861,10 +2861,9 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                 }
 
                 ActiveChatHistory.Empty();
-                const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
-                if (ResponseJson->TryGetArrayField(TEXT("history"), Items) && Items)
+                auto ParseDetails = [this](const TArray<TSharedPtr<FJsonValue>>& SourceItems)
                 {
-                    for (const TSharedPtr<FJsonValue>& Value : *Items)
+                    for (const TSharedPtr<FJsonValue>& Value : SourceItems)
                     {
                         if (!Value.IsValid())
                         {
@@ -2921,6 +2920,12 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                         EntryObj->TryGetStringField(TEXT("createdAt"), Entry.CreatedAt);
                         ActiveChatHistory.Add(Entry);
                     }
+                };
+
+                const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+                if (ResponseJson->TryGetArrayField(TEXT("details"), Items) && Items)
+                {
+                    ParseDetails(*Items);
                 }
 
                 Callback.ExecuteIfBound(true, FString::Printf(TEXT("History loaded: %d"), ActiveChatHistory.Num()));

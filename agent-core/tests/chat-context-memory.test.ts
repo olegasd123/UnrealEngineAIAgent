@@ -122,7 +122,7 @@ test("resolveContextWithChatMemory does not inject for non-referential prompt", 
   }
 });
 
-test("ChatStore.listHistory includes provider, model, and chat type", () => {
+test("ChatStore.listDetails includes provider, model, and chat type", () => {
   const dbPath = makeDbPath();
   const store = new ChatStore(dbPath);
 
@@ -134,17 +134,17 @@ test("ChatStore.listHistory includes provider, model, and chat type", () => {
       mode: "agent"
     });
 
-    const history = store.listHistory(chat.id);
-    assert.equal(history.length, 1);
-    assert.equal(history[0]?.provider, "openai");
-    assert.equal(history[0]?.model, "gpt-4.1");
-    assert.equal(history[0]?.chatType, "agent");
+    const details = store.listDetails(chat.id);
+    assert.equal(details.length, 1);
+    assert.equal(details[0]?.provider, "openai");
+    assert.equal(details[0]?.model, "gpt-4.1");
+    assert.equal(details[0]?.chatType, "agent");
   } finally {
     rmSync(dbPath, { force: true });
   }
 });
 
-test("ChatStore.listHistory stores provider, model, and chat type for done entries", () => {
+test("ChatStore.listDetails stores provider, model, and chat type for done entries", () => {
   const dbPath = makeDbPath();
   const store = new ChatStore(dbPath);
 
@@ -160,9 +160,9 @@ test("ChatStore.listHistory stores provider, model, and chat type for done entri
       displayText: "done"
     });
 
-    const history = store.listHistory(chat.id);
-    assert.equal(history.length, 2);
-    const doneEntry = history.find((item) => item.kind === "done");
+    const details = store.listDetails(chat.id);
+    assert.equal(details.length, 2);
+    const doneEntry = details.find((item) => item.kind === "done");
     assert.ok(doneEntry);
     assert.equal(doneEntry.provider, "gemini");
     assert.equal(doneEntry.model, "gemini-2.5-pro");
