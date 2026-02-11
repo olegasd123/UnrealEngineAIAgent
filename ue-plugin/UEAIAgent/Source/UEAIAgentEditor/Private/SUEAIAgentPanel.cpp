@@ -482,6 +482,24 @@ namespace
         return *StyleSet.Get();
     }
 
+    const FTableRowStyle& GetChatListRowStyle()
+    {
+        static FTableRowStyle RowStyle = []()
+        {
+            FTableRowStyle Style = FCoreStyle::Get().GetWidgetStyle<FTableRowStyle>(TEXT("TableView.Row"));
+            const FSlateColorBrush SelectedBrush(FLinearColor(0.02f, 0.02f, 0.02f, 0.95f));
+            const FSlateColorBrush SelectedHoveredBrush(FLinearColor(0.03f, 0.03f, 0.03f, 0.95f));
+            const FSlateColorBrush TransparentBrush(FLinearColor::Transparent);
+            Style.SetActiveBrush(SelectedBrush);
+            Style.SetInactiveBrush(SelectedBrush);
+            Style.SetActiveHoveredBrush(SelectedHoveredBrush);
+            Style.SetInactiveHoveredBrush(SelectedHoveredBrush);
+            Style.SetSelectorFocusedBrush(TransparentBrush);
+            return Style;
+        }();
+        return RowStyle;
+    }
+
 }
 
 void SUEAIAgentPanel::Construct(const FArguments& InArgs)
@@ -612,11 +630,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 SNew(SBox)
                 .HeightOverride(190.0f)
                 [
-                    SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
-                    .ListItemsSource(&ChatListItems)
-                    .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
-                    .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
-                    .SelectionMode(ESelectionMode::Single)
+                    SNew(SBorder)
+                    .Padding(1.0f)
+                    .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+                    .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
+                    [
+                        SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
+                        .ListItemsSource(&ChatListItems)
+                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
+                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
+                        .SelectionMode(ESelectionMode::Single)
+                    ]
                 ]
             ]
             + SVerticalBox::Slot()
@@ -893,11 +917,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 + SVerticalBox::Slot()
                 .FillHeight(1.0f)
                 [
-                    SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
-                    .ListItemsSource(&ChatHistoryItems)
-                    .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
-                    .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
-                    .SelectionMode(ESelectionMode::None)
+                    SNew(SBorder)
+                    .Padding(1.0f)
+                    .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+                    .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
+                    [
+                        SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
+                        .ListItemsSource(&ChatHistoryItems)
+                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
+                        .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
+                        .SelectionMode(ESelectionMode::None)
+                    ]
                 ]
             ]
         ]
@@ -2444,6 +2474,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
     if (!InItem.IsValid())
     {
         return SNew(STableRow<TSharedPtr<FUEAIAgentChatSummary>>, OwnerTable)
+        .Style(&GetChatListRowStyle())
         [
             SNew(STextBlock).Text(FText::FromString(TEXT("Invalid chat")))
         ];
@@ -2453,6 +2484,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
     TSharedPtr<SInlineEditableTextBlock> InlineTitle;
 
     TSharedRef<ITableRow> Row = SNew(STableRow<TSharedPtr<FUEAIAgentChatSummary>>, OwnerTable)
+    .Style(&GetChatListRowStyle())
     [
         SNew(SVerticalBox)
         + SVerticalBox::Slot()
