@@ -630,6 +630,47 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
             ]
             + SVerticalBox::Slot()
+            .FillHeight(1.0f)
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SVerticalBox)
+                + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SAssignNew(HistoryStateText, STextBlock)
+                    .AutoWrapText(true)
+                ]
+                + SVerticalBox::Slot()
+                .FillHeight(1.0f)
+                [
+                    SNew(SBorder)
+                    .Padding(1.0f)
+                    .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+                    .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
+                    [
+                        SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
+                        .ListItemsSource(&ChatHistoryItems)
+                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
+                        .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
+                        .SelectionMode(ESelectionMode::None)
+                    ]
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 8.0f, 8.0f, 8.0f)
+            [
+                SNew(SBox)
+                .MinDesiredHeight(0.0f)
+                [
+                    SAssignNew(PlanText, SEditableText)
+                    .IsReadOnly(true)
+                    .Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+                    .Text(FText::FromString(TEXT("")))
+                ]
+            ]
+            + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
@@ -666,54 +707,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SAssignNew(ActionListBox, SVerticalBox)
                 ]
-            ]
-            + SVerticalBox::Slot()
-            .FillHeight(1.0f)
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
-                SNew(SVerticalBox)
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(0.0f, 0.0f, 0.0f, 0.0f)
-                [
-                    SAssignNew(HistoryStateText, STextBlock)
-                    .AutoWrapText(true)
-                ]
-                + SVerticalBox::Slot()
-                .FillHeight(1.0f)
-                [
-                    SNew(SBorder)
-                    .Padding(1.0f)
-                    .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
-                    .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
-                    [
-                        SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
-                        .ListItemsSource(&ChatHistoryItems)
-                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
-                        .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
-                        .SelectionMode(ESelectionMode::None)
-                    ]
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SNew(SBox)
-                .MinDesiredHeight(0.0f)
-                [
-                    SAssignNew(PlanText, SEditableText)
-                    .IsReadOnly(true)
-                    .Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-                    .Text(FText::FromString(TEXT("")))
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 0.0f)
-            [
-                SAssignNew(StatusText, STextBlock)
-                .Text(FText::FromString(TEXT("Status: not checked")))
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
