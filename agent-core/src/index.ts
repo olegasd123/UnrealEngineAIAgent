@@ -365,13 +365,9 @@ function buildSessionAssistantReply(decision: SessionDecision): { summary: strin
 
 function buildPlanAssistantReply(plan: PlanOutput): { summary: string; text: string } {
   const summary = plan.summary.trim() || "Plan is ready.";
-  const details: string[] = [`Prepared ${plan.actions.length} action(s).`];
-  for (const step of plan.steps.slice(0, 3)) {
-    details.push(step);
-  }
   return {
     summary,
-    text: [summary, ...details].join("\n")
+    text: summary
   };
 }
 
