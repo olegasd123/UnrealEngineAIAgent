@@ -704,6 +704,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
                     .ListItemsSource(&ChatHistoryItems)
                     .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
+                    .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
                     .SelectionMode(ESelectionMode::None)
                 ]
             ]
@@ -955,6 +956,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         SAssignNew(ChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
                         .ListItemsSource(&ChatHistoryItems)
                         .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
+                        .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
                         .SelectionMode(ESelectionMode::None)
                     ]
                 ]
@@ -2130,18 +2132,37 @@ void SUEAIAgentPanel::RebuildHistoryItems()
     if (ChatHistoryListView.IsValid())
     {
         ChatHistoryListView->RequestListRefresh();
-        if (ChatHistoryItems.Num() > 0)
-        {
-            ChatHistoryListView->RequestScrollIntoView(ChatHistoryItems.Last());
-        }
     }
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->RequestListRefresh();
-        if (ChatHistoryItems.Num() > 0)
-        {
-            MainChatHistoryListView->RequestScrollIntoView(ChatHistoryItems.Last());
-        }
+    }
+
+    ScrollHistoryViewsToBottom();
+    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
+    {
+        bHistoryAutoScrollPending = true;
+        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
+    }
+}
+
+void SUEAIAgentPanel::ScrollHistoryViewsToBottom()
+{
+    if (ChatHistoryItems.Num() == 0)
+    {
+        return;
+    }
+
+    const TSharedPtr<FUEAIAgentChatHistoryEntry> LastItem = ChatHistoryItems.Last();
+    if (ChatHistoryListView.IsValid())
+    {
+        ChatHistoryListView->ScrollToBottom();
+        ChatHistoryListView->RequestScrollIntoView(LastItem);
+    }
+    if (MainChatHistoryListView.IsValid())
+    {
+        MainChatHistoryListView->ScrollToBottom();
+        MainChatHistoryListView->RequestScrollIntoView(LastItem);
     }
 }
 
@@ -2152,6 +2173,7 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
     if (ActiveId.IsEmpty())
     {
         bIsLoadingHistory = false;
+        bHistoryAutoScrollPending = false;
         HistoryErrorMessage.Reset();
         ChatHistoryItems.Empty();
         if (ChatHistoryListView.IsValid())
@@ -2170,6 +2192,16 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
     HistoryErrorMessage.Reset();
     UpdateHistoryStateText();
     Transport.LoadActiveChatHistory(100, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatHistoryResult));
+}
+
+EActiveTimerReturnType SUEAIAgentPanel::HandleDeferredHistoryScroll(double InCurrentTime, float InDeltaTime)
+{
+    (void)InCurrentTime;
+    (void)InDeltaTime;
+
+    bHistoryAutoScrollPending = false;
+    ScrollHistoryViewsToBottom();
+    return EActiveTimerReturnType::Stop;
 }
 
 void SUEAIAgentPanel::UpdateSelectionSummaryText()

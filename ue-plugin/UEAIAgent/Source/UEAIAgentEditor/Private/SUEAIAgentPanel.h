@@ -128,6 +128,7 @@ private:
     void RefreshChatUiFromTransport(bool bKeepCurrentSelection);
     void RebuildChatListItems();
     void RebuildHistoryItems();
+    void ScrollHistoryViewsToBottom();
     void RefreshActiveChatHistory();
     void UpdateSelectionSummaryText();
     void UpdateChatListStateText();
@@ -141,6 +142,7 @@ private:
     void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
     TArray<FString> CollectSelectedActorNames() const;
+    EActiveTimerReturnType HandleDeferredHistoryScroll(double InCurrentTime, float InDeltaTime);
     EActiveTimerReturnType HandleHealthTimer(double InCurrentTime, float InDeltaTime);
     EActiveTimerReturnType HandleSelectionTimer(double InCurrentTime, float InDeltaTime);
     void SetCurrentView(EPanelView NewView);
@@ -191,6 +193,7 @@ private:
     bool bIsLoadingHistory = false;
     bool bIsRunInFlight = false;
     bool bIsResumeInFlight = false;
+    bool bHistoryAutoScrollPending = false;
     bool bSelectNewestChatOnNextRefresh = false;
     bool bPendingRunSelectionRestore = true;
     FString ChatListErrorMessage;
