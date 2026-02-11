@@ -44,8 +44,7 @@ private:
     enum class EPanelView : uint8
     {
         Main,
-        Settings,
-        History
+        Settings
     };
 
     enum class ESessionStatus : uint8
@@ -62,7 +61,6 @@ private:
     FReply OnTestApiKeyClicked();
     FReply OnRefreshProviderStatusClicked();
     FReply OnOpenSettingsClicked();
-    FReply OnOpenHistoryClicked();
     FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnCreateChatClicked();
@@ -157,7 +155,6 @@ private:
     TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatSummary>>> ChatListView;
     TArray<TSharedPtr<FUEAIAgentChatSummary>> ChatListItems;
     TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> MainChatHistoryListView;
-    TSharedPtr<SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>> ChatHistoryListView;
     TArray<TSharedPtr<FUEAIAgentChatHistoryEntry>> ChatHistoryItems;
     TSharedPtr<STextBlock> ChatListStateText;
     TSharedPtr<STextBlock> HistoryStateText;

@@ -536,18 +536,87 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
                 + SHorizontalBox::Slot()
                 .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("History")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnOpenHistoryClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
                 [
                     SNew(SButton)
                     .Text(FText::FromString(TEXT("Settings")))
                     .OnClicked(this, &SUEAIAgentPanel::OnOpenSettingsClicked)
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Refresh Chats")))
+                    .IsEnabled_Lambda([this]()
+                    {
+                        return !bIsRefreshingChats;
+                    })
+                    .OnClicked(this, &SUEAIAgentPanel::OnRefreshChatsClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Text(FText::FromString(TEXT("Archive Selected")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnArchiveChatClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SCheckBox)
+                    .IsChecked_Lambda([this]()
+                    {
+                        return bIncludeArchivedChats ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                    })
+                    .OnCheckStateChanged(this, &SUEAIAgentPanel::HandleArchivedFilterChanged)
+                    [
+                        SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Show Archived")))
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(ChatSearchInput, SEditableTextBox)
+                    .HintText(FText::FromString(TEXT("Search chats by title or id")))
+                    .OnTextChanged(this, &SUEAIAgentPanel::HandleChatSearchTextChanged)
+                ]
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
+            [
+                SAssignNew(ChatListStateText, STextBlock)
+                .AutoWrapText(true)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
+            [
+                SAssignNew(SelectedChatHeaderText, STextBlock)
+                .AutoWrapText(true)
+                .Text(FText::FromString(TEXT("No chat selected")))
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            [
+                SNew(SBox)
+                .HeightOverride(190.0f)
+                [
+                    SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
+                    .ListItemsSource(&ChatListItems)
+                    .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
+                    .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
+                    .SelectionMode(ESelectionMode::Single)
                 ]
             ]
             + SVerticalBox::Slot()
@@ -815,6 +884,13 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     ]
                 ]
                 + SVerticalBox::Slot()
+                .AutoHeight()
+                .Padding(0.0f, 6.0f, 0.0f, 0.0f)
+                [
+                    SAssignNew(HistoryStateText, STextBlock)
+                    .AutoWrapText(true)
+                ]
+                + SVerticalBox::Slot()
                 .FillHeight(1.0f)
                 [
                     SAssignNew(MainChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
@@ -950,134 +1026,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
             ]
         ]
-        + SWidgetSwitcher::Slot()
-        [
-            SNew(SVerticalBox)
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f)
-            [
-                SNew(SHorizontalBox)
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Back")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnBackToMainClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                [
-                    SNew(STextBlock)
-                    .Text(FText::FromString(TEXT("History")))
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
-                SNew(SHorizontalBox)
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Refresh Chats")))
-                    .IsEnabled_Lambda([this]()
-                    {
-                        return !bIsRefreshingChats;
-                    })
-                    .OnClicked(this, &SUEAIAgentPanel::OnRefreshChatsClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Archive Selected")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnArchiveChatClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SCheckBox)
-                    .IsChecked_Lambda([this]()
-                    {
-                        return bIncludeArchivedChats ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-                    })
-                    .OnCheckStateChanged(this, &SUEAIAgentPanel::HandleArchivedFilterChanged)
-                    [
-                        SNew(STextBlock)
-                        .Text(FText::FromString(TEXT("Show Archived")))
-                    ]
-                ]
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                [
-                    SAssignNew(ChatSearchInput, SEditableTextBox)
-                    .HintText(FText::FromString(TEXT("Search chats by title or id")))
-                    .OnTextChanged(this, &SUEAIAgentPanel::HandleChatSearchTextChanged)
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .FillHeight(1.0f)
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
-                SNew(SSplitter)
-                + SSplitter::Slot()
-                .Value(0.4f)
-                [
-                    SNew(SVerticalBox)
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    [
-                        SAssignNew(ChatListStateText, STextBlock)
-                        .AutoWrapText(true)
-                    ]
-                    + SVerticalBox::Slot()
-                    .FillHeight(1.0f)
-                    .Padding(0.0f, 8.0f, 0.0f, 0.0f)
-                    [
-                        SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
-                        .ListItemsSource(&ChatListItems)
-                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
-                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
-                        .SelectionMode(ESelectionMode::Single)
-                    ]
-                ]
-                + SSplitter::Slot()
-                .Value(0.6f)
-                [
-                    SNew(SVerticalBox)
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    [
-                        SAssignNew(SelectedChatHeaderText, STextBlock)
-                        .AutoWrapText(true)
-                        .Text(FText::FromString(TEXT("No chat selected")))
-                    ]
-                    + SVerticalBox::Slot()
-                    .AutoHeight()
-                    .Padding(0.0f, 6.0f, 0.0f, 0.0f)
-                    [
-                        SAssignNew(HistoryStateText, STextBlock)
-                        .AutoWrapText(true)
-                    ]
-                    + SVerticalBox::Slot()
-                    .FillHeight(1.0f)
-                    .Padding(0.0f, 8.0f, 0.0f, 0.0f)
-                    [
-                        SAssignNew(ChatHistoryListView, SListView<TSharedPtr<FUEAIAgentChatHistoryEntry>>)
-                        .ListItemsSource(&ChatHistoryItems)
-                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatHistoryRow)
-                        .ScrollIntoViewAlignment(EScrollIntoViewAlignment::BottomOrRight)
-                        .SelectionMode(ESelectionMode::None)
-                    ]
-                ]
-            ]
-        ]
     ];
 
     SetCurrentView(EPanelView::Main);
@@ -1139,7 +1087,7 @@ FReply SUEAIAgentPanel::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
     }
 
     const bool bRenameShortcut = Key == EKeys::F2 || Key == EKeys::Enter;
-    if (CurrentView == EPanelView::History && bRenameShortcut && !InKeyEvent.IsControlDown() && !InKeyEvent.IsCommandDown())
+    if (CurrentView == EPanelView::Main && bRenameShortcut && !InKeyEvent.IsControlDown() && !InKeyEvent.IsCommandDown())
     {
         if (BeginRenameSelectedChat())
         {
@@ -1163,10 +1111,6 @@ void SUEAIAgentPanel::SetCurrentView(EPanelView NewView)
     {
         Index = 1;
     }
-    else if (CurrentView == EPanelView::History)
-    {
-        Index = 2;
-    }
     ViewSwitcher->SetActiveWidgetIndex(Index);
 }
 
@@ -1182,13 +1126,6 @@ FReply SUEAIAgentPanel::OnOpenSettingsClicked()
     FUEAIAgentTransportModule::Get().RefreshModelOptions(
         GetSelectedProviderCode(),
         FOnUEAIAgentCredentialOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleCredentialOperationResult));
-    return FReply::Handled();
-}
-
-FReply SUEAIAgentPanel::OnOpenHistoryClicked()
-{
-    SetCurrentView(EPanelView::History);
-    OnRefreshChatsClicked();
     return FReply::Handled();
 }
 
@@ -2343,10 +2280,6 @@ void SUEAIAgentPanel::RebuildHistoryItems()
         ChatHistoryItems.Add(MakeShared<FUEAIAgentChatHistoryEntry>(Entry));
     }
 
-    if (ChatHistoryListView.IsValid())
-    {
-        ChatHistoryListView->RequestListRefresh();
-    }
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->RequestListRefresh();
@@ -2368,11 +2301,6 @@ void SUEAIAgentPanel::ScrollHistoryViewsToBottom()
     }
 
     const TSharedPtr<FUEAIAgentChatHistoryEntry> LastItem = ChatHistoryItems.Last();
-    if (ChatHistoryListView.IsValid())
-    {
-        ChatHistoryListView->ScrollToBottom();
-        ChatHistoryListView->RequestScrollIntoView(LastItem);
-    }
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->ScrollToBottom();
@@ -2390,10 +2318,6 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
         bHistoryAutoScrollPending = false;
         HistoryErrorMessage.Reset();
         ChatHistoryItems.Empty();
-        if (ChatHistoryListView.IsValid())
-        {
-            ChatHistoryListView->RequestListRefresh();
-        }
         if (MainChatHistoryListView.IsValid())
         {
             MainChatHistoryListView->RequestListRefresh();

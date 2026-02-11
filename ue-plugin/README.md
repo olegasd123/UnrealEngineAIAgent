@@ -12,6 +12,10 @@ Quick validation in editor tab:
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - provider selector supports `OpenAI`, `Gemini`, and `Local`
 - main view:
+  - chat controls are on top: `Refresh Chats`, `Archive Selected`, `Show Archived`, and search
+  - chat list is on top (sorted by last activity)
+  - switch active chat by selecting it in the list
+  - chat title supports inline rename (select chat, press `F2` or `Enter`)
   - mode selector near `Run`: `Chat` or `Agent`
   - prompt input is multi-line and grows up to 10 lines
   - selection summary shows selected actors and updates automatically
@@ -23,15 +27,7 @@ Quick validation in editor tab:
   - `Approve Low Risk` marks low-risk planned actions as approved
   - `Reject All` unchecks all planned actions
   - planned actions are grouped by risk (`High`, `Medium`, `Low`) and each row has `Show details`
-- history view:
-  - `Refresh Chats` reloads chat list
-  - `Archive Selected` archives active chat
-  - `Show Archived` toggles archived list from backend
-  - search box filters chats by title or id
-  - left panel is chat list (sorted by last activity)
-  - chat title supports inline rename (select chat, press `F2` or `Enter`)
-  - right panel shows selected chat history entries (kind, route, timestamp, summary)
-  - selected chat history load has no default entry cap (full history by default)
+- selected chat history entries are shown in the main view and loaded with no default entry cap (full history by default)
 - keyboard shortcuts:
   - `Ctrl+Enter` / `Cmd+Enter`: run from main view
   - `Esc`: focus prompt input
