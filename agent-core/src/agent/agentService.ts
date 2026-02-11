@@ -1,4 +1,5 @@
 import type {
+  PlanOutput,
   SessionApproveRequest,
   SessionNextRequest,
   SessionResumeRequest,
@@ -26,9 +27,13 @@ export class AgentService {
     return this.validationLayer.validatePlan(intent, rawPlan);
   }
 
-  async startSession(input: SessionStartRequest, provider: LlmProvider): Promise<SessionDecision> {
+  async startSession(
+    input: SessionStartRequest,
+    provider: LlmProvider
+  ): Promise<{ decision: SessionDecision; plan: PlanOutput }> {
     const { plan } = await this.planTask(input, provider);
-    return this.executionLayer.startSession(input, plan);
+    const decision = this.executionLayer.startSession(input, plan);
+    return { decision, plan };
   }
 
   next(input: SessionNextRequest): SessionDecision {

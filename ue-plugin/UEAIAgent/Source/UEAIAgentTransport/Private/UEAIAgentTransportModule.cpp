@@ -1170,6 +1170,27 @@ void FUEAIAgentTransportModule::PlanTask(
 
                 FString Summary;
                 (*PlanObj)->TryGetStringField(TEXT("summary"), Summary);
+                TArray<FString> Steps;
+                const TArray<TSharedPtr<FJsonValue>>* StepValues = nullptr;
+                if ((*PlanObj)->TryGetArrayField(TEXT("steps"), StepValues) && StepValues)
+                {
+                    for (const TSharedPtr<FJsonValue>& StepValue : *StepValues)
+                    {
+                        if (!StepValue.IsValid())
+                        {
+                            continue;
+                        }
+                        FString StepText;
+                        if (StepValue->TryGetString(StepText))
+                        {
+                            StepText = StepText.TrimStartAndEnd();
+                            if (!StepText.IsEmpty())
+                            {
+                                Steps.Add(StepText);
+                            }
+                        }
+                    }
+                }
 
                 const TArray<TSharedPtr<FJsonValue>>* Actions = nullptr;
                 if ((*PlanObj)->TryGetArrayField(TEXT("actions"), Actions) && Actions)
@@ -1815,7 +1836,39 @@ void FUEAIAgentTransportModule::PlanTask(
                     }
                 }
 
-                const FString FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
+                FString AssistantText;
+                ResponseJson->TryGetStringField(TEXT("assistantText"), AssistantText);
+
+                FString FinalMessage;
+                if (!AssistantText.IsEmpty())
+                {
+                    FinalMessage = AssistantText;
+                }
+                else if (PlannedActions.Num() > 0)
+                {
+                    FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
+                }
+                else
+                {
+                    FinalMessage = Summary;
+                    const int32 MaxSteps = FMath::Min(3, Steps.Num());
+                    for (int32 StepIndex = 0; StepIndex < MaxSteps; ++StepIndex)
+                    {
+                        if (FinalMessage.IsEmpty())
+                        {
+                            FinalMessage = Steps[StepIndex];
+                        }
+                        else
+                        {
+                            FinalMessage += TEXT("\n");
+                            FinalMessage += Steps[StepIndex];
+                        }
+                    }
+                    if (FinalMessage.IsEmpty())
+                    {
+                        FinalMessage = TEXT("No action needed.");
+                    }
+                }
                 Callback.ExecuteIfBound(true, FinalMessage);
             });
         });
@@ -1923,6 +1976,13 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
         *Status,
         Summary.IsEmpty() ? TEXT("No summary.") : *Summary,
         Message.IsEmpty() ? TEXT("No message.") : *Message);
+    FString AssistantText;
+    ResponseJson->TryGetStringField(TEXT("assistantText"), AssistantText);
+    if (!AssistantText.IsEmpty())
+    {
+        OutMessage += TEXT("\nAssistant: ");
+        OutMessage += AssistantText;
+    }
     return true;
 }
 

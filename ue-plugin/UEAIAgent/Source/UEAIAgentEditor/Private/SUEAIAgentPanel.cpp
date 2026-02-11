@@ -62,6 +62,7 @@ namespace
         }
         return ProviderCode;
     }
+
 }
 
 void SUEAIAgentPanel::Construct(const FArguments& InArgs)
@@ -1325,7 +1326,14 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
         UpdateActionApprovalUi();
     }
 
-    PlanText->SetText(FText::FromString(Message));
+    if (ActionCount <= 0)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Chat: reply added to history.")));
+    }
+    else
+    {
+        PlanText->SetText(FText::FromString(Message));
+    }
     RefreshActiveChatHistory();
 }
 
@@ -1354,14 +1362,20 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         RefreshActiveChatHistory();
         return;
     }
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Operation completed")));
+        if (Transport.GetPlannedActionCount() <= 0)
+        {
+            PlanText->SetText(FText::FromString(TEXT("Agent: no scene action. Reply added to history.")));
+        }
+        else
+        {
+            PlanText->SetText(FText::FromString(TEXT("Operation completed")));
+        }
         RefreshActiveChatHistory();
         return;
     }
-
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Transport.GetPlannedActionCount() <= 0)
     {
         PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
@@ -1789,10 +1803,18 @@ void SUEAIAgentPanel::RebuildHistoryItems()
     if (ChatHistoryListView.IsValid())
     {
         ChatHistoryListView->RequestListRefresh();
+        if (ChatHistoryItems.Num() > 0)
+        {
+            ChatHistoryListView->RequestScrollIntoView(ChatHistoryItems.Last());
+        }
     }
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->RequestListRefresh();
+        if (ChatHistoryItems.Num() > 0)
+        {
+            MainChatHistoryListView->RequestScrollIntoView(ChatHistoryItems.Last());
+        }
     }
 }
 
@@ -1978,26 +2000,49 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         ? FLinearColor(0.12f, 0.28f, 0.55f, 0.60f)
         : FLinearColor(0.18f, 0.18f, 0.18f, 0.80f);
 
+    if (bIsUserMessage)
+    {
+        return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
+        .Padding(FMargin(8.0f, 8.0f))
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .FillWidth(1.0f)
+            .HAlign(HAlign_Right)
+            [
+                SNew(SBox)
+                .MaxDesiredWidth(760.0f)
+                [
+                    SNew(SBorder)
+                    .Padding(10.0f)
+                    .BorderBackgroundColor(BubbleColor)
+                    [
+                        SNew(SMultiLineEditableText)
+                        .IsReadOnly(true)
+                        .AutoWrapText(true)
+                        .Text(FText::FromString(MessageText))
+                    ]
+                ]
+            ]
+        ];
+    }
+
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
     .Padding(FMargin(8.0f, 8.0f))
     [
         SNew(SHorizontalBox)
         + SHorizontalBox::Slot()
         .FillWidth(1.0f)
-        .HAlign(bIsUserMessage ? HAlign_Right : HAlign_Left)
+        .HAlign(HAlign_Fill)
         [
-            SNew(SBox)
-            .MaxDesiredWidth(760.0f)
+            SNew(SBorder)
+            .Padding(10.0f)
+            .BorderBackgroundColor(BubbleColor)
             [
-                SNew(SBorder)
-                .Padding(10.0f)
-                .BorderBackgroundColor(BubbleColor)
-                [
-                    SNew(SMultiLineEditableText)
-                    .IsReadOnly(true)
-                    .AutoWrapText(true)
-                    .Text(FText::FromString(MessageText))
-                ]
+                SNew(SMultiLineEditableText)
+                .IsReadOnly(true)
+                .AutoWrapText(true)
+                .Text(FText::FromString(MessageText))
             ]
         ]
     ];

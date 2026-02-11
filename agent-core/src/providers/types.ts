@@ -19,10 +19,15 @@ export interface ProviderFactoryConfig {
   local: ProviderRuntimeConfig;
 }
 
+export interface TextReplyInput {
+  prompt: string;
+}
+
 export interface LlmProvider {
   name: ProviderName;
   model: string;
   hasApiKey: boolean;
   adapter: "stub" | "live";
   planTask(input: PlanInput): Promise<PlanOutput>;
+  respondText(input: TextReplyInput): Promise<string>;
 }

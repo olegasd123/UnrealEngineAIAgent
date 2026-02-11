@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AgentService } from "./agent/agentService.js";
 import {
   type PlanOutput,
+  type TaskRequest,
   ChatCreateRequestSchema,
   ProviderNameSchema,
   ChatUpdateRequestSchema,
@@ -374,6 +375,68 @@ function buildPlanAssistantReply(plan: PlanOutput): { summary: string; text: str
   };
 }
 
+function buildNoActionFallbackText(plan: PlanOutput): string {
+  const summary = plan.summary.trim() || "No action is needed right now.";
+  const steps = plan.steps
+    .map((step) => step.trim())
+    .filter((step) => step.length > 0)
+    .slice(0, 3);
+  if (steps.length === 0) {
+    return summary;
+  }
+  return [summary, ...steps].join("\n");
+}
+
+function formatNoActionReplyPrompt(userPrompt: string, mode: TaskRequest["mode"], plan: PlanOutput): string {
+  const planSteps = plan.steps
+    .map((step) => step.trim())
+    .filter((step) => step.length > 0)
+    .slice(0, 5)
+    .map((step) => `- ${step}`)
+    .join("\n");
+
+  return [
+    "User prompt:",
+    userPrompt.trim(),
+    "",
+    "Planner result:",
+    `- Mode: ${mode}`,
+    `- Actions planned: ${plan.actions.length}`,
+    `- Plan summary: ${plan.summary.trim() || "No summary."}`,
+    planSteps ? `- Plan steps:\n${planSteps}` : "- Plan steps: none",
+    "",
+    "Task:",
+    "Reply directly to the user in plain English.",
+    "If this is an informational question, answer it.",
+    "If this asks for scene changes but details are missing, explain what is missing and ask one short question."
+  ].join("\n");
+}
+
+async function buildNoActionAssistantText(
+  prompt: string,
+  mode: TaskRequest["mode"],
+  plan: PlanOutput,
+  provider: Awaited<ReturnType<typeof resolveProvider>>
+): Promise<string> {
+  if (plan.actions.length > 0) {
+    return buildPlanAssistantReply(plan).text;
+  }
+
+  try {
+    const text = await provider.respondText({
+      prompt: formatNoActionReplyPrompt(prompt, mode, plan)
+    });
+    const normalized = text.trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  } catch {
+    // Keep fallback below.
+  }
+
+  return buildNoActionFallbackText(plan);
+}
+
 function appendUserPromptDetail(
   chatId: string,
   route: string,
@@ -703,13 +766,26 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const provider = await resolveProvider(selectedProvider, selectedModel);
-      const decision = await agentService.startSession(requestWithResolvedContext, provider);
+      const { decision, plan } = await agentService.startSession(requestWithResolvedContext, provider);
+      const noActionAssistantText =
+        plan.actions.length === 0
+          ? await buildNoActionAssistantText(parsed.prompt, parsed.mode, plan, provider)
+          : undefined;
 
-      if (parsed.chatId && shouldStoreSessionDecision(decision)) {
-        const assistant = buildSessionAssistantReply(decision);
-        appendAssistantDetail(parsed.chatId, "/v1/session/start", assistant.summary, assistant.text, {
-          decision
-        });
+      if (parsed.chatId) {
+        if (noActionAssistantText) {
+          appendAssistantDetail(parsed.chatId, "/v1/session/start", plan.summary, noActionAssistantText, {
+            decision,
+            summary: plan.summary,
+            actions: plan.actions.length,
+            noAction: true
+          });
+        } else if (shouldStoreSessionDecision(decision)) {
+          const assistant = buildSessionAssistantReply(decision);
+          appendAssistantDetail(parsed.chatId, "/v1/session/start", assistant.summary, assistant.text, {
+            decision
+          });
+        }
       }
 
       try {
@@ -725,7 +801,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, decision });
+      return sendJson(res, 200, { ok: true, requestId, decision, assistantText: noActionAssistantText });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
@@ -986,13 +1062,25 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const { plan } = await agentService.planTask(requestWithResolvedContext, provider);
+      const noActionAssistantText =
+        plan.actions.length === 0
+          ? await buildNoActionAssistantText(parsed.prompt, parsed.mode, plan, provider)
+          : undefined;
 
       if (parsed.chatId) {
-        const assistant = buildPlanAssistantReply(plan);
-        appendAssistantDetail(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
-          summary: plan.summary,
-          actions: plan.actions.length
-        });
+        if (noActionAssistantText) {
+          appendAssistantDetail(parsed.chatId, "/v1/task/plan", plan.summary, noActionAssistantText, {
+            summary: plan.summary,
+            actions: plan.actions.length,
+            noAction: true
+          });
+        } else {
+          const assistant = buildPlanAssistantReply(plan);
+          appendAssistantDetail(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
+            summary: plan.summary,
+            actions: plan.actions.length
+          });
+        }
       }
 
       try {
@@ -1008,7 +1096,7 @@ const server = http.createServer(async (req, res) => {
         console.warn("Task log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, plan });
+      return sendJson(res, 200, { ok: true, requestId, plan, assistantText: noActionAssistantText });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {

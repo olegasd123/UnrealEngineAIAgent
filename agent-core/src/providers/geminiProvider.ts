@@ -1,7 +1,7 @@
 import type { ProviderRuntimeConfig } from "../config.js";
 import type { PlanOutput } from "../contracts.js";
 import { buildPlanPrompt, parsePlanOutput } from "../planner/planJson.js";
-import type { LlmProvider, PlanInput } from "./types.js";
+import type { LlmProvider, PlanInput, TextReplyInput } from "./types.js";
 
 function formatErrorBody(body: string): string {
   const max = 4000;
@@ -75,7 +75,62 @@ export class GeminiProvider implements LlmProvider {
     return parsePlanOutput(content);
   }
 
+  private async requestTextReply(input: TextReplyInput): Promise<string> {
+    if (!this.runtime.apiKey) {
+      throw new Error("GEMINI_API_KEY is missing.");
+    }
+
+    const endpoint =
+      `${this.getBaseUrl()}/models/${encodeURIComponent(this.runtime.model)}:generateContent` +
+      `?key=${encodeURIComponent(this.runtime.apiKey)}`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [
+            {
+              text: "You are an Unreal Engine assistant. Reply in plain text. Keep answers clear, helpful, and safe. Use enough detail to answer well."
+            }
+          ]
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: input.prompt }]
+          }
+        ],
+        generationConfig: {
+          temperature: this.runtime.temperature,
+          maxOutputTokens: this.runtime.maxTokens
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Gemini request failed (${response.status}): ${formatErrorBody(body)}`);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content || typeof content !== "string") {
+      throw new Error("Gemini response did not include a text reply.");
+    }
+
+    return content.trim();
+  }
+
   async planTask(input: PlanInput): Promise<PlanOutput> {
     return this.requestPlan(input);
+  }
+
+  async respondText(input: TextReplyInput): Promise<string> {
+    return this.requestTextReply(input);
   }
 }
