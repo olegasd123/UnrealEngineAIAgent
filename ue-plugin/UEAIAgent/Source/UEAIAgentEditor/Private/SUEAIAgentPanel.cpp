@@ -8,7 +8,9 @@
 #include "UEAIAgentTransportModule.h"
 #include "Misc/MessageDialog.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/Text/RichTextLayoutMarshaller.h"
 #include "Styling/CoreStyle.h"
+#include "Styling/SlateStyle.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
 #include "Widgets/Layout/SBorder.h"
@@ -61,6 +63,189 @@ namespace
             return TEXT("Local");
         }
         return ProviderCode;
+    }
+
+    void AppendEscapedRichChar(FString& Out, TCHAR Ch)
+    {
+        if (Ch == TEXT('&'))
+        {
+            Out += TEXT("&amp;");
+            return;
+        }
+        if (Ch == TEXT('<'))
+        {
+            Out += TEXT("&lt;");
+            return;
+        }
+        if (Ch == TEXT('>'))
+        {
+            Out += TEXT("&gt;");
+            return;
+        }
+        Out.AppendChar(Ch);
+    }
+
+    FString EscapeRichText(const FString& Source)
+    {
+        FString Out;
+        Out.Reserve(Source.Len());
+        for (int32 Index = 0; Index < Source.Len(); ++Index)
+        {
+            AppendEscapedRichChar(Out, Source[Index]);
+        }
+        return Out;
+    }
+
+    FString ParseInlineMarkdown(const FString& Source)
+    {
+        FString Out;
+        Out.Reserve(Source.Len() + 32);
+
+        int32 Index = 0;
+        while (Index < Source.Len())
+        {
+            if (Source[Index] == TEXT('`'))
+            {
+                const int32 Close = Source.Find(TEXT("`"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Index + 1);
+                if (Close != INDEX_NONE && Close > Index + 1)
+                {
+                    const FString Code = Source.Mid(Index + 1, Close - Index - 1);
+                    Out += TEXT("<md.code>");
+                    Out += EscapeRichText(Code);
+                    Out += TEXT("</>");
+                    Index = Close + 1;
+                    continue;
+                }
+            }
+
+            if (Index + 1 < Source.Len() && Source[Index] == TEXT('*') && Source[Index + 1] == TEXT('*'))
+            {
+                const int32 Close = Source.Find(TEXT("**"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Index + 2);
+                if (Close != INDEX_NONE && Close > Index + 2)
+                {
+                    const FString Bold = Source.Mid(Index + 2, Close - Index - 2);
+                    Out += TEXT("<md.bold>");
+                    Out += EscapeRichText(Bold);
+                    Out += TEXT("</>");
+                    Index = Close + 2;
+                    continue;
+                }
+            }
+
+            if (Source[Index] == TEXT('*'))
+            {
+                const int32 Close = Source.Find(TEXT("*"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Index + 1);
+                if (Close != INDEX_NONE && Close > Index + 1)
+                {
+                    const FString Italic = Source.Mid(Index + 1, Close - Index - 1);
+                    Out += TEXT("<md.italic>");
+                    Out += EscapeRichText(Italic);
+                    Out += TEXT("</>");
+                    Index = Close + 1;
+                    continue;
+                }
+            }
+
+            AppendEscapedRichChar(Out, Source[Index]);
+            ++Index;
+        }
+
+        return Out;
+    }
+
+    FString ConvertMarkdownToRichText(const FString& Source)
+    {
+        const FString Normalized = Source.Replace(TEXT("\r\n"), TEXT("\n")).Replace(TEXT("\r"), TEXT("\n"));
+        TArray<FString> Lines;
+        Normalized.ParseIntoArray(Lines, TEXT("\n"), false);
+
+        FString Out;
+        bool bInCodeBlock = false;
+        for (int32 LineIndex = 0; LineIndex < Lines.Num(); ++LineIndex)
+        {
+            const FString& Line = Lines[LineIndex];
+            const FString Trimmed = Line.TrimStartAndEnd();
+
+            if (Trimmed.StartsWith(TEXT("```")))
+            {
+                bInCodeBlock = !bInCodeBlock;
+                if (LineIndex + 1 < Lines.Num())
+                {
+                    Out += TEXT("\n");
+                }
+                continue;
+            }
+
+            if (bInCodeBlock)
+            {
+                Out += TEXT("<md.code>");
+                Out += EscapeRichText(Line);
+                Out += TEXT("</>");
+            }
+            else if (Trimmed.StartsWith(TEXT("# ")))
+            {
+                Out += TEXT("<md.bold>");
+                Out += ParseInlineMarkdown(Trimmed.Mid(2));
+                Out += TEXT("</>");
+            }
+            else if (Trimmed.StartsWith(TEXT("## ")))
+            {
+                Out += TEXT("<md.bold>");
+                Out += ParseInlineMarkdown(Trimmed.Mid(3));
+                Out += TEXT("</>");
+            }
+            else if (Trimmed.StartsWith(TEXT("### ")))
+            {
+                Out += TEXT("<md.bold>");
+                Out += ParseInlineMarkdown(Trimmed.Mid(4));
+                Out += TEXT("</>");
+            }
+            else if (Trimmed.StartsWith(TEXT("- ")) || Trimmed.StartsWith(TEXT("* ")))
+            {
+                Out += TEXT("• ");
+                Out += ParseInlineMarkdown(Trimmed.Mid(2));
+            }
+            else
+            {
+                Out += ParseInlineMarkdown(Line);
+            }
+
+            if (LineIndex + 1 < Lines.Num())
+            {
+                Out += TEXT("\n");
+            }
+        }
+
+        return Out;
+    }
+
+    const ISlateStyle& GetChatMarkdownStyle()
+    {
+        static TSharedPtr<FSlateStyleSet> StyleSet;
+        if (!StyleSet.IsValid())
+        {
+            StyleSet = MakeShared<FSlateStyleSet>(TEXT("UEAIAgentChatMarkdownStyle"));
+
+            const FTextBlockStyle Base = FCoreStyle::Get().GetWidgetStyle<FTextBlockStyle>(TEXT("NormalText"));
+
+            FTextBlockStyle Normal = Base;
+            Normal.SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), 10));
+            StyleSet->Set(TEXT("md.normal"), Normal);
+
+            FTextBlockStyle Bold = Base;
+            Bold.SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 10));
+            StyleSet->Set(TEXT("md.bold"), Bold);
+
+            FTextBlockStyle Italic = Base;
+            Italic.SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Italic"), 10));
+            StyleSet->Set(TEXT("md.italic"), Italic);
+
+            FTextBlockStyle Code = Base;
+            Code.SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Mono"), 10));
+            Code.SetColorAndOpacity(FLinearColor(0.84f, 0.91f, 1.0f, 1.0f));
+            StyleSet->Set(TEXT("md.code"), Code);
+        }
+        return *StyleSet.Get();
     }
 
 }
@@ -1996,6 +2181,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
     const bool bIsUserMessage = InItem->DisplayRole.Equals(TEXT("user"), ESearchCase::IgnoreCase) ||
         (InItem->DisplayRole.IsEmpty() && InItem->Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase));
     const FString MessageText = InItem->DisplayText.IsEmpty() ? InItem->Summary : InItem->DisplayText;
+    const FString RichMessageText = bIsUserMessage ? MessageText : ConvertMarkdownToRichText(MessageText);
     const FLinearColor BubbleColor = bIsUserMessage
         ? FLinearColor(0.12f, 0.28f, 0.55f, 0.60f)
         : FLinearColor(0.18f, 0.18f, 0.18f, 0.80f);
@@ -2027,6 +2213,10 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         ];
     }
 
+    TSharedPtr<ITextLayoutMarshaller> MarkdownMarshaller = FRichTextLayoutMarshaller::Create(
+        TArray<TSharedRef<ITextDecorator>>(),
+        &GetChatMarkdownStyle());
+
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
     .Padding(FMargin(8.0f, 8.0f))
     [
@@ -2041,8 +2231,11 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
             [
                 SNew(SMultiLineEditableText)
                 .IsReadOnly(true)
+                .ClearTextSelectionOnFocusLoss(false)
                 .AutoWrapText(true)
-                .Text(FText::FromString(MessageText))
+                .Text(FText::FromString(RichMessageText))
+                .TextStyle(&GetChatMarkdownStyle().GetWidgetStyle<FTextBlockStyle>(TEXT("md.normal")))
+                .Marshaller(MarkdownMarshaller)
             ]
         ]
     ];
