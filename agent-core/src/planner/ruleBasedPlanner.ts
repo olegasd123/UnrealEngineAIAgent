@@ -730,6 +730,87 @@ function buildStopConditions(hasHighRiskAction: boolean): PlanOutput["stopCondit
   return conditions;
 }
 
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+  return String(Math.round(value * 1000) / 1000);
+}
+
+function describeTargetCount(actorNames: string[] | undefined): string {
+  return (actorNames?.length ?? 0) > 1 ? "selected actors" : "selected actor";
+}
+
+function describeMoveSummary(action: PlanAction): string | undefined {
+  if (action.command !== "scene.modifyActor") {
+    return undefined;
+  }
+
+  const params = action.params;
+  if (params.deltaRotation || params.deltaScale || params.scale || !params.deltaLocation) {
+    return undefined;
+  }
+
+  const targetText = describeTargetCount(params.actorNames);
+  const { x, y, z } = params.deltaLocation;
+  const nonZeroAxes = [x, y, z].filter((value) => Math.abs(value) > 0).length;
+  if (nonZeroAxes !== 1) {
+    return `Move ${targetText}.`;
+  }
+
+  if (Math.abs(x) > 0) {
+    if (x < 0) {
+      return `Move ${targetText} back ${formatNumber(Math.abs(x))} units along X.`;
+    }
+    return `Move ${targetText} along X by ${formatNumber(x)} units.`;
+  }
+
+  if (Math.abs(y) > 0) {
+    if (y < 0) {
+      return `Move ${targetText} left ${formatNumber(Math.abs(y))} units along Y.`;
+    }
+    return `Move ${targetText} right ${formatNumber(y)} units along Y.`;
+  }
+
+  if (z < 0) {
+    return `Move ${targetText} down ${formatNumber(Math.abs(z))} units along Z.`;
+  }
+  return `Move ${targetText} up ${formatNumber(z)} units along Z.`;
+}
+
+function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
+  const moveSummary = describeMoveSummary(actions[0]!);
+  if (moveSummary) {
+    return moveSummary;
+  }
+
+  const first = actions[0];
+  if (!first) {
+    return `Draft plan for: ${input.prompt} (selected: ${readSelectionNamesFromContext(input.context).length})`;
+  }
+
+  if (first.command === "scene.createActor") {
+    const count = first.params.count ?? 1;
+    return count === 1
+      ? `Create 1 ${first.params.actorClass} actor.`
+      : `Create ${formatNumber(count)} ${first.params.actorClass} actors.`;
+  }
+
+  if (first.command === "scene.deleteActor") {
+    const count = first.params.actorNames?.length ?? 0;
+    return count > 1 ? `Delete ${count} selected actors.` : "Delete selected actor.";
+  }
+
+  if (actions.length === 1) {
+    return `Apply 1 scene action for: ${input.prompt}.`;
+  }
+
+  return `Apply ${actions.length} scene actions for: ${input.prompt}.`;
+}
+
 export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMetadata = {}): PlanOutput {
   const selectionNames = readSelectionNamesFromContext(input.context);
   const moveDelta = parseMoveDeltaFromPrompt(input.prompt);
@@ -923,7 +1004,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
 
   if (actions.length > 0) {
     return {
-      summary: `Planned scene actions for prompt: ${input.prompt} (selected: ${selectionNames.length})`,
+      summary: buildActionSummary(input, actions),
       steps: [
         "Preview parsed actions",
         "Wait for user approval",

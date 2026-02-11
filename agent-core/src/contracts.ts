@@ -505,3 +505,10 @@ export const ChatUpdateRequestSchema = z
     message: "At least one field must be provided."
   });
 export type ChatUpdateRequest = z.infer<typeof ChatUpdateRequestSchema>;
+
+export const ChatDetailAppendRequestSchema = z.object({
+  route: z.string().trim().min(1).max(120),
+  summary: z.string().trim().min(1).max(500),
+  payload: z.record(z.unknown()).optional()
+});
+export type ChatDetailAppendRequest = z.infer<typeof ChatDetailAppendRequestSchema>;

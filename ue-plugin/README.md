@@ -31,6 +31,7 @@ Quick validation in editor tab:
   - left panel is chat list (sorted by last activity)
   - chat title supports inline rename (select chat, press `F2` or `Enter`)
   - right panel shows selected chat history entries (kind, route, timestamp, summary)
+  - selected chat history load has no default entry cap (full history by default)
 - keyboard shortcuts:
   - `Ctrl+Enter` / `Cmd+Enter`: run from main view
   - `Esc`: focus prompt input

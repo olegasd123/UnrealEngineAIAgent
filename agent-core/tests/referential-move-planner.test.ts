@@ -16,6 +16,7 @@ test("Rule planner parses 'move it back to 100' and uses remembered selection by
   };
 
   const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.summary, "Move selected actor back 100 units along X.");
   assert.equal(plan.actions.length, 1);
   const action = plan.actions[0];
   assert.equal(action.command, "scene.modifyActor");

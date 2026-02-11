@@ -48,6 +48,98 @@ namespace
             Lower.Contains(TEXT(" same "));
     }
 
+    FString NormalizeSingleLineStatusText(const FString& Input)
+    {
+        FString Result = Input;
+        Result.ReplaceInline(TEXT("\r"), TEXT(" "));
+        Result.ReplaceInline(TEXT("\n"), TEXT(" "));
+        while (Result.ReplaceInline(TEXT("  "), TEXT(" ")) > 0)
+        {
+        }
+        Result = Result.TrimStartAndEnd();
+        if (Result.Len() > 220)
+        {
+            Result = Result.Left(217) + TEXT("...");
+        }
+        return Result;
+    }
+
+    bool IsUserCanceledSessionMessage(const FString& Message)
+    {
+        return Message.Contains(TEXT("stopCondition=user_denied"), ESearchCase::IgnoreCase) ||
+            Message.Contains(TEXT("Rejected by user."), ESearchCase::IgnoreCase);
+    }
+
+    FString ExtractDecisionMessageBody(const FString& Message)
+    {
+        const FString Prefix = TEXT("Session:");
+        if (!Message.StartsWith(Prefix))
+        {
+            return NormalizeSingleLineStatusText(Message);
+        }
+
+        int32 FirstNewline = INDEX_NONE;
+        if (!Message.FindChar(TEXT('\n'), FirstNewline))
+        {
+            return TEXT("");
+        }
+
+        const int32 SecondNewline = Message.Find(TEXT("\n"), ESearchCase::CaseSensitive, ESearchDir::FromStart, FirstNewline + 1);
+        if (SecondNewline == INDEX_NONE)
+        {
+            return NormalizeSingleLineStatusText(Message.Mid(FirstNewline + 1));
+        }
+
+        FString Body = Message.Mid(SecondNewline + 1);
+        const int32 AssistantToken = Body.Find(TEXT("\nAssistant:"), ESearchCase::IgnoreCase);
+        if (AssistantToken != INDEX_NONE)
+        {
+            Body = Body.Left(AssistantToken);
+        }
+
+        return NormalizeSingleLineStatusText(Body);
+    }
+
+    FString ExtractFailedReasonFromSessionMessage(const FString& Message)
+    {
+        const FString Body = ExtractDecisionMessageBody(Message);
+        if (Body.IsEmpty())
+        {
+            return TEXT("");
+        }
+
+        const FString LastErrorToken = TEXT("Last error:");
+        const int32 LastErrorPos = Body.Find(LastErrorToken, ESearchCase::IgnoreCase);
+        if (LastErrorPos != INDEX_NONE)
+        {
+            const FString Reason = NormalizeSingleLineStatusText(Body.Mid(LastErrorPos + LastErrorToken.Len()));
+            if (!Reason.IsEmpty())
+            {
+                return Reason;
+            }
+        }
+
+        const FString StopConditionToken = TEXT("Stopped by stopCondition=");
+        const int32 StopConditionPos = Body.Find(StopConditionToken, ESearchCase::IgnoreCase);
+        if (StopConditionPos != INDEX_NONE)
+        {
+            FString Condition = Body.Mid(StopConditionPos + StopConditionToken.Len());
+            int32 EndPos = INDEX_NONE;
+            if (Condition.FindChar(TEXT('.'), EndPos))
+            {
+                Condition = Condition.Left(EndPos);
+            }
+            Condition = Condition.Replace(TEXT("_"), TEXT(" "));
+            Condition = NormalizeSingleLineStatusText(Condition);
+            if (!Condition.IsEmpty())
+            {
+                return FString::Printf(TEXT("stopped by %s."), *Condition.ToLower());
+            }
+        }
+
+        return Body;
+    }
+
     FString ProviderCodeToLabel(const FString& ProviderCode)
     {
         if (ProviderCode.Equals(TEXT("openai"), ESearchCase::IgnoreCase))
@@ -640,6 +732,30 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         SNew(SButton)
                         .Text(FText::FromString(TEXT("Apply")))
                         .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
+                    ]
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SNew(SBox)
+                    .WidthOverride(200.0f)
+                    .Visibility_Lambda([this]()
+                    {
+                        if (GetSelectedModeCode() != TEXT("chat"))
+                        {
+                            return EVisibility::Collapsed;
+                        }
+                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                        const bool bCanCancel = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
+                        return bCanCancel ? EVisibility::Visible : EVisibility::Collapsed;
+                    })
+                    [
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Cancel")))
+                        .OnClicked(this, &SUEAIAgentPanel::OnCancelPlannedActionClicked)
                     ]
                 ]
             ]
@@ -1466,12 +1582,17 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     TArray<FUEAIAgentPlannedSceneAction> ApprovedActions;
     if (!Transport.PopApprovedPlannedActions(ApprovedActions))
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo approved actions to execute.")));
+        Transport.ClearPlannedActions();
         UpdateActionApprovalUi();
+        const FString StatusMessage = TEXT("Canceled.");
+        PlanText->SetText(FText::FromString(StatusMessage));
+        AppendChatOutcomeToHistory(StatusMessage);
         return FReply::Handled();
     }
 
     int32 SuccessCount = 0;
+    int32 FailedCount = 0;
+    FString FirstFailureReason;
     for (const FUEAIAgentPlannedSceneAction& PlannedAction : ApprovedActions)
     {
         FString ResultMessage;
@@ -1480,20 +1601,45 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         if (bOk)
         {
             ++SuccessCount;
+            continue;
+        }
+
+        ++FailedCount;
+        if (FirstFailureReason.IsEmpty())
+        {
+            const FString NormalizedReason = NormalizeSingleLineStatusText(ResultMessage);
+            FirstFailureReason = NormalizedReason.IsEmpty() ? TEXT("operation could not be applied.") : NormalizedReason;
         }
     }
 
     UpdateActionApprovalUi();
-    if (SuccessCount == ApprovedActions.Num())
+    if (FailedCount == 0 && SuccessCount == ApprovedActions.Num())
     {
-        PlanText->SetText(FText::FromString(TEXT("Operation completed")));
+        const FString StatusMessage = TEXT("Completed.");
+        PlanText->SetText(FText::FromString(StatusMessage));
+        AppendChatOutcomeToHistory(StatusMessage);
     }
     else
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo approved actions were executed.")));
+        FString StatusMessage;
+        if (ApprovedActions.Num() > 1)
+        {
+            StatusMessage = FString::Printf(TEXT("Failed: %d of %d action(s) failed. %s"), FailedCount, ApprovedActions.Num(), *FirstFailureReason);
+        }
+        else
+        {
+            StatusMessage = FString::Printf(TEXT("Failed: %s"), *FirstFailureReason);
+        }
+        PlanText->SetText(FText::FromString(StatusMessage));
+        AppendChatOutcomeToHistory(StatusMessage);
     }
 
     return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnCancelPlannedActionClicked()
+{
+    return OnRejectAllClicked();
 }
 
 FReply SUEAIAgentPanel::OnApproveLowRiskClicked()
@@ -1513,6 +1659,19 @@ FReply SUEAIAgentPanel::OnRejectAllClicked()
 {
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const int32 ActionCount = Transport.GetPlannedActionCount();
+    if (!Transport.HasActiveSession() && ActionCount > 0)
+    {
+        Transport.ClearPlannedActions();
+        UpdateActionApprovalUi();
+        if (PlanText.IsValid())
+        {
+            const FString StatusMessage = TEXT("Canceled.");
+            PlanText->SetText(FText::FromString(StatusMessage));
+            AppendChatOutcomeToHistory(StatusMessage);
+        }
+        return FReply::Handled();
+    }
+
     for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
     {
         Transport.SetPlannedActionApproved(ActionIndex, false);
@@ -1583,7 +1742,7 @@ FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
 
     const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
         EAppMsgType::YesNo,
-        FText::FromString(TEXT("Reject the current action? This will mark the session as failed.")));
+        FText::FromString(TEXT("Reject the current action? This will cancel the current operation.")));
     if (ConfirmResult != EAppReturnType::Yes)
     {
         return FReply::Handled();
@@ -1679,7 +1838,15 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (!bOk)
     {
         CurrentSessionStatus = ESessionStatus::Failed;
-        PlanText->SetText(FText::FromString(TEXT("Agent: failed. Check chat for details.")));
+        const FString Reason = NormalizeSingleLineStatusText(Message);
+        if (Reason.IsEmpty())
+        {
+            PlanText->SetText(FText::FromString(TEXT("Failed.")));
+        }
+        else
+        {
+            PlanText->SetText(FText::FromString(FString::Printf(TEXT("Failed: %s"), *Reason)));
+        }
         RefreshActiveChatHistory();
         return;
     }
@@ -1687,21 +1854,30 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     CurrentSessionStatus = ParseSessionStatusFromMessage(Message);
     if (CurrentSessionStatus == ESessionStatus::Failed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: failed. Check chat for details.")));
+        const FString DecisionMessage = ExtractDecisionMessageBody(Message);
+        if (IsUserCanceledSessionMessage(DecisionMessage))
+        {
+            PlanText->SetText(FText::FromString(TEXT("Canceled.")));
+        }
+        else
+        {
+            const FString Reason = ExtractFailedReasonFromSessionMessage(Message);
+            if (Reason.IsEmpty())
+            {
+                PlanText->SetText(FText::FromString(TEXT("Failed.")));
+            }
+            else
+            {
+                PlanText->SetText(FText::FromString(FString::Printf(TEXT("Failed: %s"), *Reason)));
+            }
+        }
         RefreshActiveChatHistory();
         return;
     }
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
-        if (Transport.GetPlannedActionCount() <= 0)
-        {
-            PlanText->SetText(FText::FromString(TEXT("Agent: no scene action. Reply added to history.")));
-        }
-        else
-        {
-            PlanText->SetText(FText::FromString(TEXT("Operation completed")));
-        }
+        PlanText->SetText(FText::FromString(TEXT("Completed.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -1973,6 +2149,44 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
     return false;
 }
 
+void SUEAIAgentPanel::AppendChatOutcomeToHistory(const FString& OutcomeText)
+{
+    const FString NormalizedStatus = NormalizeSingleLineStatusText(OutcomeText);
+    if (NormalizedStatus.IsEmpty())
+    {
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (Transport.GetActiveChatId().IsEmpty())
+    {
+        return;
+    }
+
+    const FString PlanSummary = Transport.GetLastPlanSummary().TrimStartAndEnd();
+    const FString SummaryText = PlanSummary.IsEmpty() ? NormalizedStatus : PlanSummary;
+    const FString DisplayText = PlanSummary.IsEmpty()
+        ? NormalizedStatus
+        : FString::Printf(TEXT("%s\n%s"), *PlanSummary, *NormalizedStatus);
+
+    Transport.AppendActiveChatAssistantMessage(
+        TEXT("/v1/task/apply"),
+        SummaryText,
+        DisplayText,
+        GetSelectedModelProvider(),
+        GetSelectedModelName(),
+        TEXT("chat"),
+        FOnUEAIAgentChatOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            (void)Message;
+            if (!bOk)
+            {
+                return;
+            }
+            RefreshActiveChatHistory();
+        }));
+}
+
 void SUEAIAgentPanel::HandleCredentialOperationResult(bool bOk, const FString& Message)
 {
     RebuildModelUi();
@@ -2191,7 +2405,7 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
     bIsLoadingHistory = true;
     HistoryErrorMessage.Reset();
     UpdateHistoryStateText();
-    Transport.LoadActiveChatHistory(100, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatHistoryResult));
+    Transport.LoadActiveChatHistory(0, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatHistoryResult));
 }
 
 EActiveTimerReturnType SUEAIAgentPanel::HandleDeferredHistoryScroll(double InCurrentTime, float InDeltaTime)

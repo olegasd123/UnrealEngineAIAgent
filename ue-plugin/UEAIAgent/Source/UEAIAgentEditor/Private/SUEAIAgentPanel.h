@@ -71,6 +71,7 @@ private:
     FReply OnResumeAgentLoopClicked();
     FReply OnRejectCurrentActionClicked();
     FReply OnApplyPlannedActionClicked();
+    FReply OnCancelPlannedActionClicked();
     FReply OnApproveLowRiskClicked();
     FReply OnRejectAllClicked();
     void HandleHealthResult(bool bOk, const FString& Message);
@@ -141,6 +142,7 @@ private:
     void UpdateActionApprovalUi();
     void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
+    void AppendChatOutcomeToHistory(const FString& OutcomeText);
     TArray<FString> CollectSelectedActorNames() const;
     EActiveTimerReturnType HandleDeferredHistoryScroll(double InCurrentTime, float InDeltaTime);
     EActiveTimerReturnType HandleHealthTimer(double InCurrentTime, float InDeltaTime);

@@ -172,18 +172,28 @@ public:
     void RenameActiveChat(const FString& NewTitle, const FOnUEAIAgentChatOpFinished& Callback) const;
     void ArchiveActiveChat(const FOnUEAIAgentChatOpFinished& Callback) const;
     void LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void AppendActiveChatAssistantMessage(
+        const FString& Route,
+        const FString& Summary,
+        const FString& DisplayText,
+        const FString& Provider,
+        const FString& Model,
+        const FString& ChatType,
+        const FOnUEAIAgentChatOpFinished& Callback) const;
     const TArray<FUEAIAgentChatSummary>& GetChats() const;
     const TArray<FUEAIAgentChatHistoryEntry>& GetActiveChatHistory() const;
     const TArray<FUEAIAgentModelOption>& GetAvailableModels() const;
     const TArray<FUEAIAgentModelOption>& GetPreferredModels() const;
     void SetActiveChatId(const FString& ChatId) const;
     FString GetActiveChatId() const;
+    FString GetLastPlanSummary() const;
     int32 GetPlannedActionCount() const;
     FString GetPlannedActionPreviewText(int32 ActionIndex) const;
     bool IsPlannedActionApproved(int32 ActionIndex) const;
     int32 GetPlannedActionAttemptCount(int32 ActionIndex) const;
     void SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const;
     bool PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const;
+    void ClearPlannedActions() const;
     bool GetPlannedAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
     bool GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const;
     void UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const;
@@ -208,6 +218,7 @@ private:
     FString BuildCreateChatUrl() const;
     FString BuildChatDeleteUrl(const FString& ChatId) const;
     FString BuildChatUpdateUrl(const FString& ChatId) const;
+    FString BuildChatDetailsUrl(const FString& ChatId) const;
     FString BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const;
     bool ParseSessionDecision(
         const TSharedPtr<FJsonObject>& ResponseJson,
@@ -223,4 +234,5 @@ private:
     mutable TArray<FUEAIAgentModelOption> AvailableModels;
     mutable TArray<FUEAIAgentModelOption> PreferredModels;
     mutable FString ActiveChatId;
+    mutable FString LastPlanSummary;
 };

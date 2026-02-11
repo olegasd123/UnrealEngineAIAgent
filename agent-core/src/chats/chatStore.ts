@@ -301,21 +301,32 @@ export class ChatStore {
     }
   }
 
-  public listDetails(chatId: string, limit = 100): ChatDetailEntry[] {
+  public listDetails(chatId: string, limit?: number): ChatDetailEntry[] {
     this.getChat(chatId);
-    const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
 
-    const rows = this.db
-      .prepare(
-        `SELECT id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at
-         FROM chat_details
-         WHERE chat_id = ?
-         ORDER BY created_at ASC
-         LIMIT ?`
-      )
-      .all(chatId, normalizedLimit);
+    const hasLimit = typeof limit === "number" && Number.isFinite(limit) && Math.trunc(limit) > 0;
+    const normalizedLimit = hasLimit ? Math.trunc(limit) : 0;
+    const rows = hasLimit
+      ? this.db
+          .prepare(
+            `SELECT id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at
+             FROM chat_details
+             WHERE chat_id = ?
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?`
+          )
+          .all(chatId, normalizedLimit)
+      : this.db
+          .prepare(
+            `SELECT id, chat_id, kind, route, summary, provider, model, chat_type, payload_json, created_at
+             FROM chat_details
+             WHERE chat_id = ?
+             ORDER BY created_at DESC, rowid DESC`
+          )
+          .all(chatId);
 
-    return rows.map((row) => this.mapDetailRow(row));
+    // Fetch latest entries first, then restore chronological order for UI rendering.
+    return rows.reverse().map((row) => this.mapDetailRow(row));
   }
 
   public appendAsked(chatId: string, route: string, summary: string, payload?: unknown): ChatDetailEntry {

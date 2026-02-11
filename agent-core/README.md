@@ -110,7 +110,8 @@ Optional environment:
   - `GET /v1/chats/:chatId`
   - `PATCH /v1/chats/:chatId` (fields: `title`, `archived`)
   - `DELETE /v1/chats/:chatId` (soft delete: sets `archived=true`)
-  - `GET /v1/chats/:chatId/details?limit=100` (max 200)
+  - `GET /v1/chats/:chatId/details` (default: full chat history, oldest to newest)
+  - `GET /v1/chats/:chatId/details?limit=50` (optional: latest `N` entries, returned oldest to newest)
 - Details write model:
   - send optional `chatId` in `/v1/task/plan` and `/v1/session/*` request body
   - user prompt is stored as `asked` with display fields (`displayRole=user`, `displayText`)

@@ -171,3 +171,31 @@ test("ChatStore.listDetails stores provider, model, and chat type for done entri
     rmSync(dbPath, { force: true });
   }
 });
+
+test("ChatStore.listDetails returns latest entries when limit is smaller than history size", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("history limit");
+    for (let index = 0; index < 4; index += 1) {
+      store.appendAsked(chat.id, "/v1/task/plan", `ask ${index + 1}`, {
+        displayRole: "user",
+        displayText: `ask ${index + 1}`
+      });
+      store.appendDone(chat.id, "/v1/task/plan", `done ${index + 1}`, {
+        displayRole: "assistant",
+        displayText: `done ${index + 1}`
+      });
+    }
+
+    const details = store.listDetails(chat.id, 3);
+    assert.equal(details.length, 3);
+    assert.deepEqual(
+      details.map((entry) => entry.summary),
+      ["done 3", "ask 4", "done 4"]
+    );
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});

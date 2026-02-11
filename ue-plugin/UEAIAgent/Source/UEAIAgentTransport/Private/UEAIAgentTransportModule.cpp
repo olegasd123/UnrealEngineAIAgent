@@ -1021,11 +1021,19 @@ FString FUEAIAgentTransportModule::BuildChatUpdateUrl(const FString& ChatId) con
     return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId);
 }
 
+FString FUEAIAgentTransportModule::BuildChatDetailsUrl(const FString& ChatId) const
+{
+    return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId) + TEXT("/details");
+}
+
 FString FUEAIAgentTransportModule::BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const
 {
-    const int32 SafeLimit = FMath::Clamp(Limit, 1, 200);
-    return BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId) +
-        FString::Printf(TEXT("/details?limit=%d"), SafeLimit);
+    FString Url = BuildBaseUrl() + TEXT("/v1/chats/") + FGenericPlatformHttp::UrlEncode(ChatId) + TEXT("/details");
+    if (Limit > 0)
+    {
+        Url += FString::Printf(TEXT("?limit=%d"), FMath::Max(1, Limit));
+    }
+    return Url;
 }
 
 void FUEAIAgentTransportModule::CheckHealth(const FOnUEAIAgentHealthChecked& Callback) const
@@ -1094,6 +1102,7 @@ void FUEAIAgentTransportModule::PlanTask(
     const FOnUEAIAgentTaskPlanned& Callback) const
 {
     PlannedActions.Empty();
+    LastPlanSummary.Empty();
     ActiveSessionId.Empty();
     ActiveSessionActionIndex = INDEX_NONE;
     ActiveSessionSelectedActors.Empty();
@@ -1170,6 +1179,7 @@ void FUEAIAgentTransportModule::PlanTask(
 
                 FString Summary;
                 (*PlanObj)->TryGetStringField(TEXT("summary"), Summary);
+                LastPlanSummary = Summary.TrimStartAndEnd();
                 TArray<FString> Steps;
                 const TArray<TSharedPtr<FJsonValue>>* StepValues = nullptr;
                 if ((*PlanObj)->TryGetArrayField(TEXT("steps"), StepValues) && StepValues)
@@ -1846,7 +1856,11 @@ void FUEAIAgentTransportModule::PlanTask(
                 }
                 else if (PlannedActions.Num() > 0)
                 {
-                    FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
+                    FinalMessage = LastPlanSummary;
+                    if (FinalMessage.IsEmpty())
+                    {
+                        FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
+                    }
                 }
                 else
                 {
@@ -1995,6 +2009,7 @@ void FUEAIAgentTransportModule::StartSession(
     const FOnUEAIAgentSessionUpdated& Callback) const
 {
     PlannedActions.Empty();
+    LastPlanSummary.Empty();
     ActiveSessionId.Empty();
     ActiveSessionActionIndex = INDEX_NONE;
     ActiveSessionSelectedActors = SelectedActors;
@@ -3063,6 +3078,102 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
     Request->ProcessRequest();
 }
 
+void FUEAIAgentTransportModule::AppendActiveChatAssistantMessage(
+    const FString& Route,
+    const FString& Summary,
+    const FString& DisplayText,
+    const FString& Provider,
+    const FString& Model,
+    const FString& ChatType,
+    const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ActiveChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No active chat selected."));
+        return;
+    }
+
+    const FString NormalizedRoute = Route.TrimStartAndEnd().IsEmpty() ? TEXT("/v1/task/apply") : Route.TrimStartAndEnd();
+    const FString NormalizedSummary = Summary.TrimStartAndEnd();
+    if (NormalizedSummary.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("Summary must not be empty."));
+        return;
+    }
+
+    const FString NormalizedText = DisplayText.TrimStartAndEnd().IsEmpty() ? NormalizedSummary : DisplayText.TrimStartAndEnd();
+
+    TSharedRef<FJsonObject> PayloadObj = MakeShared<FJsonObject>();
+    PayloadObj->SetStringField(TEXT("displayRole"), TEXT("assistant"));
+    PayloadObj->SetStringField(TEXT("displayText"), NormalizedText);
+    if (!Provider.TrimStartAndEnd().IsEmpty())
+    {
+        PayloadObj->SetStringField(TEXT("provider"), Provider.TrimStartAndEnd());
+    }
+    if (!Model.TrimStartAndEnd().IsEmpty())
+    {
+        PayloadObj->SetStringField(TEXT("model"), Model.TrimStartAndEnd());
+    }
+    if (!ChatType.TrimStartAndEnd().IsEmpty())
+    {
+        PayloadObj->SetStringField(TEXT("chatType"), ChatType.TrimStartAndEnd());
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetStringField(TEXT("route"), NormalizedRoute);
+    Root->SetStringField(TEXT("summary"), NormalizedSummary);
+    Root->SetObjectField(TEXT("payload"), PayloadObj);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatDetailsUrl(ActiveChatId));
+    Request->SetVerb(TEXT("POST"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Append chat message failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Append chat message response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned an append chat message error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Chat message appended."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
 const TArray<FUEAIAgentChatSummary>& FUEAIAgentTransportModule::GetChats() const
 {
     return Chats;
@@ -3091,6 +3202,11 @@ void FUEAIAgentTransportModule::SetActiveChatId(const FString& ChatId) const
 FString FUEAIAgentTransportModule::GetActiveChatId() const
 {
     return ActiveChatId;
+}
+
+FString FUEAIAgentTransportModule::GetLastPlanSummary() const
+{
+    return LastPlanSummary;
 }
 
 int32 FUEAIAgentTransportModule::GetPlannedActionCount() const
@@ -3276,6 +3392,11 @@ bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlann
 
     PlannedActions.Empty();
     return OutActions.Num() > 0;
+}
+
+void FUEAIAgentTransportModule::ClearPlannedActions() const
+{
+    PlannedActions.Empty();
 }
 
 bool FUEAIAgentTransportModule::GetPlannedAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const

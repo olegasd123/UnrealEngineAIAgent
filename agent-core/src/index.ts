@@ -6,6 +6,7 @@ import {
   type PlanOutput,
   type TaskRequest,
   ChatCreateRequestSchema,
+  ChatDetailAppendRequestSchema,
   ProviderNameSchema,
   ChatUpdateRequestSchema,
   SessionApproveRequestSchema,
@@ -305,6 +306,14 @@ function stripProgressSegment(message: string): string {
   return message.replace(/\s*Progress:\s*\d+\/\d+\s+actions completed\.\s*/gi, " ").replace(/\s+/g, " ").trim();
 }
 
+function isCanceledByUser(message: string): boolean {
+  const normalized = stripProgressSegment(message);
+  if (!normalized) {
+    return false;
+  }
+  return /Rejected by user\./i.test(normalized) || /Stopped by stopCondition=user_denied\.?/i.test(normalized);
+}
+
 function extractFailedReason(message: string): string | undefined {
   const normalized = stripProgressSegment(message);
   if (!normalized) {
@@ -346,6 +355,9 @@ function summarizeSessionMessage(status: SessionStatus, message: string): string
     return "Waiting for your approval on the next action.";
   }
   if (status === "failed") {
+    if (isCanceledByUser(normalized)) {
+      return "Canceled.";
+    }
     const reason = extractFailedReason(normalized);
     return reason ? `Failed: ${reason}` : "Failed.";
   }
@@ -464,7 +476,7 @@ function appendAssistantDetail(
 }
 
 function shouldStoreSessionDecision(decision: SessionDecision): boolean {
-  return decision.status !== "ready_to_execute";
+  return decision.status === "completed" || decision.status === "failed";
 }
 
 const server = http.createServer(async (req, res) => {
@@ -601,17 +613,33 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (chatRoute && chatRoute.isDetails && req.method === "GET") {
-    const requestedLimit = Number(requestUrl.searchParams.get("limit") ?? "100");
-    const normalizedLimit = Number.isFinite(requestedLimit)
-      ? Math.max(1, Math.min(200, Math.trunc(requestedLimit)))
-      : 100;
-    try {
-      const details = chatStore.listDetails(chatRoute.chatId, normalizedLimit);
-      return sendJson(res, 200, { ok: true, count: details.length, details });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+  if (chatRoute && chatRoute.isDetails) {
+    if (req.method === "GET") {
+      const limitParam = requestUrl.searchParams.get("limit");
+      const requestedLimit = limitParam === null ? undefined : Number(limitParam);
+      const normalizedLimit =
+        requestedLimit !== undefined && Number.isFinite(requestedLimit) && Math.trunc(requestedLimit) > 0
+          ? Math.trunc(requestedLimit)
+          : undefined;
+      try {
+        const details = chatStore.listDetails(chatRoute.chatId, normalizedLimit);
+        return sendJson(res, 200, { ok: true, count: details.length, details });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+      }
+    }
+
+    if (req.method === "POST") {
+      try {
+        const rawBody = await readBody(req);
+        const parsed = ChatDetailAppendRequestSchema.parse(JSON.parse(rawBody));
+        const detail = chatStore.appendDone(chatRoute.chatId, parsed.route, parsed.summary, parsed.payload);
+        return sendJson(res, 200, { ok: true, detail });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return sendJson(res, errorStatusCode(error), { ok: false, error: message });
+      }
     }
   }
 
@@ -1071,12 +1099,6 @@ const server = http.createServer(async (req, res) => {
             summary: plan.summary,
             actions: plan.actions.length,
             noAction: true
-          });
-        } else {
-          const assistant = buildPlanAssistantReply(plan);
-          appendAssistantDetail(parsed.chatId, "/v1/task/plan", assistant.summary, assistant.text, {
-            summary: plan.summary,
-            actions: plan.actions.length
           });
         }
       }
