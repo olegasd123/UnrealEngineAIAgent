@@ -562,7 +562,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            .Padding(8.0f, 0.0f, 8.0f, 0.0f)
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot()
@@ -610,18 +610,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
+            .Padding(8.0f, 0.0f, 8.0f, 0.0f)
             [
                 SAssignNew(ChatListStateText, STextBlock)
                 .AutoWrapText(true)
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
-            [
-                SAssignNew(SelectedChatHeaderText, STextBlock)
-                .AutoWrapText(true)
-                .Text(FText::FromString(TEXT("No chat selected")))
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
@@ -909,7 +901,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
                 + SVerticalBox::Slot()
                 .AutoHeight()
-                .Padding(0.0f, 6.0f, 0.0f, 0.0f)
+                .Padding(0.0f, 0.0f, 0.0f, 0.0f)
                 [
                     SAssignNew(HistoryStateText, STextBlock)
                     .AutoWrapText(true)
@@ -2250,19 +2242,6 @@ void SUEAIAgentPanel::RefreshChatUiFromTransport(bool bKeepCurrentSelection)
         ChatListView->SetSelection(ActiveItem, ESelectInfo::Direct);
     }
 
-    if (SelectedChatHeaderText.IsValid())
-    {
-        if (ActiveItem.IsValid())
-        {
-            const FString Title = ActiveItem->Title.IsEmpty() ? TEXT("Untitled chat") : ActiveItem->Title;
-            SelectedChatHeaderText->SetText(FText::FromString(FString::Printf(TEXT("%s (%s)"), *Title, *ActiveItem->Id.Left(8))));
-        }
-        else
-        {
-            SelectedChatHeaderText->SetText(FText::FromString(TEXT("No chat selected")));
-        }
-    }
-
     UpdateChatListStateText();
     RebuildHistoryItems();
     UpdateHistoryStateText();
@@ -2459,11 +2438,6 @@ void SUEAIAgentPanel::HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummar
     }
 
     Transport.SetActiveChatId(InItem->Id);
-    if (SelectedChatHeaderText.IsValid())
-    {
-        const FString Title = InItem->Title.IsEmpty() ? TEXT("Untitled chat") : InItem->Title;
-        SelectedChatHeaderText->SetText(FText::FromString(FString::Printf(TEXT("%s (%s)"), *Title, *InItem->Id.Left(8))));
-    }
     RefreshActiveChatHistory();
 }
 

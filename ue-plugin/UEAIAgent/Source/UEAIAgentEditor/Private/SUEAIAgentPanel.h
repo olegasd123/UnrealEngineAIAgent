@@ -158,7 +158,6 @@ private:
     TArray<TSharedPtr<FUEAIAgentChatHistoryEntry>> ChatHistoryItems;
     TSharedPtr<STextBlock> ChatListStateText;
     TSharedPtr<STextBlock> HistoryStateText;
-    TSharedPtr<STextBlock> SelectedChatHeaderText;
     TMap<FString, TWeakPtr<SInlineEditableTextBlock>> ChatTitleEditors;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ProviderCombo;
     TSharedPtr<SComboBox<TSharedPtr<FString>>> ModeCombo;
