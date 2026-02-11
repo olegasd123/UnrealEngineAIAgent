@@ -153,6 +153,103 @@ namespace
         return Out;
     }
 
+    bool IsMarkdownTableRow(const FString& Line)
+    {
+        const FString Trimmed = Line.TrimStartAndEnd();
+        if (Trimmed.IsEmpty())
+        {
+            return false;
+        }
+
+        int32 PipeCount = 0;
+        for (int32 Index = 0; Index < Trimmed.Len(); ++Index)
+        {
+            if (Trimmed[Index] == TEXT('|'))
+            {
+                ++PipeCount;
+            }
+        }
+        return PipeCount >= 2;
+    }
+
+    bool IsMarkdownTableSeparator(const FString& Line)
+    {
+        FString Compact = Line.TrimStartAndEnd().Replace(TEXT(" "), TEXT(""));
+        if (Compact.IsEmpty() || !Compact.Contains(TEXT("|")))
+        {
+            return false;
+        }
+
+        bool bHasDash = false;
+        for (int32 Index = 0; Index < Compact.Len(); ++Index)
+        {
+            const TCHAR Ch = Compact[Index];
+            if (Ch == TEXT('|'))
+            {
+                continue;
+            }
+            if (Ch == TEXT('-'))
+            {
+                bHasDash = true;
+                continue;
+            }
+            if (Ch == TEXT(':'))
+            {
+                continue;
+            }
+            return false;
+        }
+        return bHasDash;
+    }
+
+    void ParseMarkdownTableCells(const FString& Line, TArray<FString>& OutCells)
+    {
+        OutCells.Empty();
+
+        FString Work = Line.TrimStartAndEnd();
+        if (Work.StartsWith(TEXT("|")))
+        {
+            Work = Work.Mid(1);
+        }
+        if (Work.EndsWith(TEXT("|")))
+        {
+            Work = Work.LeftChop(1);
+        }
+
+        Work.ParseIntoArray(OutCells, TEXT("|"), false);
+        for (FString& Cell : OutCells)
+        {
+            Cell = Cell.TrimStartAndEnd();
+        }
+    }
+
+    FString BuildMarkdownTableRowText(const TArray<FString>& Headers, const TArray<FString>& Cells)
+    {
+        FString RowText;
+        for (int32 CellIndex = 0; CellIndex < Cells.Num(); ++CellIndex)
+        {
+            if (CellIndex > 0)
+            {
+                RowText += TEXT("  ");
+            }
+
+            if (Headers.IsValidIndex(CellIndex))
+            {
+                const FString Header = Headers[CellIndex].TrimStartAndEnd();
+                if (!Header.IsEmpty())
+                {
+                    RowText += TEXT("<md.bold>");
+                    RowText += ParseInlineMarkdown(Header);
+                    RowText += TEXT(":</> ");
+                }
+            }
+
+            RowText += ParseInlineMarkdown(Cells[CellIndex]);
+        }
+
+        return RowText;
+    }
+
     FString ConvertMarkdownToRichText(const FString& Source)
     {
         const FString Normalized = Source.Replace(TEXT("\r\n"), TEXT("\n")).Replace(TEXT("\r"), TEXT("\n"));
@@ -181,6 +278,51 @@ namespace
                 Out += TEXT("<md.code>");
                 Out += EscapeRichText(Line);
                 Out += TEXT("</>");
+            }
+            else if (LineIndex + 1 < Lines.Num() &&
+                IsMarkdownTableRow(Trimmed) &&
+                IsMarkdownTableSeparator(Lines[LineIndex + 1].TrimStartAndEnd()))
+            {
+                TArray<FString> Headers;
+                ParseMarkdownTableCells(Trimmed, Headers);
+
+                int32 RowIndex = LineIndex + 2;
+                bool bHasDataRows = false;
+                while (RowIndex < Lines.Num())
+                {
+                    const FString RowTrimmed = Lines[RowIndex].TrimStartAndEnd();
+                    if (!IsMarkdownTableRow(RowTrimmed))
+                    {
+                        break;
+                    }
+
+                    TArray<FString> Cells;
+                    ParseMarkdownTableCells(RowTrimmed, Cells);
+                    if (Cells.Num() > 0)
+                    {
+                        Out += TEXT("• ");
+                        Out += BuildMarkdownTableRowText(Headers, Cells);
+                        bHasDataRows = true;
+                        if (RowIndex + 1 < Lines.Num())
+                        {
+                            Out += TEXT("\n");
+                        }
+                    }
+
+                    ++RowIndex;
+                }
+
+                if (!bHasDataRows)
+                {
+                    Out += ParseInlineMarkdown(Trimmed);
+                    if (LineIndex + 2 < Lines.Num())
+                    {
+                        Out += TEXT("\n");
+                    }
+                }
+
+                LineIndex = bHasDataRows ? (RowIndex - 1) : (LineIndex + 1);
+                continue;
             }
             else if (Trimmed.StartsWith(TEXT("# ")))
             {

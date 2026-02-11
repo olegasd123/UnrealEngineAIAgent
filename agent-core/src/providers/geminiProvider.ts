@@ -93,7 +93,7 @@ export class GeminiProvider implements LlmProvider {
         systemInstruction: {
           parts: [
             {
-              text: "You are an Unreal Engine assistant. Reply in plain text. Keep answers clear, helpful, and safe. Use enough detail to answer well."
+              text: "You are an Unreal Engine assistant. Reply in plain text. Keep answers clear, helpful, and safe. Use enough detail to answer well. Use markdown only for headings, bullet lists, bold, italic, inline code, and fenced code blocks. Do not use markdown tables."
             }
           ]
         },

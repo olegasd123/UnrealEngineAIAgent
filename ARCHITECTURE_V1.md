@@ -100,6 +100,9 @@ Subsystems:
   - short plan
   - proposed actions
   - expected changes
+- Chat response formatting:
+  - supported: headings, bullet lists, bold, italic, inline code, fenced code blocks
+  - not supported: markdown tables
 - User can run one action or all
 
 ## Agent mode

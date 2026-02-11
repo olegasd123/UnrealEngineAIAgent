@@ -117,6 +117,16 @@ Optional environment:
   - assistant reply is stored as `done` with display fields (`displayRole=assistant`, `displayText`)
   - session internal loops keep only user-facing milestones (ready-to-execute updates are skipped)
 
+## Chat formatting support
+
+- Chat UI supports markdown for:
+  - headings
+  - bullet lists
+  - bold and italic text
+  - inline code and fenced code blocks
+- Markdown tables are not supported in chat UI.
+- If a table appears, UI tries to convert it to bullet lines.
+
 ## Log file naming
 
 - Log files are daily and use this format:

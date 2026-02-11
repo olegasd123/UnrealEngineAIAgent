@@ -408,7 +408,9 @@ function formatNoActionReplyPrompt(userPrompt: string, mode: TaskRequest["mode"]
     "Task:",
     "Reply directly to the user in plain English.",
     "If this is an informational question, answer it.",
-    "If this asks for scene changes but details are missing, explain what is missing and ask one short question."
+    "If this asks for scene changes but details are missing, explain what is missing and ask one short question.",
+    "Use only supported markdown: headings, bullet lists, bold, italic, inline code, and fenced code blocks.",
+    "Do not use markdown tables."
   ].join("\n");
 }
 

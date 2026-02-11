@@ -91,7 +91,7 @@ export class OpenAiProvider implements LlmProvider {
           {
             role: "system",
             content:
-              "You are an Unreal Engine assistant. Reply in plain text. Keep answers clear, helpful, and safe. Use enough detail to answer well. Do not output JSON."
+              "You are an Unreal Engine assistant. Reply in plain text. Keep answers clear, helpful, and safe. Use enough detail to answer well. Use markdown only for headings, bullet lists, bold, italic, inline code, and fenced code blocks. Do not use markdown tables. Do not output JSON."
           },
           {
             role: "user",
