@@ -147,7 +147,6 @@ private:
     EActiveTimerReturnType HandleSelectionTimer(double InCurrentTime, float InDeltaTime);
     void SetCurrentView(EPanelView NewView);
 
-    TSharedPtr<STextBlock> StatusText;
     TSharedPtr<SMultiLineEditableTextBox> CredentialText;
     TSharedPtr<SEditableTextBox> ApiKeyInput;
     TSharedPtr<STextBlock> SelectionSummaryText;

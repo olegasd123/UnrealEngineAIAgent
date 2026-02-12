@@ -539,12 +539,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                [
-                    SAssignNew(StatusText, STextBlock)
-                    .Text(FText::FromString(TEXT("Status: not checked")))
-                ]
-                + SHorizontalBox::Slot()
                 .AutoWidth()
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
@@ -673,7 +667,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     SAssignNew(PlanText, SEditableText)
                     .IsReadOnly(true)
                     .Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-                    .Text(FText::FromString(TEXT("")))
+                    .Text(FText::FromString(TEXT("Ready to start")))
                 ]
             ]
             + SVerticalBox::Slot()
@@ -1063,10 +1057,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
         HandlePromptTextChanged(PromptInput->GetText());
     }
 
-    if (StatusText.IsValid())
-    {
-        StatusText->SetText(FText::FromString(TEXT("Status: checking...")));
-    }
     FUEAIAgentTransportModule::Get().CheckHealth(FOnUEAIAgentHealthChecked::CreateSP(
         this,
         &SUEAIAgentPanel::HandleHealthResult));
@@ -1724,7 +1714,7 @@ FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
 
 void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
 {
-    if (!StatusText.IsValid())
+    if (!PlanText.IsValid())
     {
         return;
     }
@@ -1742,13 +1732,10 @@ void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
         DisplayMessage = DisplayMessage.Left(ProviderToken).TrimEnd();
     }
 
-    if (bOk)
+    if (!bOk)
     {
-        StatusText->SetText(FText::GetEmpty());
-        return;
+        PlanText->SetText(FText::FromString(DisplayMessage));
     }
-
-    StatusText->SetText(FText::FromString(DisplayMessage));
 }
 
 void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
