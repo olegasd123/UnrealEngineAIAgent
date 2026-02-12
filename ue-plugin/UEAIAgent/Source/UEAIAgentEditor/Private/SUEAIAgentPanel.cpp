@@ -9,6 +9,7 @@
 #include "Misc/MessageDialog.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Text/RichTextLayoutMarshaller.h"
+#include "Misc/DateTime.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyle.h"
 #include "Input/Events.h"
@@ -498,6 +499,64 @@ namespace
             return Style;
         }();
         return RowStyle;
+    }
+
+    FString BuildRelativeTimeLabel(const FString& IsoTimestamp)
+    {
+        if (IsoTimestamp.IsEmpty())
+        {
+            return TEXT("");
+        }
+
+        FDateTime ActivityUtc;
+        if (!FDateTime::ParseIso8601(*IsoTimestamp, ActivityUtc))
+        {
+            return TEXT("");
+        }
+
+        const FDateTime NowUtc = FDateTime::UtcNow();
+        if (ActivityUtc >= NowUtc)
+        {
+            return TEXT("today");
+        }
+
+        const FTimespan Delta = NowUtc - ActivityUtc;
+        const int32 Days = FMath::Max(0, FMath::FloorToInt(Delta.GetTotalDays()));
+        if (Days == 0)
+        {
+            return TEXT("today");
+        }
+        if (Days == 1)
+        {
+            return TEXT("yesterday");
+        }
+        if (Days < 7)
+        {
+            return FString::Printf(TEXT("%d days ago"), Days);
+        }
+        if (Days < 14)
+        {
+            return TEXT("last week");
+        }
+        if (Days < 30)
+        {
+            const int32 Weeks = FMath::Max(2, Days / 7);
+            return FString::Printf(TEXT("%d weeks ago"), Weeks);
+        }
+        if (Days < 60)
+        {
+            return TEXT("last month");
+        }
+        if (Days < 365)
+        {
+            const int32 Months = FMath::Max(2, Days / 30);
+            return FString::Printf(TEXT("%d months ago"), Months);
+        }
+        if (Days < 730)
+        {
+            return TEXT("a year ago");
+        }
+        return TEXT("more than a year ago");
     }
 
 }
@@ -2454,9 +2513,10 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
     TSharedRef<ITableRow> Row = SNew(STableRow<TSharedPtr<FUEAIAgentChatSummary>>, OwnerTable)
     .Style(&GetChatListRowStyle())
     [
-        SNew(SVerticalBox)
-        + SVerticalBox::Slot()
-        .AutoHeight()
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .Padding(4.0f, 4.0f, 4.0f, 4.0f)
         [
             SAssignNew(InlineTitle, SInlineEditableTextBlock)
             .Text_Lambda([InItem]()
@@ -2465,13 +2525,21 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
             })
             .OnTextCommitted(this, &SUEAIAgentPanel::HandleChatTitleCommitted, ChatId)
         ]
-        + SVerticalBox::Slot()
-        .AutoHeight()
-        .Padding(0.0f, 2.0f, 0.0f, 0.0f)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .Padding(4.0f, 4.0f, 4.0f, 4.0f)
         [
             SNew(STextBlock)
-            .Text(FText::FromString(FString::Printf(TEXT("%s | %s"), *InItem->Id.Left(8), *InItem->LastActivityAt)))
-            .ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f))
+            .Text_Lambda([InItem]()
+            {
+                const FString RelativeTime = BuildRelativeTimeLabel(InItem->LastActivityAt);
+                if (RelativeTime.IsEmpty())
+                {
+                    return FText::GetEmpty();
+                }
+                return FText::FromString(FString::Printf(TEXT("(%s)"), *RelativeTime));
+            })
+            .ColorAndOpacity(FLinearColor(0.22f, 0.22f, 0.22f, 1.0f))
         ]
     ];
     ChatTitleEditors.Add(ChatId, InlineTitle);
