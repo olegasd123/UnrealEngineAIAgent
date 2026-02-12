@@ -292,10 +292,7 @@ export class ChatStore {
   }
 
   public deleteChat(chatId: string): void {
-    const now = toIsoNow();
-    const result = this.db
-      .prepare(`UPDATE chats SET archived = 1, updated_at = ? WHERE id = ?`)
-      .run(now, chatId);
+    const result = this.db.prepare(`DELETE FROM chats WHERE id = ?`).run(chatId);
     if (result.changes === 0) {
       throw new Error(`Chat ${chatId} was not found.`);
     }

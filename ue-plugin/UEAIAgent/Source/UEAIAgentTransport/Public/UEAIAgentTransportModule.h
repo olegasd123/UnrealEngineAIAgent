@@ -171,6 +171,9 @@ public:
     void CreateChat(const FString& Title, const FOnUEAIAgentChatOpFinished& Callback) const;
     void RenameActiveChat(const FString& NewTitle, const FOnUEAIAgentChatOpFinished& Callback) const;
     void ArchiveActiveChat(const FOnUEAIAgentChatOpFinished& Callback) const;
+    void ArchiveChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void RestoreChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const;
+    void DeleteChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const;
     void LoadActiveChatHistory(int32 Limit, const FOnUEAIAgentChatOpFinished& Callback) const;
     void AppendActiveChatAssistantMessage(
         const FString& Route,

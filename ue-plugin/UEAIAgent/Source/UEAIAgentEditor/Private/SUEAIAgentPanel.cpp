@@ -634,14 +634,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 .AutoWidth()
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Archive Selected")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnArchiveChatClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
                     SNew(SCheckBox)
                     .IsChecked_Lambda([this]()
                     {
@@ -1443,16 +1435,6 @@ FReply SUEAIAgentPanel::OnRefreshChatsClicked()
     UpdateChatListStateText();
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     Transport.RefreshChats(bIncludeArchivedChats, FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
-    return FReply::Handled();
-}
-
-FReply SUEAIAgentPanel::OnArchiveChatClicked()
-{
-    bIsRefreshingChats = true;
-    ChatListErrorMessage.Reset();
-    UpdateChatListStateText();
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-    Transport.ArchiveActiveChat(FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
     return FReply::Handled();
 }
 
@@ -2508,6 +2490,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
     }
 
     const FString ChatId = InItem->Id;
+    const bool bIsArchived = InItem->bArchived;
     TSharedPtr<SInlineEditableTextBlock> InlineTitle;
 
     TSharedRef<ITableRow> Row = SNew(STableRow<TSharedPtr<FUEAIAgentChatSummary>>, OwnerTable)
@@ -2518,28 +2501,130 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
         .AutoWidth()
         .Padding(4.0f, 4.0f, 4.0f, 4.0f)
         [
-            SAssignNew(InlineTitle, SInlineEditableTextBlock)
-            .Text_Lambda([InItem]()
-            {
-                return FText::FromString(InItem->Title.IsEmpty() ? TEXT("Untitled chat") : InItem->Title);
-            })
-            .OnTextCommitted(this, &SUEAIAgentPanel::HandleChatTitleCommitted, ChatId)
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SAssignNew(InlineTitle, SInlineEditableTextBlock)
+                .Text_Lambda([InItem]()
+                {
+                    return FText::FromString(InItem->Title.IsEmpty() ? TEXT("Untitled chat") : InItem->Title);
+                })
+                .OnTextCommitted(this, &SUEAIAgentPanel::HandleChatTitleCommitted, ChatId)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(4.0f, 0.0f, 0.0f, 0.0f)
+            [
+                SNew(STextBlock)
+                .Text_Lambda([InItem]()
+                {
+                    const FString RelativeTime = BuildRelativeTimeLabel(InItem->LastActivityAt);
+                    if (RelativeTime.IsEmpty())
+                    {
+                        return FText::GetEmpty();
+                    }
+                    return FText::FromString(FString::Printf(TEXT("(%s)"), *RelativeTime));
+                })
+                .ColorAndOpacity(FLinearColor(0.22f, 0.22f, 0.22f, 1.0f))
+            ]
+        ]
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        [
+            SNew(SBox)
         ]
         + SHorizontalBox::Slot()
         .AutoWidth()
-        .Padding(4.0f, 4.0f, 4.0f, 4.0f)
+        .Padding(0.0f, 2.0f, 4.0f, 2.0f)
         [
-            SNew(STextBlock)
-            .Text_Lambda([InItem]()
-            {
-                const FString RelativeTime = BuildRelativeTimeLabel(InItem->LastActivityAt);
-                if (RelativeTime.IsEmpty())
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Visibility_Lambda([bIsArchived]()
                 {
-                    return FText::GetEmpty();
-                }
-                return FText::FromString(FString::Printf(TEXT("(%s)"), *RelativeTime));
-            })
-            .ColorAndOpacity(FLinearColor(0.22f, 0.22f, 0.22f, 1.0f))
+                    return bIsArchived ? EVisibility::Collapsed : EVisibility::Visible;
+                })
+                .Text(FText::FromString(TEXT("Archive")))
+                .OnClicked_Lambda([this, ChatId]()
+                {
+                    const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
+                        EAppMsgType::YesNo,
+                        FText::FromString(TEXT("Archive this chat?")));
+                    if (ConfirmResult != EAppReturnType::Yes)
+                    {
+                        return FReply::Handled();
+                    }
+
+                    bIsRefreshingChats = true;
+                    ChatListErrorMessage.Reset();
+                    UpdateChatListStateText();
+                    FUEAIAgentTransportModule::Get().ArchiveChat(
+                        ChatId,
+                        FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+                    return FReply::Handled();
+                })
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 6.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Visibility_Lambda([bIsArchived]()
+                {
+                    return bIsArchived ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Get back")))
+                .OnClicked_Lambda([this, ChatId]()
+                {
+                    const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
+                        EAppMsgType::YesNo,
+                        FText::FromString(TEXT("Restore this chat?")));
+                    if (ConfirmResult != EAppReturnType::Yes)
+                    {
+                        return FReply::Handled();
+                    }
+
+                    bIsRefreshingChats = true;
+                    ChatListErrorMessage.Reset();
+                    UpdateChatListStateText();
+                    FUEAIAgentTransportModule::Get().RestoreChat(
+                        ChatId,
+                        FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+                    return FReply::Handled();
+                })
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Visibility_Lambda([bIsArchived]()
+                {
+                    return bIsArchived ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Delete")))
+                .OnClicked_Lambda([this, ChatId]()
+                {
+                    const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
+                        EAppMsgType::YesNo,
+                        FText::FromString(TEXT("Delete this chat forever? This action cannot be undone.")));
+                    if (ConfirmResult != EAppReturnType::Yes)
+                    {
+                        return FReply::Handled();
+                    }
+
+                    bIsRefreshingChats = true;
+                    ChatListErrorMessage.Reset();
+                    UpdateChatListStateText();
+                    FUEAIAgentTransportModule::Get().DeleteChat(
+                        ChatId,
+                        FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+                    return FReply::Handled();
+                })
+            ]
         ]
     ];
     ChatTitleEditors.Add(ChatId, InlineTitle);

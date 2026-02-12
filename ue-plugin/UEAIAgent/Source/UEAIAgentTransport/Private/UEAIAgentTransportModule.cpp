@@ -2923,10 +2923,29 @@ void FUEAIAgentTransportModule::ArchiveActiveChat(const FOnUEAIAgentChatOpFinish
         return;
     }
 
-    const FString ChatId = ActiveChatId;
+    ArchiveChat(ActiveChatId, Callback);
+}
+
+void FUEAIAgentTransportModule::ArchiveChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No chat selected."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetBoolField(TEXT("archived"), true);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
-    Request->SetURL(BuildChatDeleteUrl(ChatId));
-    Request->SetVerb(TEXT("DELETE"));
+    Request->SetURL(BuildChatUpdateUrl(ChatId));
+    Request->SetVerb(TEXT("PATCH"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
         [this, Callback, ChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
@@ -2944,13 +2963,178 @@ void FUEAIAgentTransportModule::ArchiveActiveChat(const FOnUEAIAgentChatOpFinish
                     return;
                 }
 
-                ActiveChatId.Empty();
-                ActiveChatHistory.Empty();
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Archive chat response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned an archive chat error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* ChatObj = nullptr;
+                if (ResponseJson->TryGetObjectField(TEXT("chat"), ChatObj) && ChatObj && ChatObj->IsValid())
+                {
+                    FString UpdatedChatId;
+                    (*ChatObj)->TryGetStringField(TEXT("id"), UpdatedChatId);
+                    FString UpdatedTitle;
+                    (*ChatObj)->TryGetStringField(TEXT("title"), UpdatedTitle);
+                    bool bArchived = false;
+                    (*ChatObj)->TryGetBoolField(TEXT("archived"), bArchived);
+                    FString LastActivityAt;
+                    (*ChatObj)->TryGetStringField(TEXT("lastActivityAt"), LastActivityAt);
+
+                    for (FUEAIAgentChatSummary& Chat : Chats)
+                    {
+                        if (Chat.Id == UpdatedChatId)
+                        {
+                            Chat.Title = UpdatedTitle;
+                            Chat.bArchived = bArchived;
+                            Chat.LastActivityAt = LastActivityAt;
+                            break;
+                        }
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Chat archived."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::RestoreChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No chat selected."));
+        return;
+    }
+
+    TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+    Root->SetBoolField(TEXT("archived"), false);
+
+    FString RequestBody;
+    const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(Root, Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatUpdateUrl(ChatId));
+    Request->SetVerb(TEXT("PATCH"));
+    Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+    Request->SetContentAsString(RequestBody);
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Restore chat failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                TSharedPtr<FJsonObject> ResponseJson;
+                const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+                if (!FJsonSerializer::Deserialize(Reader, ResponseJson) || !ResponseJson.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Restore chat response is not valid JSON."));
+                    return;
+                }
+
+                bool bOk = false;
+                if (!ResponseJson->TryGetBoolField(TEXT("ok"), bOk) || !bOk)
+                {
+                    FString ErrorMessage = TEXT("Agent Core returned a restore chat error.");
+                    ResponseJson->TryGetStringField(TEXT("error"), ErrorMessage);
+                    Callback.ExecuteIfBound(false, ErrorMessage);
+                    return;
+                }
+
+                const TSharedPtr<FJsonObject>* ChatObj = nullptr;
+                if (ResponseJson->TryGetObjectField(TEXT("chat"), ChatObj) && ChatObj && ChatObj->IsValid())
+                {
+                    FString UpdatedChatId;
+                    (*ChatObj)->TryGetStringField(TEXT("id"), UpdatedChatId);
+                    FString UpdatedTitle;
+                    (*ChatObj)->TryGetStringField(TEXT("title"), UpdatedTitle);
+                    bool bArchived = false;
+                    (*ChatObj)->TryGetBoolField(TEXT("archived"), bArchived);
+                    FString LastActivityAt;
+                    (*ChatObj)->TryGetStringField(TEXT("lastActivityAt"), LastActivityAt);
+
+                    for (FUEAIAgentChatSummary& Chat : Chats)
+                    {
+                        if (Chat.Id == UpdatedChatId)
+                        {
+                            Chat.Title = UpdatedTitle;
+                            Chat.bArchived = bArchived;
+                            Chat.LastActivityAt = LastActivityAt;
+                            break;
+                        }
+                    }
+                }
+
+                Callback.ExecuteIfBound(true, TEXT("Chat restored."));
+            });
+        });
+
+    Request->ProcessRequest();
+}
+
+void FUEAIAgentTransportModule::DeleteChat(const FString& ChatId, const FOnUEAIAgentChatOpFinished& Callback) const
+{
+    if (ChatId.IsEmpty())
+    {
+        Callback.ExecuteIfBound(false, TEXT("No chat selected."));
+        return;
+    }
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+    Request->SetURL(BuildChatDeleteUrl(ChatId));
+    Request->SetVerb(TEXT("DELETE"));
+    Request->OnProcessRequestComplete().BindLambda(
+        [this, Callback, ChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        {
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, ChatId, HttpResponse, bConnectedSuccessfully]()
+            {
+                if (!bConnectedSuccessfully || !HttpResponse.IsValid())
+                {
+                    Callback.ExecuteIfBound(false, TEXT("Could not connect to Agent Core."));
+                    return;
+                }
+
+                if (HttpResponse->GetResponseCode() < 200 || HttpResponse->GetResponseCode() >= 300)
+                {
+                    Callback.ExecuteIfBound(false, FString::Printf(TEXT("Delete chat failed (%d)."), HttpResponse->GetResponseCode()));
+                    return;
+                }
+
+                if (ActiveChatId == ChatId)
+                {
+                    ActiveChatId.Empty();
+                    ActiveChatHistory.Empty();
+                }
                 Chats.RemoveAll([&ChatId](const FUEAIAgentChatSummary& Existing)
                 {
                     return Existing.Id == ChatId;
                 });
-                Callback.ExecuteIfBound(true, TEXT("Chat archived."));
+
+                Callback.ExecuteIfBound(true, TEXT("Chat deleted."));
             });
         });
 

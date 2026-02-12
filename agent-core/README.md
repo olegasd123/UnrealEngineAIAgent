@@ -109,7 +109,7 @@ Optional environment:
   - `GET /v1/chats?includeArchived=true|false`
   - `GET /v1/chats/:chatId`
   - `PATCH /v1/chats/:chatId` (fields: `title`, `archived`)
-  - `DELETE /v1/chats/:chatId` (soft delete: sets `archived=true`)
+  - `DELETE /v1/chats/:chatId` (hard delete: removes chat and details)
   - `GET /v1/chats/:chatId/details` (default: full chat history, oldest to newest)
   - `GET /v1/chats/:chatId/details?limit=50` (optional: latest `N` entries, returned oldest to newest)
 - Details write model:

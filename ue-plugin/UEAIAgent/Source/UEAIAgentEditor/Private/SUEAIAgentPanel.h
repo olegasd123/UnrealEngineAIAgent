@@ -65,7 +65,6 @@ private:
     FReply OnRunWithSelectionClicked();
     FReply OnCreateChatClicked();
     FReply OnRefreshChatsClicked();
-    FReply OnArchiveChatClicked();
     FReply OnResumeAgentLoopClicked();
     FReply OnRejectCurrentActionClicked();
     FReply OnApplyPlannedActionClicked();
