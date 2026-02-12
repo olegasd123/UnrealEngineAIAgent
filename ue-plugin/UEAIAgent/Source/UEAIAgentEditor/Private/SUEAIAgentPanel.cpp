@@ -691,7 +691,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 0.0f)
+            .Padding(8.0f, 2.0f, 8.0f, 2.0f)
             [
                 SNew(SBox)
                 .Visibility_Lambda([this]()
@@ -732,7 +732,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .FillHeight(1.0f)
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
             [
                 SNew(SVerticalBox)
                 + SVerticalBox::Slot()
@@ -767,7 +767,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 8.0f, 8.0f, 8.0f)
+            .Padding(8.0f, 4.0f, 8.0f, 8.0f)
             [
                 SNew(SBox)
                 .MinDesiredHeight(0.0f)
