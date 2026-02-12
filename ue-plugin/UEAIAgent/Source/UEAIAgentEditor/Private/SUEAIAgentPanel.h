@@ -64,6 +64,8 @@ private:
     FReply OnBackToMainClicked();
     FReply OnRunWithSelectionClicked();
     FReply OnCreateChatClicked();
+    FReply OnShowChatsClicked();
+    FReply OnHideChatsClicked();
     FReply OnRefreshChatsClicked();
     FReply OnResumeAgentLoopClicked();
     FReply OnRejectCurrentActionClicked();
@@ -185,6 +187,7 @@ private:
     TArray<FString> LastNonEmptySelection;
     FString ChatSearchFilter;
     bool bIncludeArchivedChats = false;
+    bool bShowChatControls = true;
     bool bIsRefreshingChats = false;
     bool bIsLoadingHistory = false;
     bool bIsRunInFlight = false;

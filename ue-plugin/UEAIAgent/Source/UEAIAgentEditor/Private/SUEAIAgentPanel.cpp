@@ -607,6 +607,35 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 ]
                 + SHorizontalBox::Slot()
                 .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Visibility_Lambda([this]()
+                    {
+                        return bShowChatControls ? EVisibility::Collapsed : EVisibility::Visible;
+                    })
+                    .Text(FText::FromString(TEXT("Show Chats")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnShowChatsClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                [
+                    SNew(SButton)
+                    .Visibility_Lambda([this]()
+                    {
+                        return bShowChatControls ? EVisibility::Visible : EVisibility::Collapsed;
+                    })
+                    .Text(FText::FromString(TEXT("Hide Chats")))
+                    .OnClicked(this, &SUEAIAgentPanel::OnHideChatsClicked)
+                ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(SBox)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
                 [
                     SNew(SButton)
                     .Text(FText::FromString(TEXT("Settings")))
@@ -617,66 +646,87 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 0.0f)
             [
-                SNew(SHorizontalBox)
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                SNew(SBox)
+                .Visibility_Lambda([this]()
+                {
+                    return bShowChatControls ? EVisibility::Visible : EVisibility::Collapsed;
+                })
                 [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Refresh Chats")))
-                    .IsEnabled_Lambda([this]()
-                    {
-                        return !bIsRefreshingChats;
-                    })
-                    .OnClicked(this, &SUEAIAgentPanel::OnRefreshChatsClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SCheckBox)
-                    .IsChecked_Lambda([this]()
-                    {
-                        return bIncludeArchivedChats ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-                    })
-                    .OnCheckStateChanged(this, &SUEAIAgentPanel::HandleArchivedFilterChanged)
+                    SNew(SHorizontalBox)
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                     [
-                        SNew(STextBlock)
-                        .Text(FText::FromString(TEXT("Show Archived")))
+                        SNew(SButton)
+                        .Text(FText::FromString(TEXT("Refresh Chats")))
+                        .IsEnabled_Lambda([this]()
+                        {
+                            return !bIsRefreshingChats;
+                        })
+                        .OnClicked(this, &SUEAIAgentPanel::OnRefreshChatsClicked)
                     ]
-                ]
-                + SHorizontalBox::Slot()
-                .FillWidth(1.0f)
-                [
-                    SAssignNew(ChatSearchInput, SEditableTextBox)
-                    .HintText(FText::FromString(TEXT("Search chats by title or id")))
-                    .OnTextChanged(this, &SUEAIAgentPanel::HandleChatSearchTextChanged)
+                    + SHorizontalBox::Slot()
+                    .AutoWidth()
+                    .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+                    [
+                        SNew(SCheckBox)
+                        .IsChecked_Lambda([this]()
+                        {
+                            return bIncludeArchivedChats ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                        })
+                        .OnCheckStateChanged(this, &SUEAIAgentPanel::HandleArchivedFilterChanged)
+                        [
+                            SNew(STextBlock)
+                            .Text(FText::FromString(TEXT("Show Archived")))
+                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    [
+                        SAssignNew(ChatSearchInput, SEditableTextBox)
+                        .HintText(FText::FromString(TEXT("Search chats by title or id")))
+                        .OnTextChanged(this, &SUEAIAgentPanel::HandleChatSearchTextChanged)
+                    ]
                 ]
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 0.0f)
             [
-                SAssignNew(ChatListStateText, STextBlock)
-                .AutoWrapText(true)
+                SNew(SBox)
+                .Visibility_Lambda([this]()
+                {
+                    return bShowChatControls ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                [
+                    SAssignNew(ChatListStateText, STextBlock)
+                    .AutoWrapText(true)
+                ]
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            .Padding(8.0f, 0.0f, 8.0f, 4.0f)
             [
                 SNew(SBox)
-                .HeightOverride(190.0f)
+                .Visibility_Lambda([this]()
+                {
+                    return bShowChatControls ? EVisibility::Visible : EVisibility::Collapsed;
+                })
                 [
-                    SNew(SBorder)
-                    .Padding(1.0f)
-                    .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
-                    .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
+                    SNew(SBox)
+                    .HeightOverride(190.0f)
                     [
-                        SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
-                        .ListItemsSource(&ChatListItems)
-                        .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
-                        .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
-                        .SelectionMode(ESelectionMode::Single)
+                        SNew(SBorder)
+                        .Padding(1.0f)
+                        .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+                        .BorderBackgroundColor(FLinearColor(0.15f, 0.15f, 0.15f, 0.45f))
+                        [
+                            SAssignNew(ChatListView, SListView<TSharedPtr<FUEAIAgentChatSummary>>)
+                            .ListItemsSource(&ChatListItems)
+                            .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
+                            .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
+                            .SelectionMode(ESelectionMode::Single)
+                        ]
                     ]
                 ]
             ]
@@ -687,10 +737,17 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 SNew(SVerticalBox)
                 + SVerticalBox::Slot()
                 .AutoHeight()
-                .Padding(0.0f, 0.0f, 0.0f, 0.0f)
+                .Padding(0.0f, 0.0f, 0.0f, 4.0f)
                 [
-                    SAssignNew(HistoryStateText, STextBlock)
-                    .AutoWrapText(true)
+                    SNew(SBox)
+                    .Visibility_Lambda([this]()
+                    {
+                        return bShowChatControls ? EVisibility::Visible : EVisibility::Collapsed;
+                    })
+                    [
+                        SAssignNew(HistoryStateText, STextBlock)
+                        .AutoWrapText(true)
+                    ]
                 ]
                 + SVerticalBox::Slot()
                 .FillHeight(1.0f)
@@ -1425,6 +1482,18 @@ FReply SUEAIAgentPanel::OnCreateChatClicked()
 
         HandleChatOperationResult(true, Message);
     }));
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnShowChatsClicked()
+{
+    bShowChatControls = true;
+    return FReply::Handled();
+}
+
+FReply SUEAIAgentPanel::OnHideChatsClicked()
+{
+    bShowChatControls = false;
     return FReply::Handled();
 }
 
@@ -2564,7 +2633,16 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                     UpdateChatListStateText();
                     FUEAIAgentTransportModule::Get().ArchiveChat(
                         ChatId,
-                        FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
+                        FOnUEAIAgentChatOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+                        {
+                            HandleChatOperationResult(bOk, Message);
+                            if (!bOk)
+                            {
+                                return;
+                            }
+
+                            OnRefreshChatsClicked();
+                        }));
                     return FReply::Handled();
                 })
             ]
