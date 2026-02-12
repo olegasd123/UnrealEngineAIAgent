@@ -539,6 +539,12 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             [
                 SNew(SHorizontalBox)
                 + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SAssignNew(StatusText, STextBlock)
+                    .Text(FText::FromString(TEXT("Status: not checked")))
+                ]
+                + SHorizontalBox::Slot()
                 .AutoWidth()
                 .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                 [
@@ -713,6 +719,12 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SBox)
+                .Visibility_Lambda([this]()
+                {
+                    return (bIsRunInFlight || ShouldShowApprovalUi())
+                        ? EVisibility::Collapsed
+                        : EVisibility::Visible;
+                })
                 .HeightOverride_Lambda([this]()
                 {
                     const int32 Lines = FMath::Clamp(PromptVisibleLineCount, 1, 10);
