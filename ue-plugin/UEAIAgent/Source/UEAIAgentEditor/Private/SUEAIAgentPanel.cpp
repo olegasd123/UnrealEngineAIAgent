@@ -9,6 +9,7 @@
 #include "Misc/MessageDialog.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Text/RichTextLayoutMarshaller.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/DateTime.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyle.h"
@@ -34,6 +35,9 @@
 
 namespace
 {
+    const TCHAR* ChatUiConfigSection = TEXT("UEAIAgent.UI");
+    const TCHAR* ShowChatsOnOpenKey = TEXT("ShowChatsOnOpen");
+
     bool IsReferentialPrompt(const FString& Prompt)
     {
         const FString Lower = Prompt.ToLower();
@@ -584,6 +588,15 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
     else
     {
         SelectedProviderItem = ProviderItems[0];
+    }
+    bShowChatControls = !Settings || Settings->bShowChatsOnOpen;
+    if (GConfig)
+    {
+        bool bSavedShowChatsOnOpen = bShowChatControls;
+        if (GConfig->GetBool(ChatUiConfigSection, ShowChatsOnOpenKey, bSavedShowChatsOnOpen, GEditorPerProjectIni))
+        {
+            bShowChatControls = bSavedShowChatsOnOpen;
+        }
     }
 
     ChildSlot
@@ -1487,14 +1500,32 @@ FReply SUEAIAgentPanel::OnCreateChatClicked()
 
 FReply SUEAIAgentPanel::OnShowChatsClicked()
 {
-    bShowChatControls = true;
+    SetChatControlsVisible(true);
     return FReply::Handled();
 }
 
 FReply SUEAIAgentPanel::OnHideChatsClicked()
 {
-    bShowChatControls = false;
+    SetChatControlsVisible(false);
     return FReply::Handled();
+}
+
+void SUEAIAgentPanel::SetChatControlsVisible(bool bVisible)
+{
+    bShowChatControls = bVisible;
+
+    UUEAIAgentSettings* Settings = GetMutableDefault<UUEAIAgentSettings>();
+    if (Settings && Settings->bShowChatsOnOpen != bVisible)
+    {
+        Settings->bShowChatsOnOpen = bVisible;
+        Settings->SaveConfig();
+    }
+
+    if (GConfig)
+    {
+        GConfig->SetBool(ChatUiConfigSection, ShowChatsOnOpenKey, bVisible, GEditorPerProjectIni);
+        GConfig->Flush(false, GEditorPerProjectIni);
+    }
 }
 
 FReply SUEAIAgentPanel::OnRefreshChatsClicked()

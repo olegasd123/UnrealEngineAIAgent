@@ -31,4 +31,7 @@ public:
 
     UPROPERTY(Config, EditAnywhere, Category = "Provider", meta = (DisplayName = "Default Provider"))
     EUEAIAgentProvider DefaultProvider;
+
+    UPROPERTY(Config, EditAnywhere, Category = "UI", meta = (DisplayName = "Show Chats On Open"))
+    bool bShowChatsOnOpen;
 };

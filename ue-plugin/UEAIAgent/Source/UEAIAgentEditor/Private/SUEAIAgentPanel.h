@@ -108,6 +108,7 @@ private:
     void HandleModelComboSelectionChanged(TSharedPtr<FString> NewValue, ESelectInfo::Type SelectInfo);
     void HandlePromptTextChanged(const FText& NewText);
     void PersistPreferredModels();
+    void SetChatControlsVisible(bool bVisible);
     void EnsureActiveChatAndRun(
         const FString& Prompt,
         const FString& Mode,
