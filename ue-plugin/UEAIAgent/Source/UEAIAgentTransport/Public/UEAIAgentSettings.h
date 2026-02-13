@@ -34,4 +34,11 @@ public:
 
     UPROPERTY(Config, EditAnywhere, Category = "UI", meta = (DisplayName = "Show Chats On Open"))
     bool bShowChatsOnOpen;
+
+    UPROPERTY(
+        Config,
+        EditAnywhere,
+        Category = "UI",
+        meta = (DisplayName = "Chat List Max Rows", ClampMin = "3", ClampMax = "50", UIMin = "3", UIMax = "50"))
+    int32 ChatListMaxRows;
 };

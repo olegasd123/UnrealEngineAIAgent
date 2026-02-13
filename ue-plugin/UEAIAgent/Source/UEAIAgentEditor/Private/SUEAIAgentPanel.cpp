@@ -37,6 +37,10 @@ namespace
 {
     const TCHAR* ChatUiConfigSection = TEXT("UEAIAgent.UI");
     const TCHAR* ShowChatsOnOpenKey = TEXT("ShowChatsOnOpen");
+    constexpr int32 MinVisibleChatRows = 3;
+    constexpr int32 DefaultMaxVisibleChatRows = 10;
+    constexpr float ChatListRowHeight = 27.0f;
+    constexpr float ChatListBorderPadding = 2.0f;
 
     bool IsReferentialPrompt(const FString& Prompt)
     {
@@ -727,7 +731,18 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 })
                 [
                     SNew(SBox)
-                    .HeightOverride(190.0f)
+                    .HeightOverride_Lambda([this]()
+                    {
+                        int32 MaxRows = DefaultMaxVisibleChatRows;
+                        const UUEAIAgentSettings* Settings = GetDefault<UUEAIAgentSettings>();
+                        if (Settings)
+                        {
+                            MaxRows = Settings->ChatListMaxRows;
+                        }
+                        MaxRows = FMath::Clamp(MaxRows, MinVisibleChatRows, 50);
+                        const int32 VisibleRows = FMath::Clamp(ChatListItems.Num(), MinVisibleChatRows, MaxRows);
+                        return ChatListBorderPadding + (ChatListRowHeight * static_cast<float>(VisibleRows));
+                    })
                     [
                         SNew(SBorder)
                         .Padding(1.0f)

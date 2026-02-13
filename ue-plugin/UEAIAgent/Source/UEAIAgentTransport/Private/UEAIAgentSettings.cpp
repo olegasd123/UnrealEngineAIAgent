@@ -5,6 +5,7 @@ UUEAIAgentSettings::UUEAIAgentSettings()
     , AgentPort(4317)
     , DefaultProvider(EUEAIAgentProvider::Local)
     , bShowChatsOnOpen(true)
+    , ChatListMaxRows(10)
 {
 }
 
