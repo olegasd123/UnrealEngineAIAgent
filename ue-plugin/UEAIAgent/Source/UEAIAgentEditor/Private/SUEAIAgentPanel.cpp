@@ -697,7 +697,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     .FillWidth(1.0f)
                     [
                         SAssignNew(ChatSearchInput, SEditableTextBox)
-                        .HintText(FText::FromString(TEXT("Search chats by title or id")))
+                        .HintText(FText::FromString(TEXT("Search chats by title")))
                         .OnTextChanged(this, &SUEAIAgentPanel::HandleChatSearchTextChanged)
                     ]
                 ]
@@ -2404,8 +2404,7 @@ void SUEAIAgentPanel::RebuildChatListItems()
         if (!FilterLower.IsEmpty())
         {
             const FString TitleLower = Chat.Title.ToLower();
-            const FString IdLower = Chat.Id.ToLower();
-            if (!TitleLower.Contains(FilterLower) && !IdLower.Contains(FilterLower))
+            if (!TitleLower.Contains(FilterLower))
             {
                 continue;
             }
