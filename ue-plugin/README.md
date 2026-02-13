@@ -19,7 +19,7 @@ Quick validation in editor tab:
   - switch active chat by selecting it in the list
   - chat row actions are right-aligned:
     - active chats: `Archive` (with confirm dialog)
-    - archived chats: `Get back` and `Delete` (both with confirm dialog)
+    - archived chats: `Restore` and `Delete` (both with confirm dialog)
     - `Delete` removes chat permanently from DB
   - chat title supports inline rename (select chat, press `F2` or `Enter`)
   - mode selector near `Run`: `Chat` or `Agent`

@@ -11,10 +11,12 @@
 #include "Framework/Text/RichTextLayoutMarshaller.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/DateTime.h"
+#include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/SlateStyle.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -2697,14 +2699,14 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
             SNew(SHorizontalBox)
             + SHorizontalBox::Slot()
             .AutoWidth()
-            .Padding(0.0f, 0.0f, 6.0f, 0.0f)
             [
                 SNew(SButton)
                 .Visibility_Lambda([bIsArchived]()
                 {
                     return bIsArchived ? EVisibility::Collapsed : EVisibility::Visible;
                 })
-                .Text(FText::FromString(TEXT("Archive")))
+                .ToolTipText(FText::FromString(TEXT("Archive chat")))
+                .ContentPadding(FMargin(4.0f, 2.0f))
                 .OnClicked_Lambda([this, ChatId]()
                 {
                     const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
@@ -2732,6 +2734,10 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                         }));
                     return FReply::Handled();
                 })
+                [
+                    SNew(SImage)
+                    .Image(FAppStyle::Get().GetBrush(TEXT("Icons.Minus")))
+                ]
             ]
             + SHorizontalBox::Slot()
             .AutoWidth()
@@ -2742,7 +2748,8 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                 {
                     return bIsArchived ? EVisibility::Visible : EVisibility::Collapsed;
                 })
-                .Text(FText::FromString(TEXT("Get back")))
+                .ToolTipText(FText::FromString(TEXT("Restore chat")))
+                .ContentPadding(FMargin(4.0f, 2.0f))
                 .OnClicked_Lambda([this, ChatId]()
                 {
                     const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
@@ -2761,6 +2768,10 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                         FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
                     return FReply::Handled();
                 })
+                [
+                    SNew(SImage)
+                    .Image(FAppStyle::Get().GetBrush(TEXT("Icons.Refresh")))
+                ]
             ]
             + SHorizontalBox::Slot()
             .AutoWidth()
@@ -2770,7 +2781,8 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                 {
                     return bIsArchived ? EVisibility::Visible : EVisibility::Collapsed;
                 })
-                .Text(FText::FromString(TEXT("Delete")))
+                .ToolTipText(FText::FromString(TEXT("Delete chat")))
+                .ContentPadding(FMargin(4.0f, 2.0f))
                 .OnClicked_Lambda([this, ChatId]()
                 {
                     const EAppReturnType::Type ConfirmResult = FMessageDialog::Open(
@@ -2789,6 +2801,10 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
                         FOnUEAIAgentChatOpFinished::CreateSP(this, &SUEAIAgentPanel::HandleChatOperationResult));
                     return FReply::Handled();
                 })
+                [
+                    SNew(SImage)
+                    .Image(FAppStyle::Get().GetBrush(TEXT("Icons.Delete")))
+                ]
             ]
         ]
     ];
