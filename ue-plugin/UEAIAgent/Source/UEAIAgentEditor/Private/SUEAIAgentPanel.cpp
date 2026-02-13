@@ -42,6 +42,29 @@ namespace
     constexpr float ChatListRowHeight = 27.0f;
     constexpr float ChatListBorderPadding = 2.0f;
 
+    bool ShouldRefreshChatsForAutoTitle(const FUEAIAgentTransportModule& Transport)
+    {
+        const FString ActiveChatId = Transport.GetActiveChatId();
+        if (ActiveChatId.IsEmpty())
+        {
+            return false;
+        }
+
+        const TArray<FUEAIAgentChatSummary>& Chats = Transport.GetChats();
+        for (const FUEAIAgentChatSummary& Chat : Chats)
+        {
+            if (Chat.Id != ActiveChatId)
+            {
+                continue;
+            }
+
+            const FString NormalizedTitle = Chat.Title.TrimStartAndEnd();
+            return NormalizedTitle.IsEmpty() || NormalizedTitle.Equals(TEXT("new chat"), ESearchCase::IgnoreCase);
+        }
+
+        return false;
+    }
+
     bool IsReferentialPrompt(const FString& Prompt)
     {
         const FString Lower = Prompt.ToLower();
@@ -1491,6 +1514,17 @@ bool SUEAIAgentPanel::TryRestoreLatestChatFromTransport()
 
 FReply SUEAIAgentPanel::OnCreateChatClicked()
 {
+    if (bIsRefreshingChats || bIsLoadingHistory)
+    {
+        return FReply::Handled();
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!Transport.GetActiveChatId().IsEmpty() && Transport.GetActiveChatHistory().Num() == 0)
+    {
+        return FReply::Handled();
+    }
+
     bIsRefreshingChats = true;
     bSelectNewestChatOnNextRefresh = true;
     ChatSearchFilter.Reset();
@@ -1500,7 +1534,7 @@ FReply SUEAIAgentPanel::OnCreateChatClicked()
     }
     ChatListErrorMessage.Reset();
     UpdateChatListStateText();
-    FUEAIAgentTransportModule::Get().CreateChat(TEXT(""), FOnUEAIAgentChatOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+    Transport.CreateChat(TEXT(""), FOnUEAIAgentChatOpFinished::CreateLambda([this](bool bOk, const FString& Message)
     {
         if (!bOk)
         {
@@ -1925,13 +1959,17 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 
     if (ActionCount <= 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Chat: reply added to history.")));
+        PlanText->SetText(FText::FromString(TEXT("Done")));
     }
     else
     {
         PlanText->SetText(FText::FromString(Message));
     }
     RefreshActiveChatHistory();
+    if (!bIsRefreshingChats && ShouldRefreshChatsForAutoTitle(Transport))
+    {
+        OnRefreshChatsClicked();
+    }
 }
 
 void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
@@ -1944,13 +1982,18 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     bIsRunInFlight = false;
     bIsResumeInFlight = false;
     UpdateActionApprovalUi();
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (!bIsRefreshingChats && ShouldRefreshChatsForAutoTitle(Transport))
+    {
+        OnRefreshChatsClicked();
+    }
     if (!bOk)
     {
         CurrentSessionStatus = ESessionStatus::Failed;
         const FString Reason = NormalizeSingleLineStatusText(Message);
         if (Reason.IsEmpty())
         {
-            PlanText->SetText(FText::FromString(TEXT("Failed.")));
+            PlanText->SetText(FText::FromString(TEXT("Failed")));
         }
         else
         {
@@ -1966,14 +2009,14 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         const FString DecisionMessage = ExtractDecisionMessageBody(Message);
         if (IsUserCanceledSessionMessage(DecisionMessage))
         {
-            PlanText->SetText(FText::FromString(TEXT("Canceled.")));
+            PlanText->SetText(FText::FromString(TEXT("Canceled")));
         }
         else
         {
             const FString Reason = ExtractFailedReasonFromSessionMessage(Message);
             if (Reason.IsEmpty())
             {
-                PlanText->SetText(FText::FromString(TEXT("Failed.")));
+                PlanText->SetText(FText::FromString(TEXT("Failed")));
             }
             else
             {
@@ -1983,10 +2026,9 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         RefreshActiveChatHistory();
         return;
     }
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
-        PlanText->SetText(FText::FromString(TEXT("Completed.")));
+        PlanText->SetText(FText::FromString(TEXT("Completed")));
         RefreshActiveChatHistory();
         return;
     }
