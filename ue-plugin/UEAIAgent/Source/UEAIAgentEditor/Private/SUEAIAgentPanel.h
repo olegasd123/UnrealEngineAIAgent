@@ -81,6 +81,7 @@ private:
     void HandleChatHistoryResult(bool bOk, const FString& Message);
     void HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState);
     void HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummary> InItem, ESelectInfo::Type SelectInfo);
+    void HandleChatListDoubleClicked(TSharedPtr<FUEAIAgentChatSummary> InItem);
     TSharedRef<ITableRow> HandleGenerateChatRow(
         TSharedPtr<FUEAIAgentChatSummary> InItem,
         const TSharedRef<STableViewBase>& OwnerTable);

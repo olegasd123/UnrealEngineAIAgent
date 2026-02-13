@@ -778,6 +778,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                             .ListItemsSource(&ChatListItems)
                             .OnGenerateRow(this, &SUEAIAgentPanel::HandleGenerateChatRow)
                             .OnSelectionChanged(this, &SUEAIAgentPanel::HandleChatSelectionChanged)
+                            .OnMouseButtonDoubleClick(this, &SUEAIAgentPanel::HandleChatListDoubleClicked)
                             .SelectionMode(ESelectionMode::Single)
                         ]
                     ]
@@ -2632,6 +2633,26 @@ void SUEAIAgentPanel::HandleChatSelectionChanged(TSharedPtr<FUEAIAgentChatSummar
 
     Transport.SetActiveChatId(InItem->Id);
     RefreshActiveChatHistory();
+}
+
+void SUEAIAgentPanel::HandleChatListDoubleClicked(TSharedPtr<FUEAIAgentChatSummary> InItem)
+{
+    if (!InItem.IsValid())
+    {
+        return;
+    }
+
+    if (ChatListView.IsValid())
+    {
+        ChatListView->SetSelection(InItem, ESelectInfo::OnMouseClick);
+    }
+
+    const FString ChatId = InItem->Id;
+    TSharedPtr<SInlineEditableTextBlock> InlineEditor = ChatTitleEditors.FindRef(ChatId).Pin();
+    if (InlineEditor.IsValid())
+    {
+        InlineEditor->EnterEditingMode();
+    }
 }
 
 TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
