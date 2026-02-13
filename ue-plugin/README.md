@@ -13,7 +13,7 @@ Quick validation in editor tab:
 - open `Settings` to manage provider keys: `Save API Key`, `Remove API Key`, `Test Provider`, `Refresh Provider Status`
 - provider selector supports `OpenAI`, `Gemini`, and `Local`
 - main view:
-  - chat controls are on top: `Refresh Chats`, `Show Archived`, and search
+  - chat controls are on top: `Refresh`, `Archived`, and search
   - chat list is on top (sorted by last activity)
   - each chat row shows `Title (relative time)` like `today`, `yesterday`, `2 days ago`, `last week`
   - switch active chat by selecting it in the list

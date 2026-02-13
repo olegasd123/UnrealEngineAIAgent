@@ -671,7 +671,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     .Padding(0.0f, 0.0f, 8.0f, 0.0f)
                     [
                         SNew(SButton)
-                        .Text(FText::FromString(TEXT("Refresh Chats")))
+                        .Text(FText::FromString(TEXT("Refresh")))
                         .IsEnabled_Lambda([this]()
                         {
                             return !bIsRefreshingChats;
@@ -690,7 +690,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         .OnCheckStateChanged(this, &SUEAIAgentPanel::HandleArchivedFilterChanged)
                         [
                             SNew(STextBlock)
-                            .Text(FText::FromString(TEXT("Show Archived")))
+                            .Text(FText::FromString(TEXT("Archived")))
                         ]
                     ]
                     + SHorizontalBox::Slot()
