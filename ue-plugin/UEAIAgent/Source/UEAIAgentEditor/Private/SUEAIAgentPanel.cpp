@@ -2849,9 +2849,6 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         (InItem->DisplayRole.IsEmpty() && InItem->Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase));
     const FString MessageText = InItem->DisplayText.IsEmpty() ? InItem->Summary : InItem->DisplayText;
     const FString RichMessageText = bIsUserMessage ? MessageText : ConvertMarkdownToRichText(MessageText);
-    const FLinearColor BubbleColor = bIsUserMessage
-        ? FLinearColor(0.12f, 0.28f, 0.55f, 0.60f)
-        : FLinearColor(0.18f, 0.18f, 0.18f, 0.80f);
 
     if (bIsUserMessage)
     {
@@ -2860,21 +2857,22 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         [
             SNew(SHorizontalBox)
             + SHorizontalBox::Slot()
-            .FillWidth(1.0f)
-            .HAlign(HAlign_Right)
+            .FillWidth(0.2f)
             [
                 SNew(SBox)
-                .MaxDesiredWidth(760.0f)
+            ]
+            + SHorizontalBox::Slot()
+            .FillWidth(0.8f)
+            [
+                SNew(SBorder)
+                .Padding(10.0f)
+                .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+                .BorderBackgroundColor(FLinearColor(0.18f, 0.18f, 0.18f, 0.20f))
                 [
-                    SNew(SBorder)
-                    .Padding(10.0f)
-                    .BorderBackgroundColor(BubbleColor)
-                    [
-                        SNew(SMultiLineEditableText)
-                        .IsReadOnly(true)
-                        .AutoWrapText(true)
-                        .Text(FText::FromString(MessageText))
-                    ]
+                    SNew(SMultiLineEditableText)
+                    .IsReadOnly(true)
+                    .AutoWrapText(true)
+                    .Text(FText::FromString(MessageText))
                 ]
             ]
         ];
@@ -2885,7 +2883,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         &GetChatMarkdownStyle());
 
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
-    .Padding(FMargin(8.0f, 8.0f))
+    .Padding(FMargin(4.0f, 8.0f))
     [
         SNew(SHorizontalBox)
         + SHorizontalBox::Slot()
@@ -2893,8 +2891,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         .HAlign(HAlign_Fill)
         [
             SNew(SBorder)
-            .Padding(10.0f)
-            .BorderBackgroundColor(BubbleColor)
+            .BorderBackgroundColor(FLinearColor(0.18f, 0.18f, 0.18f, 0.00f))
             [
                 SNew(SMultiLineEditableText)
                 .IsReadOnly(true)
