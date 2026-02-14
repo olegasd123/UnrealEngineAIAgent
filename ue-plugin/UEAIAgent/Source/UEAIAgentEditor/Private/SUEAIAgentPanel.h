@@ -122,6 +122,11 @@ private:
         const TArray<FString>& RequestActors,
         const FString& Provider,
         const FString& Model);
+    void AppendPromptToVisibleHistory(
+        const FString& Prompt,
+        const FString& Mode,
+        const FString& Provider,
+        const FString& Model);
     bool TryRestoreLatestChatFromTransport();
     void RebuildModelUi();
     FString BuildModelOptionKey(const FUEAIAgentModelOption& Option) const;

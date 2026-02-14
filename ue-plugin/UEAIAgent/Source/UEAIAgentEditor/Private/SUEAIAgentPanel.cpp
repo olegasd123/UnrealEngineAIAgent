@@ -1446,6 +1446,8 @@ void SUEAIAgentPanel::RunWithActiveChat(
     const FString& Provider,
     const FString& Model)
 {
+    AppendPromptToVisibleHistory(Prompt, Mode, Provider, Model);
+
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Mode == TEXT("agent"))
     {
@@ -1474,6 +1476,49 @@ void SUEAIAgentPanel::RunWithActiveChat(
         Provider,
         Model,
         FOnUEAIAgentTaskPlanned::CreateSP(this, &SUEAIAgentPanel::HandlePlanResult));
+}
+
+void SUEAIAgentPanel::AppendPromptToVisibleHistory(
+    const FString& Prompt,
+    const FString& Mode,
+    const FString& Provider,
+    const FString& Model)
+{
+    const FString PromptText = Prompt.TrimStartAndEnd();
+    if (PromptText.IsEmpty())
+    {
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (Transport.GetActiveChatId().IsEmpty())
+    {
+        return;
+    }
+
+    FUEAIAgentChatHistoryEntry Entry;
+    Entry.Kind = TEXT("asked");
+    Entry.Route = Mode.Equals(TEXT("agent"), ESearchCase::IgnoreCase) ? TEXT("/v1/session/start") : TEXT("/v1/task/plan");
+    Entry.Summary = PromptText;
+    Entry.Provider = Provider.TrimStartAndEnd();
+    Entry.Model = Model.TrimStartAndEnd();
+    Entry.ChatType = Mode.Equals(TEXT("agent"), ESearchCase::IgnoreCase) ? TEXT("agent") : TEXT("chat");
+    Entry.DisplayRole = TEXT("user");
+    Entry.DisplayText = PromptText;
+    Entry.CreatedAt = FDateTime::UtcNow().ToIso8601();
+
+    ChatHistoryItems.Add(MakeShared<FUEAIAgentChatHistoryEntry>(Entry));
+    if (MainChatHistoryListView.IsValid())
+    {
+        MainChatHistoryListView->RequestListRefresh();
+    }
+    ScrollHistoryViewsToBottom();
+    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
+    {
+        bHistoryAutoScrollPending = true;
+        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
+    }
+    UpdateHistoryStateText();
 }
 
 bool SUEAIAgentPanel::TryRestoreLatestChatFromTransport()
