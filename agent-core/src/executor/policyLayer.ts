@@ -38,7 +38,10 @@ function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): n
     action.command === "scene.addActorTag" ||
     action.command === "scene.setActorFolder" ||
     action.command === "scene.addActorLabelPrefix" ||
-    action.command === "scene.duplicateActors"
+    action.command === "scene.duplicateActors" ||
+    action.command === "scene.setDirectionalLightIntensity" ||
+    action.command === "scene.setFogDensity" ||
+    action.command === "scene.setPostProcessExposureCompensation"
   ) {
     if (action.params.target === "byName") {
       return Math.max(1, action.params.actorNames?.length ?? 0);
@@ -63,7 +66,10 @@ function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig):
     action.command === "scene.setComponentStaticMesh" ||
     action.command === "scene.addActorTag" ||
     action.command === "scene.setActorFolder" ||
-    action.command === "scene.addActorLabelPrefix"
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.setDirectionalLightIntensity" ||
+    action.command === "scene.setFogDensity" ||
+    action.command === "scene.setPostProcessExposureCompensation"
   ) {
     return estimateTargetCount(action, policy);
   }
@@ -140,6 +146,54 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     }
   }
 
+  if (action.command === "scene.setDirectionalLightIntensity") {
+    const clamped = Math.max(0, Math.min(200000, action.params.intensity));
+    if (clamped !== action.params.intensity) {
+      action.params.intensity = clamped;
+      const decision = requireApproval(
+        action,
+        `Policy: directional light intensity clamped to ${action.params.intensity}.`,
+        policy,
+        "medium"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  if (action.command === "scene.setFogDensity") {
+    const clamped = Math.max(0, Math.min(5, action.params.density));
+    if (clamped !== action.params.density) {
+      action.params.density = clamped;
+      const decision = requireApproval(
+        action,
+        `Policy: fog density clamped to ${action.params.density}.`,
+        policy,
+        "medium"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
+  if (action.command === "scene.setPostProcessExposureCompensation") {
+    const clamped = Math.max(-15, Math.min(15, action.params.exposureCompensation));
+    if (clamped !== action.params.exposureCompensation) {
+      action.params.exposureCompensation = clamped;
+      const decision = requireApproval(
+        action,
+        `Policy: exposure compensation clamped to ${action.params.exposureCompensation}.`,
+        policy,
+        "medium"
+      );
+      approved = decision.approved;
+      risk = decision.risk;
+      message = decision.message;
+    }
+  }
+
   if (action.command === "scene.deleteActor") {
     if (action.params.target === "selection") {
       return hardDeny(
@@ -170,7 +224,10 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     action.command === "scene.setActorFolder" ||
     action.command === "scene.addActorLabelPrefix" ||
     action.command === "scene.duplicateActors" ||
-    action.command === "scene.deleteActor"
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.setDirectionalLightIntensity" ||
+    action.command === "scene.setFogDensity" ||
+    action.command === "scene.setPostProcessExposureCompensation"
   ) {
     if (action.params.target === "byName" && action.params.actorNames) {
       if (action.params.actorNames.length > policy.maxTargetNames) {

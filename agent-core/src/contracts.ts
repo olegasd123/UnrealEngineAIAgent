@@ -279,6 +279,36 @@ const SceneDuplicateActorsParamsSchema = z
     message: "scene.duplicateActors target=byName needs actorNames"
   });
 
+const SceneSetDirectionalLightIntensityParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    intensity: z.number().finite()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setDirectionalLightIntensity target=byName needs actorNames"
+  });
+
+const SceneSetFogDensityParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    density: z.number().finite()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setFogDensity target=byName needs actorNames"
+  });
+
+const SceneSetPostProcessExposureCompensationParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    exposureCompensation: z.number().finite()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "scene.setPostProcessExposureCompensation target=byName needs actorNames"
+  });
+
 const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
 
 const ContextGetSelectionParamsSchema = z.object({}).passthrough();
@@ -378,6 +408,24 @@ export const SceneDuplicateActorsActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const SceneSetDirectionalLightIntensityActionSchema = z.object({
+  command: z.literal("scene.setDirectionalLightIntensity"),
+  params: SceneSetDirectionalLightIntensityParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneSetFogDensityActionSchema = z.object({
+  command: z.literal("scene.setFogDensity"),
+  params: SceneSetFogDensityParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SceneSetPostProcessExposureCompensationActionSchema = z.object({
+  command: z.literal("scene.setPostProcessExposureCompensation"),
+  params: SceneSetPostProcessExposureCompensationParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   ContextGetSceneSummaryActionSchema,
   ContextGetSelectionActionSchema,
@@ -393,7 +441,10 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneAddActorTagActionSchema,
   SceneSetActorFolderActionSchema,
   SceneAddActorLabelPrefixActionSchema,
-  SceneDuplicateActorsActionSchema
+  SceneDuplicateActorsActionSchema,
+  SceneSetDirectionalLightIntensityActionSchema,
+  SceneSetFogDensityActionSchema,
+  SceneSetPostProcessExposureCompensationActionSchema
 ]);
 
 const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");

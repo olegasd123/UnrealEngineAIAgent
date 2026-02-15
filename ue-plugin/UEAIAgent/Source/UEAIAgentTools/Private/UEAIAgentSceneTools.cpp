@@ -3,12 +3,16 @@
 #include "Editor.h"
 #include "Engine/Selection.h"
 #include "EngineUtils.h"
+#include "Engine/PostProcessVolume.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "ScopedTransaction.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/PostProcessComponent.h"
 #include "Materials/MaterialInterface.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/UObjectIterator.h"
@@ -987,6 +991,209 @@ bool FUEAIAgentSceneTools::SceneDuplicateActors(const FUEAIAgentDuplicateActorsP
 
     OutMessage = FString::Printf(TEXT("scene.duplicateActors created %d duplicate(s)."), DuplicateCount);
     return DuplicateCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetDirectionalLightIntensity(
+    const FUEAIAgentSetDirectionalLightIntensityParams& Params,
+    FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const float Intensity = FMath::Clamp(Params.Intensity, 0.0f, 200000.0f);
+    const FScopedTransaction Transaction(LOCTEXT("SceneSetDirectionalLightIntensity", "UE AI Agent Set Directional Light Intensity"));
+    int32 UpdatedCount = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        UDirectionalLightComponent* DirectionalComponent = Actor->FindComponentByClass<UDirectionalLightComponent>();
+        if (!DirectionalComponent)
+        {
+            continue;
+        }
+
+        Actor->Modify();
+        DirectionalComponent->Modify();
+        DirectionalComponent->SetIntensity(Intensity);
+        UpdatedCount += 1;
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Set directional light intensity to %.2f on %d actor(s)."),
+        Intensity,
+        UpdatedCount);
+    return UpdatedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetFogDensity(const FUEAIAgentSetFogDensityParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const float Density = FMath::Clamp(Params.Density, 0.0f, 5.0f);
+    const FScopedTransaction Transaction(LOCTEXT("SceneSetFogDensity", "UE AI Agent Set Fog Density"));
+    int32 UpdatedCount = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        UExponentialHeightFogComponent* FogComponent = Actor->FindComponentByClass<UExponentialHeightFogComponent>();
+        if (!FogComponent)
+        {
+            continue;
+        }
+
+        Actor->Modify();
+        FogComponent->Modify();
+        FogComponent->SetFogDensity(Density);
+        UpdatedCount += 1;
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Set fog density to %.4f on %d actor(s)."),
+        Density,
+        UpdatedCount);
+    return UpdatedCount > 0;
+}
+
+bool FUEAIAgentSceneTools::SceneSetPostProcessExposureCompensation(
+    const FUEAIAgentSetPostProcessExposureCompensationParams& Params,
+    FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    TArray<AActor*> TargetActors;
+    if (!Params.ActorNames.IsEmpty())
+    {
+        CollectActorsByName(World, Params.ActorNames, TargetActors);
+    }
+    else if (Params.bUseSelectionIfActorNamesEmpty)
+    {
+        CollectActorsFromSelection(TargetActors);
+    }
+
+    if (TargetActors.IsEmpty())
+    {
+        OutMessage = TEXT("No target actors found.");
+        return false;
+    }
+
+    const float Exposure = FMath::Clamp(Params.ExposureCompensation, -15.0f, 15.0f);
+    const FScopedTransaction Transaction(
+        LOCTEXT("SceneSetPostProcessExposureCompensation", "UE AI Agent Set Post Process Exposure Compensation"));
+    int32 UpdatedCount = 0;
+    for (AActor* Actor : TargetActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        bool bEdited = false;
+        if (APostProcessVolume* PostProcessVolume = Cast<APostProcessVolume>(Actor))
+        {
+            Actor->Modify();
+            PostProcessVolume->Settings.bOverride_AutoExposureBias = true;
+            PostProcessVolume->Settings.AutoExposureBias = Exposure;
+            bEdited = true;
+        }
+
+        TArray<UPostProcessComponent*> PostProcessComponents;
+        Actor->GetComponents(PostProcessComponents);
+        for (UPostProcessComponent* PostProcessComponent : PostProcessComponents)
+        {
+            if (!PostProcessComponent)
+            {
+                continue;
+            }
+
+            PostProcessComponent->Modify();
+            PostProcessComponent->Settings.bOverride_AutoExposureBias = true;
+            PostProcessComponent->Settings.AutoExposureBias = Exposure;
+            bEdited = true;
+        }
+
+        if (bEdited)
+        {
+            UpdatedCount += 1;
+        }
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Set post process exposure compensation to %.2f on %d actor(s)."),
+        Exposure,
+        UpdatedCount);
+    return UpdatedCount > 0;
 }
 
 bool FUEAIAgentSceneTools::SessionBeginTransaction(const FString& Description, FString& OutMessage)

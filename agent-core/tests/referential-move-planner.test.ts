@@ -249,3 +249,54 @@ test("Validation does not add internal transaction for multi-action chat plan", 
   assert.equal(validated.plan.actions[0]?.command, "scene.modifyActor");
   assert.equal(validated.plan.actions[validated.plan.actions.length - 1]?.command, "scene.modifyActor");
 });
+
+test("Rule planner parses directional light intensity action", () => {
+  const request: TaskRequest = {
+    prompt: "set directional light intensity to 8.5",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "scene.setDirectionalLightIntensity");
+  if (action.command !== "scene.setDirectionalLightIntensity") {
+    return;
+  }
+  assert.equal(action.params.intensity, 8.5);
+});
+
+test("Rule planner parses fog density action", () => {
+  const request: TaskRequest = {
+    prompt: "set fog density to 0.03",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "scene.setFogDensity");
+  if (action.command !== "scene.setFogDensity") {
+    return;
+  }
+  assert.equal(action.params.density, 0.03);
+});
+
+test("Rule planner parses exposure compensation action", () => {
+  const request: TaskRequest = {
+    prompt: "set exposure compensation to -1.2",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "scene.setPostProcessExposureCompensation");
+  if (action.command !== "scene.setPostProcessExposureCompensation") {
+    return;
+  }
+  assert.equal(action.params.exposureCompensation, -1.2);
+});

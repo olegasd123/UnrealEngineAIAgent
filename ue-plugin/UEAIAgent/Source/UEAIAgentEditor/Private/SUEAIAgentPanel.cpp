@@ -2330,6 +2330,48 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         return FUEAIAgentSceneTools::SceneDuplicateActors(Params, OutMessage);
     }
 
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetDirectionalLightIntensity)
+    {
+        FUEAIAgentSetDirectionalLightIntensityParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Intensity = PlannedAction.ScalarValue;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped directional light intensity action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetDirectionalLightIntensity(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetFogDensity)
+    {
+        FUEAIAgentSetFogDensityParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Density = PlannedAction.ScalarValue;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped fog density action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetFogDensity(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation)
+    {
+        FUEAIAgentSetPostProcessExposureCompensationParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.ExposureCompensation = PlannedAction.ScalarValue;
+        Params.bUseSelectionIfActorNamesEmpty = false;
+        if (Params.ActorNames.IsEmpty())
+        {
+            OutMessage = TEXT("Skipped exposure compensation action with no target actors.");
+            return false;
+        }
+        return FUEAIAgentSceneTools::SceneSetPostProcessExposureCompensation(Params, OutMessage);
+    }
+
     FUEAIAgentModifyActorParams Params;
     Params.ActorNames = PlannedAction.ActorNames;
     Params.DeltaLocation = PlannedAction.DeltaLocation;

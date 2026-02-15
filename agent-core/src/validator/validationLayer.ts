@@ -95,6 +95,18 @@ function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
     }
   }
 
+  if (
+    action.command === "scene.setDirectionalLightIntensity" ||
+    action.command === "scene.setFogDensity" ||
+    action.command === "scene.setPostProcessExposureCompensation"
+  ) {
+    if (action.risk !== "low") {
+      action.risk = "low";
+      return true;
+    }
+    return false;
+  }
+
   return false;
 }
 
@@ -109,7 +121,10 @@ function isSceneWriteAction(action: PlanOutput["actions"][number]): boolean {
     action.command === "scene.addActorTag" ||
     action.command === "scene.setActorFolder" ||
     action.command === "scene.addActorLabelPrefix" ||
-    action.command === "scene.duplicateActors"
+    action.command === "scene.duplicateActors" ||
+    action.command === "scene.setDirectionalLightIntensity" ||
+    action.command === "scene.setFogDensity" ||
+    action.command === "scene.setPostProcessExposureCompensation"
   );
 }
 

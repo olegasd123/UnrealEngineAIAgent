@@ -339,21 +339,28 @@ function parseCreateActorFromPrompt(prompt: string): {
   count: number;
 } | null {
   const lower = prompt.toLowerCase();
-  if (!/(create|spawn|add)/.test(lower) || !/(actor|actors|object|mesh|cube|sphere|light|camera)/.test(lower)) {
+  if (
+    !/(create|spawn|add)/.test(lower) ||
+    !/(actor|actors|object|mesh|cube|sphere|light|camera|fog|post process|postprocess|ppv)/.test(lower)
+  ) {
     return null;
   }
 
   let actorClass = "Actor";
-  if (/(mesh|cube|static mesh)/.test(lower)) {
-    actorClass = "StaticMeshActor";
-  } else if (/(sphere)/.test(lower)) {
-    actorClass = "StaticMeshActor";
-  } else if (/(light|point light)/.test(lower)) {
-    actorClass = "PointLight";
-  } else if (/(directional light|sun light)/.test(lower)) {
+  if (/(directional light|sun light|sun)/.test(lower)) {
     actorClass = "DirectionalLight";
   } else if (/(spot light)/.test(lower)) {
     actorClass = "SpotLight";
+  } else if (/(point light|light)/.test(lower)) {
+    actorClass = "PointLight";
+  } else if (/(fog|exponential height fog)/.test(lower)) {
+    actorClass = "ExponentialHeightFog";
+  } else if (/(post process volume|postprocess volume|ppv|post process)/.test(lower)) {
+    actorClass = "PostProcessVolume";
+  } else if (/(mesh|cube|static mesh)/.test(lower)) {
+    actorClass = "StaticMeshActor";
+  } else if (/(sphere)/.test(lower)) {
+    actorClass = "StaticMeshActor";
   } else if (/(camera)/.test(lower)) {
     actorClass = "CameraActor";
   }
@@ -630,6 +637,54 @@ function parseDuplicateFromPrompt(prompt: string): { count: number; offset?: { x
   return { count, offset };
 }
 
+function parseDirectionalLightIntensityFromPrompt(prompt: string): number | null {
+  const lower = prompt.toLowerCase();
+  if (!/(directional light|sun light|sun)/.test(lower)) {
+    return null;
+  }
+  if (!/(intensity|lux|brightness)/.test(lower)) {
+    return null;
+  }
+
+  const match =
+    /\b(?:intensity|lux|brightness)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\bset\s+(?:directional light|sun light|sun)\s+(?:intensity|lux|brightness)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  const value = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
+function parseFogDensityFromPrompt(prompt: string): number | null {
+  const lower = prompt.toLowerCase();
+  if (!/(fog|exponential height fog)/.test(lower)) {
+    return null;
+  }
+  if (!/(density|thickness)/.test(lower)) {
+    return null;
+  }
+
+  const match =
+    /\b(?:fog\s+)?(?:density|thickness)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\bset\s+(?:fog|exponential height fog)\s+(?:density|thickness)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  const value = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
+function parsePostProcessExposureCompensationFromPrompt(prompt: string): number | null {
+  const lower = prompt.toLowerCase();
+  if (!/(exposure|auto exposure)/.test(lower)) {
+    return null;
+  }
+  if (!/(compensation|bias)/.test(lower) && !/(post process|postprocess|ppv)/.test(lower)) {
+    return null;
+  }
+
+  const match =
+    /\b(?:exposure(?:\s+compensation)?|auto exposure(?:\s+bias)?)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\b(?:compensation|bias)\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  const value = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
 function hasWriteIntent(prompt: string): boolean {
   return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt)/i.test(
     prompt
@@ -873,6 +928,18 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
     return count > 1 ? `Delete ${count} selected actors.` : "Delete selected actor.";
   }
 
+  if (first.command === "scene.setDirectionalLightIntensity") {
+    return `Set directional light intensity to ${formatNumber(first.params.intensity)}.`;
+  }
+
+  if (first.command === "scene.setFogDensity") {
+    return `Set fog density to ${formatNumber(first.params.density)}.`;
+  }
+
+  if (first.command === "scene.setPostProcessExposureCompensation") {
+    return `Set exposure compensation to ${formatNumber(first.params.exposureCompensation)}.`;
+  }
+
   if (first.command === "context.getSceneSummary") {
     return actions.some((action) => action.command === "context.getSelection")
       ? "Collect current scene and selection context."
@@ -914,6 +981,9 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
   const folderPath = parseActorFolderFromPrompt(input.prompt);
   const labelPrefix = parseActorLabelPrefixFromPrompt(input.prompt);
   const duplicate = parseDuplicateFromPrompt(input.prompt);
+  const directionalLightIntensity = parseDirectionalLightIntensityFromPrompt(input.prompt);
+  const fogDensity = parseFogDensityFromPrompt(input.prompt);
+  const exposureCompensation = parsePostProcessExposureCompensationFromPrompt(input.prompt);
 
   const actions: PlanAction[] = [];
   if (createActor) {
@@ -1073,6 +1143,42 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         offset: duplicate.offset
       },
       risk: duplicate.count > 5 ? "medium" : "low"
+    });
+  }
+
+  if (directionalLightIntensity !== null) {
+    actions.push({
+      command: "scene.setDirectionalLightIntensity",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        intensity: directionalLightIntensity
+      },
+      risk: "low"
+    });
+  }
+
+  if (fogDensity !== null) {
+    actions.push({
+      command: "scene.setFogDensity",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        density: fogDensity
+      },
+      risk: "low"
+    });
+  }
+
+  if (exposureCompensation !== null) {
+    actions.push({
+      command: "scene.setPostProcessExposureCompensation",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        exposureCompensation
+      },
+      risk: "low"
     });
   }
 

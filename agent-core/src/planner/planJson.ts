@@ -302,6 +302,33 @@ export function buildPlanPrompt(input: PlanInput): string {
               offset: { x: 100, y: 0, z: 0 }
             },
             risk: "medium"
+          },
+          {
+            command: "scene.setDirectionalLightIntensity",
+            params: {
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
+              intensity: 8.5
+            },
+            risk: "low"
+          },
+          {
+            command: "scene.setFogDensity",
+            params: {
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
+              density: 0.02
+            },
+            risk: "low"
+          },
+          {
+            command: "scene.setPostProcessExposureCompensation",
+            params: {
+              target: "selection",
+              actorNames: ["actor_name_if_target_byName"],
+              exposureCompensation: -0.5
+            },
+            risk: "low"
           }
         ]
       },
@@ -328,6 +355,9 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- scene.setActorFolder: include folderPath (can be empty to clear).",
     "- scene.addActorLabelPrefix: include prefix.",
     "- scene.duplicateActors: include count (1-20). Optional offset.",
+    "- scene.setDirectionalLightIntensity: include target + intensity number.",
+    "- scene.setFogDensity: include target + density number.",
+    "- scene.setPostProcessExposureCompensation: include target + exposureCompensation number.",
     "- session transaction begin/commit/rollback are internal. Do not include any session.* action.",
     "- risk must be low|medium|high.",
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",

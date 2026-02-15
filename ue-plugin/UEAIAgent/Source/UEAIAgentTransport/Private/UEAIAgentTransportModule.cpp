@@ -228,6 +228,120 @@ namespace
             return true;
         }
 
+        if (Command == TEXT("scene.setDirectionalLightIntensity"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            double Intensity = 0.0;
+            if (!(*ParamsObj)->TryGetNumberField(TEXT("intensity"), Intensity))
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SetDirectionalLightIntensity;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.ScalarValue = static_cast<float>(Intensity);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.setFogDensity"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            double Density = 0.0;
+            if (!(*ParamsObj)->TryGetNumberField(TEXT("density"), Density))
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SetFogDensity;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.ScalarValue = static_cast<float>(Density);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("scene.setPostProcessExposureCompensation"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            double Exposure = 0.0;
+            if (!(*ParamsObj)->TryGetNumberField(TEXT("exposureCompensation"), Exposure))
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.ScalarValue = static_cast<float>(Exposure);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
         if (Command == TEXT("scene.modifyActor"))
         {
             FString Target;
@@ -1264,6 +1378,120 @@ void FUEAIAgentTransportModule::PlanTask(
                             ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSelection;
                             ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = true;
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("scene.setDirectionalLightIntensity"))
+                        {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+                            {
+                                continue;
+                            }
+
+                            double Intensity = 0.0;
+                            if (!(*ParamsObj)->TryGetNumberField(TEXT("intensity"), Intensity))
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetDirectionalLightIntensity;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.ScalarValue = static_cast<float>(Intensity);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("scene.setFogDensity"))
+                        {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+                            {
+                                continue;
+                            }
+
+                            double Density = 0.0;
+                            if (!(*ParamsObj)->TryGetNumberField(TEXT("density"), Density))
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetFogDensity;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.ScalarValue = static_cast<float>(Density);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("scene.setPostProcessExposureCompensation"))
+                        {
+                            FString Target;
+                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+                            {
+                                continue;
+                            }
+
+                            double Exposure = 0.0;
+                            if (!(*ParamsObj)->TryGetNumberField(TEXT("exposureCompensation"), Exposure))
+                            {
+                                continue;
+                            }
+
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.ScalarValue = static_cast<float>(Exposure);
+                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
+                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+                            {
+                                ParsedAction.ActorNames = SelectedActors;
+                            }
+                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+                            {
+                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                continue;
+                            }
                             PlannedActions.Add(ParsedAction);
                             continue;
                         }
@@ -3550,6 +3778,33 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             ActionIndex + 1,
             *TargetText,
             Action.DuplicateCount);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SetDirectionalLightIntensity)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Set directional light intensity to %.2f for %s"),
+            ActionIndex + 1,
+            Action.ScalarValue,
+            *TargetText);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SetFogDensity)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Set fog density to %.4f for %s"),
+            ActionIndex + 1,
+            Action.ScalarValue,
+            *TargetText);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Set exposure compensation to %.2f for %s"),
+            ActionIndex + 1,
+            Action.ScalarValue,
+            *TargetText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)

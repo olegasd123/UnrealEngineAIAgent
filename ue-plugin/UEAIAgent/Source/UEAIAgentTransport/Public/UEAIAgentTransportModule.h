@@ -24,6 +24,9 @@ enum class EUEAIAgentPlannedActionType : uint8
     SetActorFolder,
     AddActorLabelPrefix,
     DuplicateActors,
+    SetDirectionalLightIntensity,
+    SetFogDensity,
+    SetPostProcessExposureCompensation,
     SessionBeginTransaction,
     SessionCommitTransaction,
     SessionRollbackTransaction
@@ -92,6 +95,9 @@ struct FUEAIAgentPlannedSceneAction
     // scene.duplicateActors
     int32 DuplicateCount = 1;
     FVector DuplicateOffset = FVector::ZeroVector;
+
+    // scene.setDirectionalLightIntensity / scene.setFogDensity / scene.setPostProcessExposureCompensation
+    float ScalarValue = 0.0f;
 
     // session.beginTransaction
     FString TransactionDescription;

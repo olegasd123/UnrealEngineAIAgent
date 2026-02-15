@@ -8,6 +8,9 @@ import { z } from "zod";
 export const AllowedCommands = [
   "context.getSceneSummary",
   "context.getSelection",
+  "scene.setDirectionalLightIntensity",
+  "scene.setFogDensity",
+  "scene.setPostProcessExposureCompensation",
   "scene.createActor",
   "scene.modifyActor",
   "scene.deleteActor",
