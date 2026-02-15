@@ -192,6 +192,16 @@ export function buildPlanPrompt(input: PlanInput): string {
         stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
         actions: [
           {
+            command: "context.getSceneSummary",
+            params: {},
+            risk: "low"
+          },
+          {
+            command: "context.getSelection",
+            params: {},
+            risk: "low"
+          },
+          {
             command: "scene.modifyActor",
             params: {
               target: "selection",
@@ -306,6 +316,8 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- checks should map to normalizedIntent.constraints and normalizedIntent.successCriteria when available.",
     "- stopConditions must include at least: all_checks_passed, max_iterations, user_denied.",
     "- actions can be empty [] if no executable command is found.",
+    "- context.getSceneSummary/context.getSelection are read-only actions. Use them for info requests or fetch-more context steps.",
+    "- context actions should use params: {} and risk: low.",
     "- scene.modifyActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'; include deltaLocation and/or deltaRotation and/or deltaScale and/or scale.",
     "- scene.createActor: include actorClass; location/rotation optional; count must be integer >= 1.",
     "- scene.deleteActor: target must be 'selection' or 'byName'; include actorNames when using 'byName'.",
@@ -321,6 +333,29 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",
     "- Never invent non-existing commands or extra fields.",
     "Examples:",
+    JSON.stringify(
+      {
+        prompt: "what is selected in the scene right now?",
+        output: {
+          summary: "Collect selection context.",
+          steps: ["Collect requested context", "Return context result to user", "Wait for next instruction"],
+          goal: {
+            id: "goal_context_selection",
+            description: "Collect current selection context.",
+            priority: "low"
+          },
+          subgoals: [
+            { id: "sg_collect_context", description: "Collect requested scene context from Unreal Editor.", dependsOn: [] },
+            { id: "sg_return_context", description: "Return collected context to user.", dependsOn: ["sg_collect_context"] }
+          ],
+          checks: [],
+          stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }],
+          actions: [{ command: "context.getSelection", params: {}, risk: "low" }]
+        }
+      },
+      null,
+      2
+    ),
     JSON.stringify(
       {
         prompt: "create 5 cubes at x 200 y 0 z 100 and rotate yaw 30",

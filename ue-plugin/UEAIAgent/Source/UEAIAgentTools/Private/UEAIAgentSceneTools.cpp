@@ -115,6 +115,104 @@ namespace
     }
 }
 
+bool FUEAIAgentSceneTools::ContextGetSceneSummary(FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    int32 ActorCount = 0;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (*It)
+        {
+            ++ActorCount;
+        }
+    }
+
+    TArray<AActor*> SelectedActors;
+    CollectActorsFromSelection(SelectedActors);
+
+    FString LevelName = TEXT("Unknown");
+    if (World->GetCurrentLevel() && World->GetCurrentLevel()->GetOuter())
+    {
+        LevelName = World->GetCurrentLevel()->GetOuter()->GetName();
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Scene summary: map=%s, level=%s, actors=%d, selected=%d"),
+        *World->GetMapName(),
+        *LevelName,
+        ActorCount,
+        SelectedActors.Num());
+    return true;
+}
+
+bool FUEAIAgentSceneTools::ContextGetSelection(FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    TArray<AActor*> SelectedActors;
+    CollectActorsFromSelection(SelectedActors);
+    if (SelectedActors.IsEmpty())
+    {
+        OutMessage = TEXT("No actors selected.");
+        return true;
+    }
+
+    const int32 MaxPreviewActors = 10;
+    TArray<FString> ActorPreviews;
+    ActorPreviews.Reserve(FMath::Min(SelectedActors.Num(), MaxPreviewActors));
+    for (int32 Index = 0; Index < SelectedActors.Num() && Index < MaxPreviewActors; ++Index)
+    {
+        const AActor* Actor = SelectedActors[Index];
+        if (!Actor)
+        {
+            continue;
+        }
+
+        const FVector Location = Actor->GetActorLocation();
+        ActorPreviews.Add(FString::Printf(
+            TEXT("%s (%s, X=%.1f Y=%.1f Z=%.1f)"),
+            *Actor->GetActorLabel(),
+            Actor->GetClass() ? *Actor->GetClass()->GetName() : TEXT("Unknown"),
+            Location.X,
+            Location.Y,
+            Location.Z));
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Selected (%d): %s"),
+        SelectedActors.Num(),
+        *FString::Join(ActorPreviews, TEXT("; ")));
+    if (SelectedActors.Num() > MaxPreviewActors)
+    {
+        OutMessage += FString::Printf(TEXT("; ... +%d more"), SelectedActors.Num() - MaxPreviewActors);
+    }
+
+    return true;
+}
+
 bool FUEAIAgentSceneTools::SceneModifyActor(const FUEAIAgentModifyActorParams& Params, FString& OutMessage)
 {
     if (!GEditor)

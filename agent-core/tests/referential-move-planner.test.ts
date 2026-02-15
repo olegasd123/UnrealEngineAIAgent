@@ -95,3 +95,87 @@ test("Validation normalizes safe action risk to low", () => {
   const validated = validator.validatePlan(intent, candidate);
   assert.equal(validated.plan.actions[0]?.risk, "low");
 });
+
+test("Rule planner builds context.getSelection for selection info request", () => {
+  const request: TaskRequest = {
+    prompt: "what is selected right now?",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.summary, "Collect current selection context.");
+  const action = plan.actions[0];
+  assert.equal(action.command, "context.getSelection");
+  if (action.command !== "context.getSelection") {
+    return;
+  }
+  assert.deepEqual(action.params, {});
+  assert.equal(action.risk, "low");
+});
+
+test("Rule planner builds context.getSceneSummary for scene summary request", () => {
+  const request: TaskRequest = {
+    prompt: "show scene summary",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.summary, "Collect current scene summary context.");
+  const action = plan.actions[0];
+  assert.equal(action.command, "context.getSceneSummary");
+  if (action.command !== "context.getSceneSummary") {
+    return;
+  }
+  assert.deepEqual(action.params, {});
+  assert.equal(action.risk, "low");
+});
+
+test("Validation normalizes context action risk to low", () => {
+  const request: TaskRequest = {
+    prompt: "show selection info",
+    mode: "agent",
+    context: {}
+  };
+  const intent = new IntentLayer().normalize(request);
+  const validator = new ValidationLayer();
+
+  const candidate = {
+    summary: "selection info",
+    steps: ["step"],
+    actions: [{ command: "context.getSelection", params: {}, risk: "medium" }],
+    goal: { id: "g1", description: "d", priority: "medium" },
+    subgoals: [],
+    checks: [],
+    stopConditions: [{ type: "all_checks_passed" }]
+  };
+
+  const validated = validator.validatePlan(intent, candidate);
+  assert.equal(validated.plan.actions[0]?.risk, "low");
+});
+
+test("Validation normalizes context-only summary text", () => {
+  const request: TaskRequest = {
+    prompt: "what is selected right now?",
+    mode: "agent",
+    context: {}
+  };
+  const intent = new IntentLayer().normalize(request);
+  const validator = new ValidationLayer();
+
+  const candidate = {
+    summary: "Retrieve current selection context.",
+    steps: ["step"],
+    actions: [{ command: "context.getSelection", params: {}, risk: "low" }],
+    goal: { id: "g1", description: "d", priority: "medium" },
+    subgoals: [],
+    checks: [],
+    stopConditions: [{ type: "all_checks_passed" }]
+  };
+
+  const validated = validator.validatePlan(intent, candidate);
+  assert.equal(validated.plan.summary, "Collect current selection context.");
+});

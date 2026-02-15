@@ -1787,6 +1787,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     int32 SuccessCount = 0;
     int32 FailedCount = 0;
     FString FirstFailureReason;
+    FString LastSuccessMessage;
     for (const FUEAIAgentPlannedSceneAction& PlannedAction : ApprovedActions)
     {
         FString ResultMessage;
@@ -1795,6 +1796,11 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         if (bOk)
         {
             ++SuccessCount;
+            const FString NormalizedSuccess = NormalizeSingleLineStatusText(ResultMessage);
+            if (!NormalizedSuccess.IsEmpty())
+            {
+                LastSuccessMessage = NormalizedSuccess;
+            }
             continue;
         }
 
@@ -1809,7 +1815,9 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
     UpdateActionApprovalUi();
     if (FailedCount == 0 && SuccessCount == ApprovedActions.Num())
     {
-        const FString StatusMessage = TEXT("Completed.");
+        const FString StatusMessage = (ApprovedActions.Num() == 1 && !LastSuccessMessage.IsEmpty())
+            ? LastSuccessMessage
+            : TEXT("Completed.");
         PlanText->SetText(FText::FromString(StatusMessage));
         AppendChatOutcomeToHistory(StatusMessage);
     }
@@ -2165,6 +2173,16 @@ SUEAIAgentPanel::ESessionStatus SUEAIAgentPanel::ParseSessionStatusFromMessage(c
 
 bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const
 {
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::ContextGetSceneSummary)
+    {
+        return FUEAIAgentSceneTools::ContextGetSceneSummary(OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::ContextGetSelection)
+    {
+        return FUEAIAgentSceneTools::ContextGetSelection(OutMessage);
+    }
+
     if (PlannedAction.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
     {
         return FUEAIAgentSceneTools::SessionBeginTransaction(PlannedAction.TransactionDescription, OutMessage);

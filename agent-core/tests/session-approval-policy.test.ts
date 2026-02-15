@@ -59,6 +59,7 @@ test("Agent mode: low + low + low -> auto apply", () => {
 
   const decision3 = store.next(decision0.sessionId, { actionIndex: 2, ok: true, message: "ok 3" });
   assert.equal(decision3.status, "completed");
+  assert.match(decision3.message, /Last result: ok 3/);
 });
 
 test("Agent mode: low + medium + low -> confirm at medium", () => {

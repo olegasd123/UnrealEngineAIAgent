@@ -630,6 +630,60 @@ function parseDuplicateFromPrompt(prompt: string): { count: number; offset?: { x
   return { count, offset };
 }
 
+function hasWriteIntent(prompt: string): boolean {
+  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt)/i.test(
+    prompt
+  );
+}
+
+function wantsSelectionContext(prompt: string): boolean {
+  if (!/\b(selected|selection)\b/i.test(prompt)) {
+    return false;
+  }
+
+  const readHint =
+    /\b(what|which|show|list|describe|summarize|summary|details?|info|context|get|read|inspect)\b/i.test(prompt) ||
+    /\?/.test(prompt);
+  return readHint;
+}
+
+function wantsSceneSummary(prompt: string): boolean {
+  const sceneHint =
+    /\b(scene|level|map|world)\b/i.test(prompt) ||
+    /\bhow many\s+actors?\b/i.test(prompt) ||
+    /\bactor\s+count\b/i.test(prompt);
+  if (!sceneHint) {
+    return false;
+  }
+
+  return /\b(summary|overview|status|context|info|details?|count|list|show|describe|get|read|inspect|what)\b/i.test(prompt);
+}
+
+function buildContextActionsFromPrompt(prompt: string): PlanAction[] {
+  if (hasWriteIntent(prompt)) {
+    return [];
+  }
+
+  const actions: PlanAction[] = [];
+  if (wantsSceneSummary(prompt) || /\bfetch more context\b/i.test(prompt)) {
+    actions.push({
+      command: "context.getSceneSummary",
+      params: {},
+      risk: "low"
+    });
+  }
+
+  if (wantsSelectionContext(prompt)) {
+    actions.push({
+      command: "context.getSelection",
+      params: {},
+      risk: "low"
+    });
+  }
+
+  return actions;
+}
+
 function normalizeIdPart(value: string): string {
   const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return normalized.length > 0 ? normalized : "item";
@@ -651,13 +705,28 @@ function buildGoal(goalType: GoalType | undefined, prompt: string): PlanOutput["
   };
 }
 
-function buildSubgoals(hasActions: boolean): PlanOutput["subgoals"] {
+function buildSubgoals(hasActions: boolean, hasWriteActions: boolean): PlanOutput["subgoals"] {
   if (!hasActions) {
     return [
       {
         id: "sg_collect_context",
         description: "Collect more context to build executable actions.",
         dependsOn: []
+      }
+    ];
+  }
+
+  if (!hasWriteActions) {
+    return [
+      {
+        id: "sg_collect_context",
+        description: "Collect requested scene context from Unreal Editor.",
+        dependsOn: []
+      },
+      {
+        id: "sg_return_context",
+        description: "Return collected context to user.",
+        dependsOn: ["sg_collect_context"]
       }
     ];
   }
@@ -802,6 +871,16 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
   if (first.command === "scene.deleteActor") {
     const count = first.params.actorNames?.length ?? 0;
     return count > 1 ? `Delete ${count} selected actors.` : "Delete selected actor.";
+  }
+
+  if (first.command === "context.getSceneSummary") {
+    return actions.some((action) => action.command === "context.getSelection")
+      ? "Collect current scene and selection context."
+      : "Collect current scene summary context.";
+  }
+
+  if (first.command === "context.getSelection") {
+    return "Collect current selection context.";
   }
 
   if (actions.length === 1) {
@@ -997,22 +1076,32 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     });
   }
 
+  if (actions.length === 0) {
+    actions.push(...buildContextActionsFromPrompt(input.prompt));
+  }
+
   const hasHighRiskAction = actions.some((action) => action.risk === "high");
+  const hasWriteActions = actions.some(
+    (action) => action.command !== "context.getSceneSummary" && action.command !== "context.getSelection"
+  );
   const goal = buildGoal(metadata.goalType, input.prompt);
   const checks = buildChecks(metadata, hasHighRiskAction);
   const stopConditions = buildStopConditions(hasHighRiskAction);
 
   if (actions.length > 0) {
+    const steps = !hasWriteActions
+      ? ["Collect requested context", "Return context result to user", "Wait for next instruction"]
+      : [
+          "Preview parsed actions",
+          "Wait for user approval",
+          "Apply approved scene actions with transaction (undo-safe)"
+        ];
     return {
       summary: buildActionSummary(input, actions),
-      steps: [
-        "Preview parsed actions",
-        "Wait for user approval",
-        "Apply approved scene actions with transaction (undo-safe)"
-      ],
+      steps,
       actions,
       goal,
-      subgoals: buildSubgoals(true),
+      subgoals: buildSubgoals(true, hasWriteActions),
       checks,
       stopConditions
     };
@@ -1027,7 +1116,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     ],
     actions: [],
     goal,
-    subgoals: buildSubgoals(false),
+    subgoals: buildSubgoals(false, false),
     checks,
     stopConditions
   };

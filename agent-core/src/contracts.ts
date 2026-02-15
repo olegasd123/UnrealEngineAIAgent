@@ -279,6 +279,22 @@ const SceneDuplicateActorsParamsSchema = z
     message: "scene.duplicateActors target=byName needs actorNames"
   });
 
+const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
+
+const ContextGetSelectionParamsSchema = z.object({}).passthrough();
+
+export const ContextGetSceneSummaryActionSchema = z.object({
+  command: z.literal("context.getSceneSummary"),
+  params: ContextGetSceneSummaryParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const ContextGetSelectionActionSchema = z.object({
+  command: z.literal("context.getSelection"),
+  params: ContextGetSelectionParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const SceneModifyActorActionSchema = PlanActionSchema;
 export const SceneCreateActorActionSchema = z.object({
   command: z.literal("scene.createActor"),
@@ -335,6 +351,8 @@ export const SceneDuplicateActorsActionSchema = z.object({
 });
 
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
+  ContextGetSceneSummaryActionSchema,
+  ContextGetSelectionActionSchema,
   SceneModifyActorActionSchema,
   SceneCreateActorActionSchema,
   SceneDeleteActorActionSchema,

@@ -90,6 +90,8 @@ struct FUEAIAgentDuplicateActorsParams
 class UEAIAGENTTOOLS_API FUEAIAgentSceneTools
 {
 public:
+    static bool ContextGetSceneSummary(FString& OutMessage);
+    static bool ContextGetSelection(FString& OutMessage);
     static bool SceneModifyActor(const FUEAIAgentModifyActorParams& Params, FString& OutMessage);
     static bool SceneCreateActor(const FUEAIAgentCreateActorParams& Params, FString& OutMessage);
     static bool SceneDeleteActor(const FUEAIAgentDeleteActorParams& Params, FString& OutMessage);

@@ -210,6 +210,24 @@ namespace
             return false;
         }
 
+        if (Command == TEXT("context.getSceneSummary"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSceneSummary;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("context.getSelection"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSelection;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
         if (Command == TEXT("scene.modifyActor"))
         {
             FString Target;
@@ -1227,6 +1245,26 @@ void FUEAIAgentTransportModule::PlanTask(
                         FString Command;
                         if (!ActionObj->TryGetStringField(TEXT("command"), Command))
                         {
+                            continue;
+                        }
+
+                        if (Command == TEXT("context.getSceneSummary"))
+                        {
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSceneSummary;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = true;
+                            PlannedActions.Add(ParsedAction);
+                            continue;
+                        }
+
+                        if (Command == TEXT("context.getSelection"))
+                        {
+                            FUEAIAgentPlannedSceneAction ParsedAction;
+                            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSelection;
+                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+                            ParsedAction.bApproved = true;
+                            PlannedActions.Add(ParsedAction);
                             continue;
                         }
 
@@ -3407,6 +3445,20 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
 
     const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
     const FString TargetText = FormatActorTargetShort(Action.ActorNames);
+    if (Action.Type == EUEAIAgentPlannedActionType::ContextGetSceneSummary)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Read scene summary"),
+            ActionIndex + 1);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::ContextGetSelection)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Read current selection"),
+            ActionIndex + 1);
+    }
+
     if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
         const FString SpawnTarget = Action.SpawnCount == 1

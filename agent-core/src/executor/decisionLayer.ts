@@ -243,6 +243,7 @@ export function makeSessionDecision(session: SessionData): SessionDecision {
 
   const pendingActionIndex = session.actions.findIndex((action) => action.state === "pending");
   if (pendingActionIndex < 0) {
+    const lastSucceeded = [...session.actions].reverse().find((action) => action.state === "succeeded");
     return {
       sessionId: session.id,
       status: "completed",
@@ -250,7 +251,12 @@ export function makeSessionDecision(session: SessionData): SessionDecision {
       steps: session.plan.steps,
       iteration: iterationView(session),
       checks,
-      message: `All actions are completed (${completedCount}/${totalCount}).`
+      message: [
+        `All actions are completed (${completedCount}/${totalCount}).`,
+        lastSucceeded?.lastMessage ? `Last result: ${lastSucceeded.lastMessage}` : null
+      ]
+        .filter(Boolean)
+        .join(" ")
     };
   }
 

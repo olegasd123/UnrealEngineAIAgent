@@ -349,6 +349,10 @@ function summarizeSessionMessage(status: SessionStatus, message: string): string
   }
 
   if (status === "completed") {
+    const lastResultMatch = /Last result:\s*(.+)$/i.exec(normalized);
+    if (lastResultMatch?.[1]) {
+      return lastResultMatch[1].trim();
+    }
     return "Completed.";
   }
   if (status === "awaiting_approval") {

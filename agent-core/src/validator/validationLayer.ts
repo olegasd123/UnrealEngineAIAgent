@@ -60,6 +60,14 @@ function toByNameIfSelectionTargeted(plan: PlanOutput, actorNames: string[]): nu
 }
 
 function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
+  if (action.command === "context.getSceneSummary" || action.command === "context.getSelection") {
+    if (action.risk !== "low") {
+      action.risk = "low";
+      return true;
+    }
+    return false;
+  }
+
   if (action.command === "scene.modifyActor") {
     if (action.risk !== "low") {
       action.risk = "low";
@@ -84,6 +92,35 @@ function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
   return false;
 }
 
+function normalizeContextOnlySummary(plan: PlanOutput): boolean {
+  if (plan.actions.length === 0) {
+    return false;
+  }
+
+  const isContextOnly = plan.actions.every(
+    (action) => action.command === "context.getSceneSummary" || action.command === "context.getSelection"
+  );
+  if (!isContextOnly) {
+    return false;
+  }
+
+  const hasSceneSummary = plan.actions.some((action) => action.command === "context.getSceneSummary");
+  const hasSelection = plan.actions.some((action) => action.command === "context.getSelection");
+
+  const normalizedSummary = hasSceneSummary && hasSelection
+    ? "Collect current scene and selection context."
+    : hasSelection
+    ? "Collect current selection context."
+    : "Collect current scene summary context.";
+
+  if (plan.summary === normalizedSummary) {
+    return false;
+  }
+
+  plan.summary = normalizedSummary;
+  return true;
+}
+
 export class ValidationLayer {
   validatePlan(intent: NormalizedIntent, candidate: unknown): ValidationResult {
     const plan = PlanOutputSchema.parse(candidate);
@@ -96,6 +133,7 @@ export class ValidationLayer {
         normalizedRiskActions += 1;
       }
     }
+    const normalizedContextSummary = normalizeContextOnlySummary(plan);
 
     if (plan.actions.length === 0) {
       notes.push("No actions parsed from intent.");
@@ -105,6 +143,9 @@ export class ValidationLayer {
     }
     if (normalizedRiskActions > 0) {
       notes.push(`Normalized risk to low for ${normalizedRiskActions} safe action(s).`);
+    }
+    if (normalizedContextSummary) {
+      notes.push("Normalized summary text for context-only plan.");
     }
     if (!plan.goal.id || !plan.goal.description) {
       notes.push("Plan goal is incomplete.");

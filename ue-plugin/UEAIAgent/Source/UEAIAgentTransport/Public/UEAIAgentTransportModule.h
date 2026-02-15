@@ -12,6 +12,8 @@ DECLARE_DELEGATE_TwoParams(FOnUEAIAgentChatOpFinished, bool, const FString&);
 
 enum class EUEAIAgentPlannedActionType : uint8
 {
+    ContextGetSceneSummary,
+    ContextGetSelection,
     ModifyActor,
     CreateActor,
     DeleteActor,
