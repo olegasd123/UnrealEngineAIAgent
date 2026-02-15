@@ -283,6 +283,16 @@ const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
 
 const ContextGetSelectionParamsSchema = z.object({}).passthrough();
 
+const SessionBeginTransactionParamsSchema = z
+  .object({
+    description: z.string().min(1).optional()
+  })
+  .passthrough();
+
+const SessionCommitTransactionParamsSchema = z.object({}).passthrough();
+
+const SessionRollbackTransactionParamsSchema = z.object({}).passthrough();
+
 export const ContextGetSceneSummaryActionSchema = z.object({
   command: z.literal("context.getSceneSummary"),
   params: ContextGetSceneSummaryParamsSchema.default({}),
@@ -292,6 +302,24 @@ export const ContextGetSceneSummaryActionSchema = z.object({
 export const ContextGetSelectionActionSchema = z.object({
   command: z.literal("context.getSelection"),
   params: ContextGetSelectionParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SessionBeginTransactionActionSchema = z.object({
+  command: z.literal("session.beginTransaction"),
+  params: SessionBeginTransactionParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SessionCommitTransactionActionSchema = z.object({
+  command: z.literal("session.commitTransaction"),
+  params: SessionCommitTransactionParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const SessionRollbackTransactionActionSchema = z.object({
+  command: z.literal("session.rollbackTransaction"),
+  params: SessionRollbackTransactionParamsSchema.default({}),
   risk: z.enum(["low", "medium", "high"])
 });
 
@@ -353,6 +381,9 @@ export const SceneDuplicateActorsActionSchema = z.object({
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   ContextGetSceneSummaryActionSchema,
   ContextGetSelectionActionSchema,
+  SessionBeginTransactionActionSchema,
+  SessionCommitTransactionActionSchema,
+  SessionRollbackTransactionActionSchema,
   SceneModifyActorActionSchema,
   SceneCreateActorActionSchema,
   SceneDeleteActorActionSchema,

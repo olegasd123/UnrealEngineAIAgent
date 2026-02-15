@@ -60,7 +60,13 @@ function toByNameIfSelectionTargeted(plan: PlanOutput, actorNames: string[]): nu
 }
 
 function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
-  if (action.command === "context.getSceneSummary" || action.command === "context.getSelection") {
+  if (
+    action.command === "context.getSceneSummary" ||
+    action.command === "context.getSelection" ||
+    action.command === "session.beginTransaction" ||
+    action.command === "session.commitTransaction" ||
+    action.command === "session.rollbackTransaction"
+  ) {
     if (action.risk !== "low") {
       action.risk = "low";
       return true;
@@ -90,6 +96,85 @@ function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
   }
 
   return false;
+}
+
+function isSceneWriteAction(action: PlanOutput["actions"][number]): boolean {
+  return (
+    action.command === "scene.modifyActor" ||
+    action.command === "scene.createActor" ||
+    action.command === "scene.deleteActor" ||
+    action.command === "scene.modifyComponent" ||
+    action.command === "scene.setComponentMaterial" ||
+    action.command === "scene.setComponentStaticMesh" ||
+    action.command === "scene.addActorTag" ||
+    action.command === "scene.setActorFolder" ||
+    action.command === "scene.addActorLabelPrefix" ||
+    action.command === "scene.duplicateActors"
+  );
+}
+
+function isSessionTransactionAction(action: PlanOutput["actions"][number]): boolean {
+  return (
+    action.command === "session.beginTransaction" ||
+    action.command === "session.commitTransaction" ||
+    action.command === "session.rollbackTransaction"
+  );
+}
+
+function addInternalTransactionIfNeeded(intent: NormalizedIntent, plan: PlanOutput): boolean {
+  if (intent.input.mode !== "agent") {
+    return false;
+  }
+
+  const writeIndexes = plan.actions
+    .map((action, index) => ({ action, index }))
+    .filter((entry) => isSceneWriteAction(entry.action))
+    .map((entry) => entry.index);
+
+  // For single write action, per-action transaction in plugin is enough.
+  if (writeIndexes.length < 2) {
+    return false;
+  }
+
+  const firstWriteIndex = writeIndexes[0]!;
+  const lastWriteIndex = writeIndexes[writeIndexes.length - 1]!;
+
+  let changed = false;
+
+  const hasBeginBeforeWrite = plan.actions.some(
+    (action, index) => action.command === "session.beginTransaction" && index <= firstWriteIndex
+  );
+  if (!hasBeginBeforeWrite) {
+    plan.actions.splice(firstWriteIndex, 0, {
+      command: "session.beginTransaction",
+      params: { description: "UE AI Agent Session" },
+      risk: "low"
+    });
+    changed = true;
+  }
+
+  const writeIndexShift = changed ? 1 : 0;
+  const normalizedLastWriteIndex = lastWriteIndex + writeIndexShift;
+  const hasCommitAfterWrite = plan.actions.some(
+    (action, index) => action.command === "session.commitTransaction" && index >= normalizedLastWriteIndex
+  );
+  if (!hasCommitAfterWrite) {
+    plan.actions.splice(normalizedLastWriteIndex + 1, 0, {
+      command: "session.commitTransaction",
+      params: {},
+      risk: "low"
+    });
+    changed = true;
+  }
+
+  // Remove rollback from normal execution flow. Rollback is for failure handling.
+  const filtered = plan.actions.filter((action) => action.command !== "session.rollbackTransaction");
+  if (filtered.length !== plan.actions.length) {
+    plan.actions = filtered;
+    changed = true;
+  }
+
+  return changed;
 }
 
 function normalizeContextOnlySummary(plan: PlanOutput): boolean {
@@ -133,6 +218,7 @@ export class ValidationLayer {
         normalizedRiskActions += 1;
       }
     }
+    const insertedInternalTransaction = addInternalTransactionIfNeeded(intent, plan);
     const normalizedContextSummary = normalizeContextOnlySummary(plan);
 
     if (plan.actions.length === 0) {
@@ -143,6 +229,9 @@ export class ValidationLayer {
     }
     if (normalizedRiskActions > 0) {
       notes.push(`Normalized risk to low for ${normalizedRiskActions} safe action(s).`);
+    }
+    if (insertedInternalTransaction) {
+      notes.push("Added internal transaction wrappers for multi-action agent plan.");
     }
     if (normalizedContextSummary) {
       notes.push("Normalized summary text for context-only plan.");
@@ -161,6 +250,14 @@ export class ValidationLayer {
     }
     if (intent.goalType === "scene_delete" && plan.actions.every((action) => action.command !== "scene.deleteActor")) {
       notes.push("Delete intent detected, but delete action was not planned.");
+    }
+    if (
+      plan.actions.some(isSceneWriteAction) &&
+      !plan.actions.some(isSessionTransactionAction) &&
+      intent.input.mode === "agent" &&
+      plan.actions.filter(isSceneWriteAction).length >= 2
+    ) {
+      notes.push("Multi-action agent plan is missing internal transaction wrappers.");
     }
 
     return { plan, notes };

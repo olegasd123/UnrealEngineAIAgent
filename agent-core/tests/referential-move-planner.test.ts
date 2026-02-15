@@ -179,3 +179,73 @@ test("Validation normalizes context-only summary text", () => {
   const validated = validator.validatePlan(intent, candidate);
   assert.equal(validated.plan.summary, "Collect current selection context.");
 });
+
+test("Validation adds internal transaction for multi-action agent plan", () => {
+  const request: TaskRequest = {
+    prompt: "move and rotate selected actor",
+    mode: "agent",
+    context: {}
+  };
+  const intent = new IntentLayer().normalize(request);
+  const validator = new ValidationLayer();
+
+  const candidate = {
+    summary: "move and rotate",
+    steps: ["step"],
+    actions: [
+      {
+        command: "scene.modifyActor",
+        params: { target: "selection", deltaLocation: { x: 10, y: 0, z: 0 } },
+        risk: "low"
+      },
+      {
+        command: "scene.modifyActor",
+        params: { target: "selection", deltaRotation: { pitch: 0, yaw: 15, roll: 0 } },
+        risk: "low"
+      }
+    ],
+    goal: { id: "g1", description: "d", priority: "medium" },
+    subgoals: [],
+    checks: [],
+    stopConditions: [{ type: "all_checks_passed" }]
+  };
+
+  const validated = validator.validatePlan(intent, candidate);
+  assert.equal(validated.plan.actions[0]?.command, "session.beginTransaction");
+  assert.equal(validated.plan.actions[validated.plan.actions.length - 1]?.command, "session.commitTransaction");
+});
+
+test("Validation does not add internal transaction for multi-action chat plan", () => {
+  const request: TaskRequest = {
+    prompt: "move and rotate selected actor",
+    mode: "chat",
+    context: {}
+  };
+  const intent = new IntentLayer().normalize(request);
+  const validator = new ValidationLayer();
+
+  const candidate = {
+    summary: "move and rotate",
+    steps: ["step"],
+    actions: [
+      {
+        command: "scene.modifyActor",
+        params: { target: "selection", deltaLocation: { x: 10, y: 0, z: 0 } },
+        risk: "low"
+      },
+      {
+        command: "scene.modifyActor",
+        params: { target: "selection", deltaRotation: { pitch: 0, yaw: 15, roll: 0 } },
+        risk: "low"
+      }
+    ],
+    goal: { id: "g1", description: "d", priority: "medium" },
+    subgoals: [],
+    checks: [],
+    stopConditions: [{ type: "all_checks_passed" }]
+  };
+
+  const validated = validator.validatePlan(intent, candidate);
+  assert.equal(validated.plan.actions[0]?.command, "scene.modifyActor");
+  assert.equal(validated.plan.actions[validated.plan.actions.length - 1]?.command, "scene.modifyActor");
+});
