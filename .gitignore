@@ -1,1 +1,23 @@
+# macOS
 .DS_Store
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+*.VC.db
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+agent-core/data/*-log.*
+agent-core/data/agent.db

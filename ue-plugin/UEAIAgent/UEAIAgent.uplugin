@@ -1,0 +1,35 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "UE AI Agent",
+  "Description": "Local-first AI assistant for Unreal Editor.",
+  "Category": "Editor",
+  "CreatedBy": "UEAIAgent",
+  "EnabledByDefault": true,
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [
+    {
+      "Name": "UEAIAgentEditor",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "UEAIAgentTools",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "UEAIAgentContext",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "UEAIAgentTransport",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ]
+}
+
