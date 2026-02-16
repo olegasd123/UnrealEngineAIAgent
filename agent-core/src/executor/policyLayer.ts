@@ -41,7 +41,9 @@ function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): n
     action.command === "scene.duplicateActors" ||
     action.command === "scene.setDirectionalLightIntensity" ||
     action.command === "scene.setFogDensity" ||
-    action.command === "scene.setPostProcessExposureCompensation"
+    action.command === "scene.setPostProcessExposureCompensation" ||
+    action.command === "landscape.sculpt" ||
+    action.command === "landscape.paintLayer"
   ) {
     if (action.params.target === "byName") {
       return Math.max(1, action.params.actorNames?.length ?? 0);
@@ -72,6 +74,10 @@ function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig):
     action.command === "scene.setPostProcessExposureCompensation"
   ) {
     return estimateTargetCount(action, policy);
+  }
+  if (action.command === "landscape.sculpt" || action.command === "landscape.paintLayer") {
+    const area = Math.abs(action.params.size.x * action.params.size.y);
+    return Math.max(1, Math.round(area / 250000));
   }
   return 0;
 }
@@ -194,6 +200,35 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     }
   }
 
+  if (action.command === "landscape.sculpt" || action.command === "landscape.paintLayer") {
+    const maxBrushSize = Math.max(1, policy.maxLandscapeBrushSize);
+    const maxBrushStrength = Math.max(0.01, policy.maxLandscapeBrushStrength);
+    const clampedSizeX = Math.max(1, Math.min(maxBrushSize, Math.abs(action.params.size.x)));
+    const clampedSizeY = Math.max(1, Math.min(maxBrushSize, Math.abs(action.params.size.y)));
+    const clampedStrength = Math.max(0, Math.min(maxBrushStrength, action.params.strength));
+    const clampedFalloff = Math.max(0, Math.min(1, action.params.falloff));
+    const hadClamp =
+      clampedSizeX !== action.params.size.x ||
+      clampedSizeY !== action.params.size.y ||
+      clampedStrength !== action.params.strength ||
+      clampedFalloff !== action.params.falloff;
+
+    if (hadClamp) {
+      action.params.size.x = clampedSizeX;
+      action.params.size.y = clampedSizeY;
+      action.params.strength = clampedStrength;
+      action.params.falloff = clampedFalloff;
+    }
+
+    const policyMessage = hadClamp
+      ? `Policy: landscape brush values were clamped (size<=${maxBrushSize}, strength<=${maxBrushStrength}). Approval is required.`
+      : "Policy: landscape edits always require approval.";
+    const decision = requireApproval(action, policyMessage, policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
   if (action.command === "scene.deleteActor") {
     if (action.params.target === "selection") {
       return hardDeny(
@@ -227,7 +262,9 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     action.command === "scene.deleteActor" ||
     action.command === "scene.setDirectionalLightIntensity" ||
     action.command === "scene.setFogDensity" ||
-    action.command === "scene.setPostProcessExposureCompensation"
+    action.command === "scene.setPostProcessExposureCompensation" ||
+    action.command === "landscape.sculpt" ||
+    action.command === "landscape.paintLayer"
   ) {
     if (action.params.target === "byName" && action.params.actorNames) {
       if (action.params.actorNames.length > policy.maxTargetNames) {

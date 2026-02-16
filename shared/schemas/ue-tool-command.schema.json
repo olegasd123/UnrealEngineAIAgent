@@ -26,6 +26,10 @@
         "scene.setActorFolder",
         "scene.addActorLabelPrefix",
         "scene.duplicateActors",
+        "landscape.sculpt",
+        "landscape.paintLayer",
+        "editor.undo",
+        "editor.redo",
         "session.beginTransaction",
         "session.commitTransaction",
         "session.rollbackTransaction"

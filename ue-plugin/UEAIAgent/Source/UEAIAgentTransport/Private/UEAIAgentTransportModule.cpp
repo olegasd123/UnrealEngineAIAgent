@@ -228,6 +228,24 @@ namespace
             return true;
         }
 
+        if (Command == TEXT("editor.undo"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::EditorUndo;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("editor.redo"))
+        {
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::EditorRedo;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            OutAction = ParsedAction;
+            return true;
+        }
+
         if (Command == TEXT("scene.setDirectionalLightIntensity"))
         {
             FString Target;
@@ -322,6 +340,159 @@ namespace
             ParsedAction.Type = EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation;
             ParsedAction.Risk = ParseRiskLevel(ActionObj);
             ParsedAction.ScalarValue = static_cast<float>(Exposure);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("landscape.sculpt"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            const TSharedPtr<FJsonObject>* CenterObj = nullptr;
+            const TSharedPtr<FJsonObject>* SizeObj = nullptr;
+            if (!(*ParamsObj)->TryGetObjectField(TEXT("center"), CenterObj) || !CenterObj || !CenterObj->IsValid())
+            {
+                return false;
+            }
+            if (!(*ParamsObj)->TryGetObjectField(TEXT("size"), SizeObj) || !SizeObj || !SizeObj->IsValid())
+            {
+                return false;
+            }
+
+            double CenterX = 0.0;
+            double CenterY = 0.0;
+            double SizeX = 0.0;
+            double SizeY = 0.0;
+            if (!(*CenterObj)->TryGetNumberField(TEXT("x"), CenterX) ||
+                !(*CenterObj)->TryGetNumberField(TEXT("y"), CenterY) ||
+                !(*SizeObj)->TryGetNumberField(TEXT("x"), SizeX) ||
+                !(*SizeObj)->TryGetNumberField(TEXT("y"), SizeY))
+            {
+                return false;
+            }
+
+            double Strength = 0.0;
+            if (!(*ParamsObj)->TryGetNumberField(TEXT("strength"), Strength))
+            {
+                return false;
+            }
+
+            double Falloff = 0.5;
+            (*ParamsObj)->TryGetNumberField(TEXT("falloff"), Falloff);
+
+            FString Mode = TEXT("raise");
+            (*ParamsObj)->TryGetStringField(TEXT("mode"), Mode);
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::LandscapeSculpt;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.LandscapeCenter = FVector2D(static_cast<float>(CenterX), static_cast<float>(CenterY));
+            ParsedAction.LandscapeSize = FVector2D(
+                FMath::Abs(static_cast<float>(SizeX)),
+                FMath::Abs(static_cast<float>(SizeY)));
+            ParsedAction.LandscapeStrength = FMath::Clamp(static_cast<float>(Strength), 0.0f, 1.0f);
+            ParsedAction.LandscapeFalloff = FMath::Clamp(static_cast<float>(Falloff), 0.0f, 1.0f);
+            ParsedAction.bLandscapeInvertMode = Mode.Equals(TEXT("lower"), ESearchCase::IgnoreCase);
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("landscape.paintLayer"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            FString LayerName;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("layerName"), LayerName) || LayerName.IsEmpty())
+            {
+                return false;
+            }
+
+            const TSharedPtr<FJsonObject>* CenterObj = nullptr;
+            const TSharedPtr<FJsonObject>* SizeObj = nullptr;
+            if (!(*ParamsObj)->TryGetObjectField(TEXT("center"), CenterObj) || !CenterObj || !CenterObj->IsValid())
+            {
+                return false;
+            }
+            if (!(*ParamsObj)->TryGetObjectField(TEXT("size"), SizeObj) || !SizeObj || !SizeObj->IsValid())
+            {
+                return false;
+            }
+
+            double CenterX = 0.0;
+            double CenterY = 0.0;
+            double SizeX = 0.0;
+            double SizeY = 0.0;
+            if (!(*CenterObj)->TryGetNumberField(TEXT("x"), CenterX) ||
+                !(*CenterObj)->TryGetNumberField(TEXT("y"), CenterY) ||
+                !(*SizeObj)->TryGetNumberField(TEXT("x"), SizeX) ||
+                !(*SizeObj)->TryGetNumberField(TEXT("y"), SizeY))
+            {
+                return false;
+            }
+
+            double Strength = 0.0;
+            if (!(*ParamsObj)->TryGetNumberField(TEXT("strength"), Strength))
+            {
+                return false;
+            }
+
+            double Falloff = 0.5;
+            (*ParamsObj)->TryGetNumberField(TEXT("falloff"), Falloff);
+
+            FString Mode = TEXT("add");
+            (*ParamsObj)->TryGetStringField(TEXT("mode"), Mode);
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::LandscapePaintLayer;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.LandscapeLayerName = LayerName;
+            ParsedAction.LandscapeCenter = FVector2D(static_cast<float>(CenterX), static_cast<float>(CenterY));
+            ParsedAction.LandscapeSize = FVector2D(
+                FMath::Abs(static_cast<float>(SizeX)),
+                FMath::Abs(static_cast<float>(SizeY)));
+            ParsedAction.LandscapeStrength = FMath::Clamp(static_cast<float>(Strength), 0.0f, 1.0f);
+            ParsedAction.LandscapeFalloff = FMath::Clamp(static_cast<float>(Falloff), 0.0f, 1.0f);
+            ParsedAction.bLandscapeInvertMode = Mode.Equals(TEXT("remove"), ESearchCase::IgnoreCase);
             if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
             {
                 ParsedAction.ActorNames = SelectedActors;
@@ -1350,765 +1521,28 @@ void FUEAIAgentTransportModule::PlanTask(
                             continue;
                         }
 
-                        const TSharedPtr<FJsonObject>* ParamsObj = nullptr;
-                        if (!ActionObj->TryGetObjectField(TEXT("params"), ParamsObj) || !ParamsObj || !ParamsObj->IsValid())
+                        FUEAIAgentPlannedSceneAction ParsedAction;
+                        if (!ParsePlannedActionFromJson(ActionObj, SelectedActors, ParsedAction))
                         {
                             continue;
                         }
 
-                        FString Command;
-                        if (!ActionObj->TryGetStringField(TEXT("command"), Command))
+                        if (
+                            ParsedAction.Type == EUEAIAgentPlannedActionType::ContextGetSceneSummary ||
+                            ParsedAction.Type == EUEAIAgentPlannedActionType::ContextGetSelection)
                         {
-                            continue;
-                        }
-
-                        if (Command == TEXT("context.getSceneSummary"))
-                        {
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSceneSummary;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = true;
-                            PlannedActions.Add(ParsedAction);
-                            continue;
                         }
-
-                        if (Command == TEXT("context.getSelection"))
+                        else if (ParsedAction.Type == EUEAIAgentPlannedActionType::DeleteActor)
                         {
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::ContextGetSelection;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = true;
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setDirectionalLightIntensity"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            double Intensity = 0.0;
-                            if (!(*ParamsObj)->TryGetNumberField(TEXT("intensity"), Intensity))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetDirectionalLightIntensity;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.ScalarValue = static_cast<float>(Intensity);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setFogDensity"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            double Density = 0.0;
-                            if (!(*ParamsObj)->TryGetNumberField(TEXT("density"), Density))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetFogDensity;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.ScalarValue = static_cast<float>(Density);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setPostProcessExposureCompensation"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            double Exposure = 0.0;
-                            if (!(*ParamsObj)->TryGetNumberField(TEXT("exposureCompensation"), Exposure))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.ScalarValue = static_cast<float>(Exposure);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.modifyActor"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyActor;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            bool bHasAnyDelta = false;
-                            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
-                                DeltaLocationObj && DeltaLocationObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.DeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
-                                DeltaRotationObj && DeltaRotationObj->IsValid())
-                            {
-                                double Pitch = 0.0;
-                                double Yaw = 0.0;
-                                double Roll = 0.0;
-                                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
-                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
-                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
-                                {
-                                    ParsedAction.DeltaRotation = FRotator(
-                                        static_cast<float>(Pitch),
-                                        static_cast<float>(Yaw),
-                                        static_cast<float>(Roll));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
-                                DeltaScaleObj && DeltaScaleObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.DeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* ScaleObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("scale"), ScaleObj) &&
-                                ScaleObj && ScaleObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*ScaleObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*ScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*ScaleObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.Scale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    ParsedAction.bHasScale = true;
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            if (bHasAnyDelta)
-                            {
-                                PlannedActions.Add(ParsedAction);
-                            }
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.createActor"))
-                        {
-                            FString ActorClass;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("actorClass"), ActorClass) || ActorClass.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::CreateActor;
-                            ParsedAction.ActorClass = ActorClass;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-
-                            double Count = 1.0;
-                            if ((*ParamsObj)->TryGetNumberField(TEXT("count"), Count))
-                            {
-                                ParsedAction.SpawnCount = FMath::Clamp(FMath::RoundToInt(static_cast<float>(Count)), 1, 200);
-                            }
-
-                            const TSharedPtr<FJsonObject>* LocationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("location"), LocationObj) &&
-                                LocationObj && LocationObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*LocationObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*LocationObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*LocationObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.SpawnLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* RotationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("rotation"), RotationObj) &&
-                                RotationObj && RotationObj->IsValid())
-                            {
-                                double Pitch = 0.0;
-                                double Yaw = 0.0;
-                                double Roll = 0.0;
-                                if ((*RotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
-                                    (*RotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
-                                    (*RotationObj)->TryGetNumberField(TEXT("roll"), Roll))
-                                {
-                                    ParsedAction.SpawnRotation = FRotator(
-                                        static_cast<float>(Pitch),
-                                        static_cast<float>(Yaw),
-                                        static_cast<float>(Roll));
-                                }
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.deleteActor"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::DeleteActor;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = false;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                            PlannedActions.Add(ParsedAction);
-                            continue;
                         }
-
-                        if (Command == TEXT("scene.modifyComponent"))
+                        else
                         {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString ComponentName;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("componentName"), ComponentName) || ComponentName.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::ModifyComponent;
-                            ParsedAction.ComponentName = ComponentName;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
                             ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            bool bHasAnyDelta = false;
-                            const TSharedPtr<FJsonObject>* DeltaLocationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaLocation"), DeltaLocationObj) &&
-                                DeltaLocationObj && DeltaLocationObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*DeltaLocationObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*DeltaLocationObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.ComponentDeltaLocation = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* DeltaRotationObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaRotation"), DeltaRotationObj) &&
-                                DeltaRotationObj && DeltaRotationObj->IsValid())
-                            {
-                                double Pitch = 0.0;
-                                double Yaw = 0.0;
-                                double Roll = 0.0;
-                                if ((*DeltaRotationObj)->TryGetNumberField(TEXT("pitch"), Pitch) &&
-                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("yaw"), Yaw) &&
-                                    (*DeltaRotationObj)->TryGetNumberField(TEXT("roll"), Roll))
-                                {
-                                    ParsedAction.ComponentDeltaRotation = FRotator(
-                                        static_cast<float>(Pitch),
-                                        static_cast<float>(Yaw),
-                                        static_cast<float>(Roll));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* DeltaScaleObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("deltaScale"), DeltaScaleObj) &&
-                                DeltaScaleObj && DeltaScaleObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*DeltaScaleObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*DeltaScaleObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.ComponentDeltaScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            const TSharedPtr<FJsonObject>* ScaleObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("scale"), ScaleObj) &&
-                                ScaleObj && ScaleObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*ScaleObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*ScaleObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*ScaleObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.ComponentScale = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                    ParsedAction.bComponentHasScale = true;
-                                    bHasAnyDelta = true;
-                                }
-                            }
-
-                            bool bVisibility = false;
-                            if ((*ParamsObj)->TryGetBoolField(TEXT("visibility"), bVisibility))
-                            {
-                                ParsedAction.bComponentVisibilityEdit = true;
-                                ParsedAction.bComponentVisible = bVisibility;
-                            }
-
-                            if (!bHasAnyDelta && !ParsedAction.bComponentVisibilityEdit)
-                            {
-                                continue;
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
                         }
 
-                        if (Command == TEXT("scene.addActorTag"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString Tag;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("tag"), Tag) || Tag.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::AddActorTag;
-                            ParsedAction.ActorTag = Tag;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setComponentMaterial"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString ComponentName;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("componentName"), ComponentName) || ComponentName.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FString MaterialPath;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("materialPath"), MaterialPath) || MaterialPath.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetComponentMaterial;
-                            ParsedAction.ComponentName = ComponentName;
-                            ParsedAction.MaterialPath = MaterialPath;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            double SlotValue = 0.0;
-                            if ((*ParamsObj)->TryGetNumberField(TEXT("materialSlot"), SlotValue))
-                            {
-                                ParsedAction.MaterialSlot = FMath::Max(0, FMath::RoundToInt(static_cast<float>(SlotValue)));
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setComponentStaticMesh"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString ComponentName;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("componentName"), ComponentName) || ComponentName.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FString MeshPath;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("meshPath"), MeshPath) || MeshPath.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetComponentStaticMesh;
-                            ParsedAction.ComponentName = ComponentName;
-                            ParsedAction.MeshPath = MeshPath;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.setActorFolder"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString FolderPath;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("folderPath"), FolderPath))
-                            {
-                                FolderPath = TEXT("");
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SetActorFolder;
-                            ParsedAction.FolderPath = FolderPath;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.addActorLabelPrefix"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FString Prefix;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("prefix"), Prefix) || Prefix.IsEmpty())
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::AddActorLabelPrefix;
-                            ParsedAction.LabelPrefix = Prefix;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("scene.duplicateActors"))
-                        {
-                            FString Target;
-                            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
-                            {
-                                continue;
-                            }
-
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::DuplicateActors;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
-                            {
-                                ParsedAction.ActorNames = SelectedActors;
-                            }
-                            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
-                            {
-                                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
-                                {
-                                    continue;
-                                }
-                            }
-                            else
-                            {
-                                continue;
-                            }
-
-                            double CountValue = 1.0;
-                            if ((*ParamsObj)->TryGetNumberField(TEXT("count"), CountValue))
-                            {
-                                ParsedAction.DuplicateCount = FMath::Clamp(FMath::RoundToInt(static_cast<float>(CountValue)), 1, 20);
-                            }
-
-                            const TSharedPtr<FJsonObject>* OffsetObj = nullptr;
-                            if ((*ParamsObj)->TryGetObjectField(TEXT("offset"), OffsetObj) && OffsetObj && OffsetObj->IsValid())
-                            {
-                                double X = 0.0;
-                                double Y = 0.0;
-                                double Z = 0.0;
-                                if ((*OffsetObj)->TryGetNumberField(TEXT("x"), X) &&
-                                    (*OffsetObj)->TryGetNumberField(TEXT("y"), Y) &&
-                                    (*OffsetObj)->TryGetNumberField(TEXT("z"), Z))
-                                {
-                                    ParsedAction.DuplicateOffset = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
-                                }
-                            }
-
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("session.beginTransaction"))
-                        {
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionBeginTransaction;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            FString Description;
-                            if ((*ParamsObj)->TryGetStringField(TEXT("description"), Description))
-                            {
-                                ParsedAction.TransactionDescription = Description;
-                            }
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("session.commitTransaction"))
-                        {
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionCommitTransaction;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
-
-                        if (Command == TEXT("session.rollbackTransaction"))
-                        {
-                            FUEAIAgentPlannedSceneAction ParsedAction;
-                            ParsedAction.Type = EUEAIAgentPlannedActionType::SessionRollbackTransaction;
-                            ParsedAction.Risk = ParseRiskLevel(ActionObj);
-                            ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
-                            PlannedActions.Add(ParsedAction);
-                            continue;
-                        }
+                        PlannedActions.Add(ParsedAction);
                     }
                 }
 
@@ -3687,6 +3121,20 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             ActionIndex + 1);
     }
 
+    if (Action.Type == EUEAIAgentPlannedActionType::EditorUndo)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Undo last editor action"),
+            ActionIndex + 1);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::EditorRedo)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Redo last editor action"),
+            ActionIndex + 1);
+    }
+
     if (Action.Type == EUEAIAgentPlannedActionType::CreateActor)
     {
         const FString SpawnTarget = Action.SpawnCount == 1
@@ -3805,6 +3253,33 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             ActionIndex + 1,
             Action.ScalarValue,
             *TargetText);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::LandscapeSculpt)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Sculpt landscape (%s) center=(%.0f, %.0f), size=(%.0f, %.0f), strength=%.2f"),
+            ActionIndex + 1,
+            Action.bLandscapeInvertMode ? TEXT("lower") : TEXT("raise"),
+            Action.LandscapeCenter.X,
+            Action.LandscapeCenter.Y,
+            Action.LandscapeSize.X,
+            Action.LandscapeSize.Y,
+            Action.LandscapeStrength);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::LandscapePaintLayer)
+    {
+        return FString::Printf(
+            TEXT("Action %d: Paint landscape layer \"%s\" (%s) center=(%.0f, %.0f), size=(%.0f, %.0f), strength=%.2f"),
+            ActionIndex + 1,
+            *Action.LandscapeLayerName,
+            Action.bLandscapeInvertMode ? TEXT("remove") : TEXT("add"),
+            Action.LandscapeCenter.X,
+            Action.LandscapeCenter.Y,
+            Action.LandscapeSize.X,
+            Action.LandscapeSize.Y,
+            Action.LandscapeStrength);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)

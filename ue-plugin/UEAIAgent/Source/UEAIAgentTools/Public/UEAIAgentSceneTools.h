@@ -108,6 +108,29 @@ struct FUEAIAgentSetPostProcessExposureCompensationParams
     bool bUseSelectionIfActorNamesEmpty = true;
 };
 
+struct FUEAIAgentLandscapeSculptParams
+{
+    TArray<FString> ActorNames;
+    FVector2D Center = FVector2D::ZeroVector;
+    FVector2D Size = FVector2D(1000.0f, 1000.0f);
+    float Strength = 0.2f;
+    float Falloff = 0.5f;
+    bool bLower = false;
+    bool bUseSelectionIfActorNamesEmpty = true;
+};
+
+struct FUEAIAgentLandscapePaintLayerParams
+{
+    TArray<FString> ActorNames;
+    FVector2D Center = FVector2D::ZeroVector;
+    FVector2D Size = FVector2D(1000.0f, 1000.0f);
+    FString LayerName;
+    float Strength = 0.4f;
+    float Falloff = 0.5f;
+    bool bRemove = false;
+    bool bUseSelectionIfActorNamesEmpty = true;
+};
+
 class UEAIAGENTTOOLS_API FUEAIAgentSceneTools
 {
 public:
@@ -128,7 +151,12 @@ public:
     static bool SceneSetPostProcessExposureCompensation(
         const FUEAIAgentSetPostProcessExposureCompensationParams& Params,
         FString& OutMessage);
+    static bool LandscapeSculpt(const FUEAIAgentLandscapeSculptParams& Params, FString& OutMessage);
+    static bool LandscapePaintLayer(const FUEAIAgentLandscapePaintLayerParams& Params, FString& OutMessage);
+    static bool EditorUndo(FString& OutMessage);
+    static bool EditorRedo(FString& OutMessage);
     static bool SessionBeginTransaction(const FString& Description, FString& OutMessage);
     static bool SessionCommitTransaction(FString& OutMessage);
     static bool SessionRollbackTransaction(FString& OutMessage);
+    static void SessionCleanupForShutdown();
 };

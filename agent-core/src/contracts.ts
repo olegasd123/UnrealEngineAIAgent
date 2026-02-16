@@ -309,9 +309,52 @@ const SceneSetPostProcessExposureCompensationParamsSchema = z
     message: "scene.setPostProcessExposureCompensation target=byName needs actorNames"
   });
 
+const LandscapePoint2Schema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite()
+});
+
+const LandscapeSize2Schema = z.object({
+  x: z.number().finite().positive(),
+  y: z.number().finite().positive()
+});
+
+const LandscapeSculptParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    center: LandscapePoint2Schema,
+    size: LandscapeSize2Schema,
+    strength: z.number().finite().min(0).max(1),
+    falloff: z.number().finite().min(0).max(1).default(0.5),
+    mode: z.enum(["raise", "lower"]).default("raise")
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "landscape.sculpt target=byName needs actorNames"
+  });
+
+const LandscapePaintLayerParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    center: LandscapePoint2Schema,
+    size: LandscapeSize2Schema,
+    layerName: z.string().min(1),
+    strength: z.number().finite().min(0).max(1),
+    falloff: z.number().finite().min(0).max(1).default(0.5),
+    mode: z.enum(["add", "remove"]).default("add")
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "landscape.paintLayer target=byName needs actorNames"
+  });
+
 const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
 
 const ContextGetSelectionParamsSchema = z.object({}).passthrough();
+
+const EditorUndoParamsSchema = z.object({}).passthrough();
+
+const EditorRedoParamsSchema = z.object({}).passthrough();
 
 const SessionBeginTransactionParamsSchema = z
   .object({
@@ -332,6 +375,18 @@ export const ContextGetSceneSummaryActionSchema = z.object({
 export const ContextGetSelectionActionSchema = z.object({
   command: z.literal("context.getSelection"),
   params: ContextGetSelectionParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const EditorUndoActionSchema = z.object({
+  command: z.literal("editor.undo"),
+  params: EditorUndoParamsSchema.default({}),
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const EditorRedoActionSchema = z.object({
+  command: z.literal("editor.redo"),
+  params: EditorRedoParamsSchema.default({}),
   risk: z.enum(["low", "medium", "high"])
 });
 
@@ -426,9 +481,23 @@ export const SceneSetPostProcessExposureCompensationActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const LandscapeSculptActionSchema = z.object({
+  command: z.literal("landscape.sculpt"),
+  params: LandscapeSculptParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const LandscapePaintLayerActionSchema = z.object({
+  command: z.literal("landscape.paintLayer"),
+  params: LandscapePaintLayerParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   ContextGetSceneSummaryActionSchema,
   ContextGetSelectionActionSchema,
+  EditorUndoActionSchema,
+  EditorRedoActionSchema,
   SessionBeginTransactionActionSchema,
   SessionCommitTransactionActionSchema,
   SessionRollbackTransactionActionSchema,
@@ -444,7 +513,9 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneDuplicateActorsActionSchema,
   SceneSetDirectionalLightIntensityActionSchema,
   SceneSetFogDensityActionSchema,
-  SceneSetPostProcessExposureCompensationActionSchema
+  SceneSetPostProcessExposureCompensationActionSchema,
+  LandscapeSculptActionSchema,
+  LandscapePaintLayerActionSchema
 ]);
 
 const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");

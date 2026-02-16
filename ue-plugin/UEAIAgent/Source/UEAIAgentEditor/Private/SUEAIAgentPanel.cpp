@@ -191,6 +191,95 @@ namespace
         return ProviderCode;
     }
 
+    const TCHAR* PlannedActionTypeToText(EUEAIAgentPlannedActionType Type)
+    {
+        switch (Type)
+        {
+        case EUEAIAgentPlannedActionType::ContextGetSceneSummary:
+            return TEXT("Read Scene Summary");
+        case EUEAIAgentPlannedActionType::ContextGetSelection:
+            return TEXT("Read Selection");
+        case EUEAIAgentPlannedActionType::EditorUndo:
+            return TEXT("Undo");
+        case EUEAIAgentPlannedActionType::EditorRedo:
+            return TEXT("Redo");
+        case EUEAIAgentPlannedActionType::ModifyActor:
+            return TEXT("Modify Actor");
+        case EUEAIAgentPlannedActionType::CreateActor:
+            return TEXT("Create Actor");
+        case EUEAIAgentPlannedActionType::DeleteActor:
+            return TEXT("Delete Actor");
+        case EUEAIAgentPlannedActionType::ModifyComponent:
+            return TEXT("Modify Component");
+        case EUEAIAgentPlannedActionType::AddActorTag:
+            return TEXT("Add Actor Tag");
+        case EUEAIAgentPlannedActionType::SetComponentMaterial:
+            return TEXT("Set Component Material");
+        case EUEAIAgentPlannedActionType::SetComponentStaticMesh:
+            return TEXT("Set Component Static Mesh");
+        case EUEAIAgentPlannedActionType::SetActorFolder:
+            return TEXT("Set Actor Folder");
+        case EUEAIAgentPlannedActionType::AddActorLabelPrefix:
+            return TEXT("Add Label Prefix");
+        case EUEAIAgentPlannedActionType::DuplicateActors:
+            return TEXT("Duplicate Actors");
+        case EUEAIAgentPlannedActionType::SetDirectionalLightIntensity:
+            return TEXT("Set Directional Light Intensity");
+        case EUEAIAgentPlannedActionType::SetFogDensity:
+            return TEXT("Set Fog Density");
+        case EUEAIAgentPlannedActionType::SetPostProcessExposureCompensation:
+            return TEXT("Set Exposure Compensation");
+        case EUEAIAgentPlannedActionType::LandscapeSculpt:
+            return TEXT("Landscape Sculpt");
+        case EUEAIAgentPlannedActionType::LandscapePaintLayer:
+            return TEXT("Landscape Paint Layer");
+        case EUEAIAgentPlannedActionType::SessionBeginTransaction:
+            return TEXT("Begin Internal Transaction");
+        case EUEAIAgentPlannedActionType::SessionCommitTransaction:
+            return TEXT("Commit Internal Transaction");
+        case EUEAIAgentPlannedActionType::SessionRollbackTransaction:
+            return TEXT("Rollback Internal Transaction");
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
+    const TCHAR* RiskLevelToText(EUEAIAgentRiskLevel Risk)
+    {
+        switch (Risk)
+        {
+        case EUEAIAgentRiskLevel::Low:
+            return TEXT("Low");
+        case EUEAIAgentRiskLevel::Medium:
+            return TEXT("Medium");
+        case EUEAIAgentRiskLevel::High:
+            return TEXT("High");
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
+    const TCHAR* ActionStateToText(EUEAIAgentActionState State)
+    {
+        switch (State)
+        {
+        case EUEAIAgentActionState::Pending:
+            return TEXT("Pending");
+        case EUEAIAgentActionState::Succeeded:
+            return TEXT("Succeeded");
+        case EUEAIAgentActionState::Failed:
+            return TEXT("Failed");
+        default:
+            return TEXT("Unknown");
+        }
+    }
+
+    void TryRollbackInternalTransaction()
+    {
+        FString RollbackMessage;
+        FUEAIAgentSceneTools::SessionRollbackTransaction(RollbackMessage);
+    }
+
     void AppendEscapedRichChar(FString& Out, TCHAR Ch)
     {
         if (Ch == TEXT('&'))
@@ -996,10 +1085,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                     .WidthOverride(220.0f)
                     .Visibility_Lambda([this]()
                     {
-                        if (GetSelectedModeCode() != TEXT("agent"))
-                        {
-                            return EVisibility::Collapsed;
-                        }
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
                             Transport.GetNextPendingActionIndex() != INDEX_NONE;
@@ -1066,12 +1151,8 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(200.0f)
-                    .Visibility_Lambda([this]()
+                    .Visibility_Lambda([]()
                     {
-                        if (GetSelectedModeCode() != TEXT("chat"))
-                        {
-                            return EVisibility::Collapsed;
-                        }
                         FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
                         const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
                             Transport.GetNextPendingActionIndex() != INDEX_NONE;
@@ -1805,6 +1886,7 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         }
 
         ++FailedCount;
+        TryRollbackInternalTransaction();
         if (FirstFailureReason.IsEmpty())
         {
             const FString NormalizedReason = NormalizeSingleLineStatusText(ResultMessage);
@@ -1951,6 +2033,7 @@ FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
     }
 
     PlanText->SetText(FText::FromString(TEXT("Agent: rejecting action...")));
+    TryRollbackInternalTransaction();
     Transport.ApproveCurrentSessionAction(
         false,
         FOnUEAIAgentSessionUpdated::CreateSP(this, &SUEAIAgentPanel::HandleSessionUpdate));
@@ -2004,11 +2087,11 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     const int32 ActionCount = Transport.GetPlannedActionCount();
-    if (GetSelectedModeCode() == TEXT("chat"))
+    if (ActionCount > 0)
     {
         for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
         {
-            Transport.SetPlannedActionApproved(ActionIndex, false);
+            Transport.SetPlannedActionApproved(ActionIndex, true);
         }
         UpdateActionApprovalUi();
     }
@@ -2037,7 +2120,6 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
 
     bIsRunInFlight = false;
     bIsResumeInFlight = false;
-    UpdateActionApprovalUi();
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (!bIsRefreshingChats && ShouldRefreshChatsForAutoTitle(Transport))
     {
@@ -2045,6 +2127,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     }
     if (!bOk)
     {
+        TryRollbackInternalTransaction();
         CurrentSessionStatus = ESessionStatus::Failed;
         const FString Reason = NormalizeSingleLineStatusText(Message);
         if (Reason.IsEmpty())
@@ -2059,9 +2142,21 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         return;
     }
 
+    const ESessionStatus PreviousSessionStatus = CurrentSessionStatus;
     CurrentSessionStatus = ParseSessionStatusFromMessage(Message);
+    if (PreviousSessionStatus == ESessionStatus::Unknown)
+    {
+        const int32 ActionCount = Transport.GetPlannedActionCount();
+        for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+        {
+            Transport.SetPlannedActionApproved(ActionIndex, true);
+        }
+    }
+    UpdateActionApprovalUi();
+
     if (CurrentSessionStatus == ESessionStatus::Failed)
     {
+        TryRollbackInternalTransaction();
         const FString DecisionMessage = ExtractDecisionMessageBody(Message);
         if (IsUserCanceledSessionMessage(DecisionMessage))
         {
@@ -2084,6 +2179,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     }
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
+        TryRollbackInternalTransaction();
         PlanText->SetText(FText::FromString(TEXT("Completed")));
         RefreshActiveChatHistory();
         return;
@@ -2111,6 +2207,20 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         return;
     }
 
+    if (CurrentSessionStatus == ESessionStatus::AwaitingApproval)
+    {
+        PlanText->SetText(FText::FromString(FString::Printf(TEXT("Needs approval: %d action(s)"), Transport.GetPlannedActionCount())));
+        RefreshActiveChatHistory();
+        return;
+    }
+
+    if (CurrentSessionStatus != ESessionStatus::ReadyToExecute)
+    {
+        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        RefreshActiveChatHistory();
+        return;
+    }
+
     if (!NextAction.bApproved)
     {
         PlanText->SetText(FText::FromString(FString::Printf(TEXT("Needs approval: %d action(s)"), Transport.GetPlannedActionCount())));
@@ -2122,6 +2232,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     const bool bOkExecute = ExecutePlannedAction(NextAction, ExecuteMessage);
     if (!bOkExecute)
     {
+        TryRollbackInternalTransaction();
         CurrentSessionStatus = ESessionStatus::AwaitingApproval;
         UpdateActionApprovalUi();
         PlanText->SetText(FText::FromString(TEXT("Agent: local execute failed\n") + ExecuteMessage + TEXT("\nFix selection/target and click Resume.")));
@@ -2181,6 +2292,16 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
     if (PlannedAction.Type == EUEAIAgentPlannedActionType::ContextGetSelection)
     {
         return FUEAIAgentSceneTools::ContextGetSelection(OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::EditorUndo)
+    {
+        return FUEAIAgentSceneTools::EditorUndo(OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::EditorRedo)
+    {
+        return FUEAIAgentSceneTools::EditorRedo(OutMessage);
     }
 
     if (PlannedAction.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)
@@ -2370,6 +2491,33 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
             return false;
         }
         return FUEAIAgentSceneTools::SceneSetPostProcessExposureCompensation(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::LandscapeSculpt)
+    {
+        FUEAIAgentLandscapeSculptParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Center = PlannedAction.LandscapeCenter;
+        Params.Size = PlannedAction.LandscapeSize;
+        Params.Strength = PlannedAction.LandscapeStrength;
+        Params.Falloff = PlannedAction.LandscapeFalloff;
+        Params.bLower = PlannedAction.bLandscapeInvertMode;
+        Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty();
+        return FUEAIAgentSceneTools::LandscapeSculpt(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::LandscapePaintLayer)
+    {
+        FUEAIAgentLandscapePaintLayerParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Center = PlannedAction.LandscapeCenter;
+        Params.Size = PlannedAction.LandscapeSize;
+        Params.LayerName = PlannedAction.LandscapeLayerName;
+        Params.Strength = PlannedAction.LandscapeStrength;
+        Params.Falloff = PlannedAction.LandscapeFalloff;
+        Params.bRemove = PlannedAction.bLandscapeInvertMode;
+        Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty();
+        return FUEAIAgentSceneTools::LandscapePaintLayer(Params, OutMessage);
     }
 
     FUEAIAgentModifyActorParams Params;
@@ -3272,10 +3420,10 @@ FString SUEAIAgentPanel::BuildActionDetailText(int32 ActionIndex) const
 
     const FString Targets = Action.ActorNames.Num() > 0 ? FString::Join(Action.ActorNames, TEXT(", ")) : TEXT("selection");
     return FString::Printf(
-        TEXT("Tool=%d, Risk=%d, State=%d, Attempts=%d, Approved=%s, Targets=%s"),
-        static_cast<int32>(Action.Type),
-        static_cast<int32>(Action.Risk),
-        static_cast<int32>(Action.State),
+        TEXT("Type=%s, Risk=%s, State=%s, Attempts=%d, Approved=%s, Targets=%s"),
+        PlannedActionTypeToText(Action.Type),
+        RiskLevelToText(Action.Risk),
+        ActionStateToText(Action.State),
         Action.AttemptCount,
         Action.bApproved ? TEXT("true") : TEXT("false"),
         *Targets);
@@ -3290,21 +3438,14 @@ bool SUEAIAgentPanel::ShouldShowApprovalUi() const
         return false;
     }
 
-    const FString Mode = GetSelectedModeCode();
-    if (Mode == TEXT("chat"))
+    if (Transport.HasActiveSession())
     {
-        return true;
-    }
-
-    if (Mode == TEXT("agent"))
-    {
-        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-            Transport.GetNextPendingActionIndex() != INDEX_NONE;
+        const bool bHasPendingSessionAction = Transport.GetNextPendingActionIndex() != INDEX_NONE;
         return bHasPendingSessionAction &&
             CurrentSessionStatus == ESessionStatus::AwaitingApproval;
     }
 
-    return false;
+    return true;
 }
 
 void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxState NewState)
@@ -3418,8 +3559,8 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
         for (const int32 ActionIndex : Indexes)
         {
             TSharedPtr<SCheckBox> RowCheckBox;
-            TSharedPtr<STextBlock> RowText;
-            TSharedPtr<STextBlock> RowDetailText;
+            TSharedPtr<SEditableText> RowText;
+            TSharedPtr<SMultiLineEditableTextBox> RowDetailText;
 
             ActionListBox->AddSlot()
             .AutoHeight()
@@ -3431,7 +3572,8 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
                 [
                     SNew(SHorizontalBox)
                     + SHorizontalBox::Slot()
-                    .FillWidth(1.0f)
+                    .AutoWidth()
+                    .VAlign(VAlign_Center)
                     [
                         SAssignNew(RowCheckBox, SCheckBox)
                         .IsChecked(Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
@@ -3439,14 +3581,20 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
                         {
                             HandleActionApprovalChanged(ActionIndex, NewState);
                         })
-                        [
-                            SAssignNew(RowText, STextBlock)
-                            .AutoWrapText(true)
-                            .Text(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)))
-                        ]
+                    ]
+                    + SHorizontalBox::Slot()
+                    .FillWidth(1.0f)
+                    .VAlign(VAlign_Center)
+                    .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                    [
+                        SAssignNew(RowText, SEditableText)
+                        .IsReadOnly(true)
+                        .Font(FAppStyle::Get().GetFontStyle("NormalFont"))
+                        .Text(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)))
                     ]
                     + SHorizontalBox::Slot()
                     .AutoWidth()
+                    .VAlign(VAlign_Center)
                     [
                         SNew(SButton)
                         .Text_Lambda([this, ActionIndex]()
@@ -3468,7 +3616,8 @@ void SUEAIAgentPanel::RebuildActionApprovalUi()
                 .AutoHeight()
                 .Padding(24.0f, 2.0f, 0.0f, 0.0f)
                 [
-                    SAssignNew(RowDetailText, STextBlock)
+                    SAssignNew(RowDetailText, SMultiLineEditableTextBox)
+                    .IsReadOnly(true)
                     .AutoWrapText(true)
                     .Visibility_Lambda([this, ActionIndex]()
                     {

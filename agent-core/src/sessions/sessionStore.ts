@@ -20,7 +20,9 @@ const DEFAULT_POLICY: PolicyRuntimeConfig = {
   maxTargetNames: 50,
   maxDeleteByNameCount: 20,
   selectionTargetEstimate: 5,
-  maxSessionChangeUnits: 120
+  maxSessionChangeUnits: 120,
+  maxLandscapeBrushSize: 4096,
+  maxLandscapeBrushStrength: 0.5
 };
 
 export type { SessionDecision } from "./sessionTypes.js";

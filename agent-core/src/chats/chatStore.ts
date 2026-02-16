@@ -170,6 +170,7 @@ export class ChatStore {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         title_auto INTEGER NOT NULL DEFAULT 1,
+        pending_write_prompt TEXT,
         archived INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -359,6 +360,54 @@ export class ChatStore {
     return [];
   }
 
+  public getLatestAskedPrompts(chatId: string, limit = 30): string[] {
+    this.getChat(chatId);
+    const normalizedLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT summary
+         FROM chat_details
+         WHERE chat_id = ? AND kind = 'asked'
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?`
+      )
+      .all(chatId, normalizedLimit) as Array<{ summary?: string | null }>;
+
+    const prompts: string[] = [];
+    for (const row of rows) {
+      const prompt = typeof row.summary === "string" ? row.summary.trim() : "";
+      if (prompt.length > 0) {
+        prompts.push(prompt);
+      }
+    }
+    return prompts;
+  }
+
+  public getPendingWritePrompt(chatId: string): string | undefined {
+    this.getChat(chatId);
+    const row = this.db.prepare(`SELECT pending_write_prompt FROM chats WHERE id = ?`).get(chatId) as
+      | { pending_write_prompt?: string | null }
+      | undefined;
+    const value = typeof row?.pending_write_prompt === "string" ? row.pending_write_prompt.trim() : "";
+    return value.length > 0 ? value : undefined;
+  }
+
+  public setPendingWritePrompt(chatId: string, prompt: string): void {
+    this.getChat(chatId);
+    const normalized = prompt.trim();
+    if (normalized.length === 0) {
+      return;
+    }
+    const now = toIsoNow();
+    this.db.prepare(`UPDATE chats SET pending_write_prompt = ?, updated_at = ? WHERE id = ?`).run(normalized, now, chatId);
+  }
+
+  public clearPendingWritePrompt(chatId: string): void {
+    this.getChat(chatId);
+    const now = toIsoNow();
+    this.db.prepare(`UPDATE chats SET pending_write_prompt = NULL, updated_at = ? WHERE id = ?`).run(now, chatId);
+  }
+
   private appendDetail(
     chatId: string,
     kind: ChatDetailKind,
@@ -477,6 +526,11 @@ export class ChatStore {
     if (!hasTitleAuto) {
       this.db.exec(`ALTER TABLE chats ADD COLUMN title_auto INTEGER NOT NULL DEFAULT 1;`);
       this.db.exec(`UPDATE chats SET title_auto = CASE WHEN title = 'New chat' THEN 1 ELSE 0 END;`);
+    }
+
+    const hasPendingWritePrompt = columns.some((column) => String(column.name) === "pending_write_prompt");
+    if (!hasPendingWritePrompt) {
+      this.db.exec(`ALTER TABLE chats ADD COLUMN pending_write_prompt TEXT;`);
     }
   }
 

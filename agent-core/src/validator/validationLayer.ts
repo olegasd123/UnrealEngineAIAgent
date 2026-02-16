@@ -63,6 +63,8 @@ function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
   if (
     action.command === "context.getSceneSummary" ||
     action.command === "context.getSelection" ||
+    action.command === "editor.undo" ||
+    action.command === "editor.redo" ||
     action.command === "session.beginTransaction" ||
     action.command === "session.commitTransaction" ||
     action.command === "session.rollbackTransaction"
@@ -124,7 +126,11 @@ function isSceneWriteAction(action: PlanOutput["actions"][number]): boolean {
     action.command === "scene.duplicateActors" ||
     action.command === "scene.setDirectionalLightIntensity" ||
     action.command === "scene.setFogDensity" ||
-    action.command === "scene.setPostProcessExposureCompensation"
+    action.command === "scene.setPostProcessExposureCompensation" ||
+    action.command === "landscape.sculpt" ||
+    action.command === "landscape.paintLayer" ||
+    action.command === "editor.undo" ||
+    action.command === "editor.redo"
   );
 }
 

@@ -14,6 +14,8 @@ enum class EUEAIAgentPlannedActionType : uint8
 {
     ContextGetSceneSummary,
     ContextGetSelection,
+    EditorUndo,
+    EditorRedo,
     ModifyActor,
     CreateActor,
     DeleteActor,
@@ -27,6 +29,8 @@ enum class EUEAIAgentPlannedActionType : uint8
     SetDirectionalLightIntensity,
     SetFogDensity,
     SetPostProcessExposureCompensation,
+    LandscapeSculpt,
+    LandscapePaintLayer,
     SessionBeginTransaction,
     SessionCommitTransaction,
     SessionRollbackTransaction
@@ -98,6 +102,14 @@ struct FUEAIAgentPlannedSceneAction
 
     // scene.setDirectionalLightIntensity / scene.setFogDensity / scene.setPostProcessExposureCompensation
     float ScalarValue = 0.0f;
+
+    // landscape.sculpt / landscape.paintLayer
+    FVector2D LandscapeCenter = FVector2D::ZeroVector;
+    FVector2D LandscapeSize = FVector2D(1000.0f, 1000.0f);
+    float LandscapeStrength = 0.2f;
+    float LandscapeFalloff = 0.5f;
+    bool bLandscapeInvertMode = false; // sculpt: lower, paint: remove
+    FString LandscapeLayerName;
 
     // session.beginTransaction
     FString TransactionDescription;

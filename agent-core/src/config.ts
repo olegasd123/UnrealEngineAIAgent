@@ -42,6 +42,16 @@ const PositiveIntSchema = z.preprocess(
   z.number().int().min(1)
 );
 
+const PositiveNumberSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    return Number(value);
+  },
+  z.number().finite().positive()
+);
+
 const RawEnvSchema = z.object({
   AGENT_HOST: z.string().trim().min(1).default("127.0.0.1"),
   AGENT_PORT: PortSchema,
@@ -69,7 +79,9 @@ const RawEnvSchema = z.object({
   AGENT_POLICY_MAX_TARGET_NAMES: PositiveIntSchema.default(50),
   AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT: PositiveIntSchema.default(20),
   AGENT_POLICY_SELECTION_TARGET_ESTIMATE: PositiveIntSchema.default(5),
-  AGENT_POLICY_MAX_SESSION_CHANGE_UNITS: PositiveIntSchema.default(120)
+  AGENT_POLICY_MAX_SESSION_CHANGE_UNITS: PositiveIntSchema.default(120),
+  AGENT_POLICY_MAX_LANDSCAPE_BRUSH_SIZE: PositiveNumberSchema.default(4096),
+  AGENT_POLICY_MAX_LANDSCAPE_BRUSH_STRENGTH: PositiveNumberSchema.default(0.5)
 });
 
 function optionalNonEmpty(value: string | undefined): string | undefined {
@@ -106,6 +118,8 @@ export interface PolicyRuntimeConfig {
   maxDeleteByNameCount: number;
   selectionTargetEstimate: number;
   maxSessionChangeUnits: number;
+  maxLandscapeBrushSize: number;
+  maxLandscapeBrushStrength: number;
 }
 
 export const config = {
@@ -140,6 +154,8 @@ export const config = {
     maxTargetNames: env.AGENT_POLICY_MAX_TARGET_NAMES,
     maxDeleteByNameCount: env.AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT,
     selectionTargetEstimate: env.AGENT_POLICY_SELECTION_TARGET_ESTIMATE,
-    maxSessionChangeUnits: env.AGENT_POLICY_MAX_SESSION_CHANGE_UNITS
+    maxSessionChangeUnits: env.AGENT_POLICY_MAX_SESSION_CHANGE_UNITS,
+    maxLandscapeBrushSize: env.AGENT_POLICY_MAX_LANDSCAPE_BRUSH_SIZE,
+    maxLandscapeBrushStrength: env.AGENT_POLICY_MAX_LANDSCAPE_BRUSH_STRENGTH
   }
 };

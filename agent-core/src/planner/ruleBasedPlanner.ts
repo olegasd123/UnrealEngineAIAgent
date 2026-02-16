@@ -685,8 +685,189 @@ function parsePostProcessExposureCompensationFromPrompt(prompt: string): number 
   return Number.isFinite(value) ? value : null;
 }
 
+function parseNormalizedPercentValue(prompt: string, label: string): number | null {
+  const pattern = new RegExp(`\\b${label}\\s*(?:to|=|by)?\\s*([+-]?\\d+(?:\\.\\d+)?)(\\s*%)?`, "i");
+  const match = pattern.exec(prompt);
+  if (!match) {
+    return null;
+  }
+
+  const rawValue = Number(match[1]);
+  if (!Number.isFinite(rawValue)) {
+    return null;
+  }
+
+  if (match[2] || rawValue > 1) {
+    return rawValue / 100;
+  }
+
+  return rawValue;
+}
+
+function parseLandscapeCenterFromPrompt(prompt: string): { x: number; y: number } | null {
+  const explicitAxes =
+    /\b(?:center|at)\s*x\s*([+-]?\d+(?:\.\d+)?)\s*y\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\b(?:center|at)\s*\(?\s*([+-]?\d+(?:\.\d+)?)\s*[, ]\s*([+-]?\d+(?:\.\d+)?)\s*\)?/i.exec(prompt);
+  if (explicitAxes) {
+    const x = Number(explicitAxes[1]);
+    const y = Number(explicitAxes[2]);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      return { x, y };
+    }
+  }
+
+  const axisValues = parseAxisValues(prompt.toLowerCase(), ["x", "y"]);
+  if (typeof axisValues.x === "number" && typeof axisValues.y === "number") {
+    return { x: axisValues.x, y: axisValues.y };
+  }
+
+  return null;
+}
+
+function parseLandscapeSizeFromPrompt(prompt: string): { x: number; y: number } | null {
+  const areaPattern =
+    /\b(?:size|bounds|area)\s*x\s*([+-]?\d+(?:\.\d+)?)\s*y\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\b(?:width)\s*([+-]?\d+(?:\.\d+)?)\s*(?:[, ]+|\s+)(?:height)\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  if (areaPattern) {
+    const sx = Math.abs(Number(areaPattern[1]));
+    const sy = Math.abs(Number(areaPattern[2]));
+    if (Number.isFinite(sx) && Number.isFinite(sy) && sx > 0 && sy > 0) {
+      return { x: sx, y: sy };
+    }
+  }
+
+  const radiusMatch = /\bradius\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  if (radiusMatch) {
+    const radius = Math.abs(Number(radiusMatch[1]));
+    if (Number.isFinite(radius) && radius > 0) {
+      return { x: radius * 2, y: radius * 2 };
+    }
+  }
+
+  const uniformMatch =
+    /\bbrush(?:\s+size)?\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt) ??
+    /\bsize\s*(?:to|=|by)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  if (uniformMatch) {
+    const size = Math.abs(Number(uniformMatch[1]));
+    if (Number.isFinite(size) && size > 0) {
+      return { x: size, y: size };
+    }
+  }
+
+  return null;
+}
+
+function parseLandscapeLayerNameFromPrompt(prompt: string): string | null {
+  const match =
+    /\blayer\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\blayer\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\blayer\s+([0-9A-Za-z_]+)/i.exec(prompt);
+  if (!match) {
+    return null;
+  }
+
+  const layerName = match[1]?.trim();
+  return layerName ? layerName : null;
+}
+
+function extractPromptSegment(prompt: string, startRegex: RegExp, stopRegex: RegExp): string | null {
+  const startMatch = startRegex.exec(prompt);
+  if (!startMatch || startMatch.index === undefined || startMatch.index < 0) {
+    return null;
+  }
+
+  const startIndex = startMatch.index;
+  const tail = prompt.slice(startIndex);
+  const stopMatch = stopRegex.exec(tail);
+  if (!stopMatch || stopMatch.index === undefined || stopMatch.index < 0) {
+    return prompt.slice(startIndex);
+  }
+
+  const stopIndex = startIndex + stopMatch.index;
+  if (stopIndex <= startIndex) {
+    return prompt.slice(startIndex);
+  }
+  return prompt.slice(startIndex, stopIndex);
+}
+
+function parseLandscapeSculptFromPrompt(prompt: string): {
+  center: { x: number; y: number };
+  size: { x: number; y: number };
+  strength: number;
+  falloff: number;
+  mode: "raise" | "lower";
+} | null {
+  const segment = extractPromptSegment(
+    prompt,
+    /\b(sculpt|raise terrain|lower terrain|dig terrain|carve terrain)\b/i,
+    /\b(paint|texture)\b/i
+  );
+  if (!segment) {
+    return null;
+  }
+
+  const lower = segment.toLowerCase();
+  const center = parseLandscapeCenterFromPrompt(segment);
+  const size = parseLandscapeSizeFromPrompt(segment);
+  if (!center || !size) {
+    return null;
+  }
+
+  const parsedStrength = parseNormalizedPercentValue(segment, "strength");
+  const parsedFalloff = parseNormalizedPercentValue(segment, "falloff");
+  const strength = Math.max(0, Math.min(1, parsedStrength ?? 0.2));
+  const falloff = Math.max(0, Math.min(1, parsedFalloff ?? 0.5));
+  const mode: "raise" | "lower" = /(lower|dig|carve|erode|down)/.test(lower) ? "lower" : "raise";
+  return { center, size, strength, falloff, mode };
+}
+
+function parseLandscapePaintFromPrompt(prompt: string): {
+  center: { x: number; y: number };
+  size: { x: number; y: number };
+  layerName: string;
+  strength: number;
+  falloff: number;
+  mode: "add" | "remove";
+} | null {
+  const segment = extractPromptSegment(
+    prompt,
+    /\b(paint|texture)\b/i,
+    /\b(sculpt|raise terrain|lower terrain|dig terrain|carve terrain)\b/i
+  );
+  if (!segment) {
+    return null;
+  }
+
+  const lower = segment.toLowerCase();
+  if (!/\blayer\b/.test(lower)) {
+    return null;
+  }
+
+  const center = parseLandscapeCenterFromPrompt(segment);
+  const size = parseLandscapeSizeFromPrompt(segment);
+  const layerName = parseLandscapeLayerNameFromPrompt(segment);
+  if (!center || !size || !layerName) {
+    return null;
+  }
+
+  const parsedStrength = parseNormalizedPercentValue(segment, "strength");
+  const parsedFalloff = parseNormalizedPercentValue(segment, "falloff");
+  const strength = Math.max(0, Math.min(1, parsedStrength ?? 0.4));
+  const falloff = Math.max(0, Math.min(1, parsedFalloff ?? 0.5));
+  const mode: "add" | "remove" = /(remove|erase|clear|subtract)/.test(lower) ? "remove" : "add";
+  return { center, size, layerName, strength, falloff, mode };
+}
+
+function parseUndoFromPrompt(prompt: string): boolean {
+  return /\b(undo|revert|roll\s*back|rollback|go\s+back|ctrl\+?z|control\+?z)\b/i.test(prompt);
+}
+
+function parseRedoFromPrompt(prompt: string): boolean {
+  return /\b(redo|do\s+again|reapply|ctrl\+?y|control\+?y)\b/i.test(prompt);
+}
+
 function hasWriteIntent(prompt: string): boolean {
-  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt)/i.test(
+  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)/i.test(
     prompt
   );
 }
@@ -940,6 +1121,22 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
     return `Set exposure compensation to ${formatNumber(first.params.exposureCompensation)}.`;
   }
 
+  if (first.command === "landscape.sculpt") {
+    return `Sculpt landscape in bounded area near X=${formatNumber(first.params.center.x)}, Y=${formatNumber(first.params.center.y)}.`;
+  }
+
+  if (first.command === "landscape.paintLayer") {
+    return `Paint landscape layer "${first.params.layerName}" in bounded area.`;
+  }
+
+  if (first.command === "editor.undo") {
+    return "Undo last editor action.";
+  }
+
+  if (first.command === "editor.redo") {
+    return "Redo last editor action.";
+  }
+
   if (first.command === "context.getSceneSummary") {
     return actions.some((action) => action.command === "context.getSelection")
       ? "Collect current scene and selection context."
@@ -984,6 +1181,10 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
   const directionalLightIntensity = parseDirectionalLightIntensityFromPrompt(input.prompt);
   const fogDensity = parseFogDensityFromPrompt(input.prompt);
   const exposureCompensation = parsePostProcessExposureCompensationFromPrompt(input.prompt);
+  const landscapeSculpt = parseLandscapeSculptFromPrompt(input.prompt);
+  const landscapePaint = parseLandscapePaintFromPrompt(input.prompt);
+  const undoLastAction = parseUndoFromPrompt(input.prompt);
+  const redoLastAction = parseRedoFromPrompt(input.prompt);
 
   const actions: PlanAction[] = [];
   if (createActor) {
@@ -1178,6 +1379,55 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
         exposureCompensation
       },
+      risk: "low"
+    });
+  }
+
+  if (landscapeSculpt) {
+    actions.push({
+      command: "landscape.sculpt",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        center: landscapeSculpt.center,
+        size: landscapeSculpt.size,
+        strength: landscapeSculpt.strength,
+        falloff: landscapeSculpt.falloff,
+        mode: landscapeSculpt.mode
+      },
+      risk: "medium"
+    });
+  }
+
+  if (landscapePaint) {
+    actions.push({
+      command: "landscape.paintLayer",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        center: landscapePaint.center,
+        size: landscapePaint.size,
+        layerName: landscapePaint.layerName,
+        strength: landscapePaint.strength,
+        falloff: landscapePaint.falloff,
+        mode: landscapePaint.mode
+      },
+      risk: "medium"
+    });
+  }
+
+  if (actions.length === 0 && undoLastAction) {
+    actions.push({
+      command: "editor.undo",
+      params: {},
+      risk: "low"
+    });
+  }
+
+  if (actions.length === 0 && redoLastAction) {
+    actions.push({
+      command: "editor.redo",
+      params: {},
       risk: "low"
     });
   }

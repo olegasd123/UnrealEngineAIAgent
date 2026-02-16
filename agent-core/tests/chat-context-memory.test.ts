@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { ChatStore } from "../src/chats/chatStore.js";
-import { resolveContextWithChatMemory } from "../src/chats/contextMemory.js";
+import { resolveContextWithChatMemory, resolvePromptWithChatMemory } from "../src/chats/contextMemory.js";
 import type { TaskRequest } from "../src/contracts.js";
 
 function makeDbPath(): string {
@@ -39,6 +39,38 @@ test("ChatStore.getLatestSelectionNames reads latest selection context from aske
     });
 
     assert.deepEqual(store.getLatestSelectionNames(chat.id), ["Actor_B"]);
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("ChatStore.getLatestAskedPrompts returns latest asked prompts first", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("asked prompts");
+    store.appendAsked(chat.id, "/v1/task/plan", "first prompt", {});
+    store.appendAsked(chat.id, "/v1/task/plan", "second prompt", {});
+    store.appendAsked(chat.id, "/v1/task/plan", "third prompt", {});
+
+    assert.deepEqual(store.getLatestAskedPrompts(chat.id, 2), ["third prompt", "second prompt"]);
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("ChatStore pending write prompt can be set and cleared", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("pending write");
+    assert.equal(store.getPendingWritePrompt(chat.id), undefined);
+    store.setPendingWritePrompt(chat.id, "move selected actor by x 100");
+    assert.equal(store.getPendingWritePrompt(chat.id), "move selected actor by x 100");
+    store.clearPendingWritePrompt(chat.id);
+    assert.equal(store.getPendingWritePrompt(chat.id), undefined);
   } finally {
     rmSync(dbPath, { force: true });
   }
@@ -117,6 +149,94 @@ test("resolveContextWithChatMemory does not inject for non-referential prompt", 
     );
 
     assert.equal(resolved.selectionNames, undefined);
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("resolvePromptWithChatMemory reuses pending write prompt for short ambiguous follow-up", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("follow up yes");
+    store.setPendingWritePrompt(chat.id, "sculpt terrain at x 1200 y -300 size 1800 strength 30%");
+
+    const resolvedPrompt = resolvePromptWithChatMemory(
+      makeRequest({
+        chatId: chat.id,
+        prompt: "this is what we need"
+      }),
+      store
+    );
+
+    assert.equal(resolvedPrompt, "sculpt terrain at x 1200 y -300 size 1800 strength 30%");
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("resolvePromptWithChatMemory does not replace explicit question when pending write prompt exists", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("follow up question");
+    store.setPendingWritePrompt(chat.id, "set fog density to 0.04");
+
+    const resolvedPrompt = resolvePromptWithChatMemory(
+      makeRequest({
+        chatId: chat.id,
+        prompt: "what is selected right now?"
+      }),
+      store
+    );
+
+    assert.equal(resolvedPrompt, "what is selected right now?");
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("resolvePromptWithChatMemory keeps explicit undo prompt when pending write prompt exists", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("follow up undo");
+    store.setPendingWritePrompt(chat.id, "set fog density to 0.04");
+
+    const resolvedPrompt = resolvePromptWithChatMemory(
+      makeRequest({
+        chatId: chat.id,
+        prompt: "undo"
+      }),
+      store
+    );
+
+    assert.equal(resolvedPrompt, "undo");
+  } finally {
+    rmSync(dbPath, { force: true });
+  }
+});
+
+test("resolvePromptWithChatMemory keeps explicit redo prompt when pending write prompt exists", () => {
+  const dbPath = makeDbPath();
+  const store = new ChatStore(dbPath);
+
+  try {
+    const chat = store.createChat("follow up redo");
+    store.setPendingWritePrompt(chat.id, "set fog density to 0.04");
+
+    const resolvedPrompt = resolvePromptWithChatMemory(
+      makeRequest({
+        chatId: chat.id,
+        prompt: "redo"
+      }),
+      store
+    );
+
+    assert.equal(resolvedPrompt, "redo");
   } finally {
     rmSync(dbPath, { force: true });
   }

@@ -16,7 +16,7 @@ import {
   TaskRequestSchema
 } from "./contracts.js";
 import { ChatStore } from "./chats/chatStore.js";
-import { resolveContextWithChatMemory } from "./chats/contextMemory.js";
+import { hasWriteIntent, resolveContextWithChatMemory, resolvePromptWithChatMemory } from "./chats/contextMemory.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
 import { ExecutionLayer } from "./executor/executionLayer.js";
@@ -479,6 +479,10 @@ function appendAssistantDetail(
   });
 }
 
+function hasWritePlanActions(plan: PlanOutput): boolean {
+  return plan.actions.some((action) => action.command !== "context.getSceneSummary" && action.command !== "context.getSelection");
+}
+
 function shouldStoreSessionDecision(decision: SessionDecision): boolean {
   return decision.status === "completed" || decision.status === "failed";
 }
@@ -777,9 +781,11 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = SessionStartRequestSchema.parse(JSON.parse(rawBody));
+      const resolvedPrompt = resolvePromptWithChatMemory(parsed, chatStore);
       const resolvedContext = resolveContextWithChatMemory(parsed, chatStore);
       const requestWithResolvedContext = {
         ...parsed,
+        prompt: resolvedPrompt,
         context: resolvedContext
       };
       const selectedProvider = parsed.provider ?? config.provider;
@@ -790,6 +796,7 @@ const server = http.createServer(async (req, res) => {
       if (parsed.chatId) {
         appendUserPromptDetail(parsed.chatId, "/v1/session/start", parsed.prompt, {
           mode: parsed.mode,
+          resolvedPrompt: resolvedPrompt !== parsed.prompt ? resolvedPrompt : undefined,
           context: resolvedContext,
           provider: selectedProvider,
           model: selectedModel
@@ -799,8 +806,15 @@ const server = http.createServer(async (req, res) => {
       const { decision, plan } = await agentService.startSession(requestWithResolvedContext, provider);
       const noActionAssistantText =
         plan.actions.length === 0
-          ? await buildNoActionAssistantText(parsed.prompt, parsed.mode, plan, provider)
+          ? await buildNoActionAssistantText(resolvedPrompt, parsed.mode, plan, provider)
           : undefined;
+      if (parsed.chatId) {
+        if (plan.actions.length === 0 && hasWriteIntent(resolvedPrompt)) {
+          chatStore.setPendingWritePrompt(parsed.chatId, resolvedPrompt);
+        } else if (hasWritePlanActions(plan)) {
+          chatStore.clearPendingWritePrompt(parsed.chatId);
+        }
+      }
 
       if (parsed.chatId) {
         if (noActionAssistantText) {
@@ -1070,6 +1084,7 @@ const server = http.createServer(async (req, res) => {
     try {
       rawBody = await readBody(req);
       const parsed = TaskRequestSchema.parse(JSON.parse(rawBody));
+      const resolvedPrompt = resolvePromptWithChatMemory(parsed, chatStore);
       const selectedProvider = parsed.provider ?? config.provider;
       const selectedModel = await resolveRequestedModel(selectedProvider, parsed.model);
       if (!selectedModel) {
@@ -1079,6 +1094,7 @@ const server = http.createServer(async (req, res) => {
       const resolvedContext = resolveContextWithChatMemory(parsed, chatStore);
       const requestWithResolvedContext = {
         ...parsed,
+        prompt: resolvedPrompt,
         context: resolvedContext,
         provider: selectedProvider,
         model: selectedModel
@@ -1086,6 +1102,7 @@ const server = http.createServer(async (req, res) => {
       if (parsed.chatId) {
         appendUserPromptDetail(parsed.chatId, "/v1/task/plan", parsed.prompt, {
           mode: parsed.mode,
+          resolvedPrompt: resolvedPrompt !== parsed.prompt ? resolvedPrompt : undefined,
           context: resolvedContext,
           provider: selectedProvider,
           model: selectedModel
@@ -1094,8 +1111,15 @@ const server = http.createServer(async (req, res) => {
       const { plan } = await agentService.planTask(requestWithResolvedContext, provider);
       const noActionAssistantText =
         plan.actions.length === 0
-          ? await buildNoActionAssistantText(parsed.prompt, parsed.mode, plan, provider)
+          ? await buildNoActionAssistantText(resolvedPrompt, parsed.mode, plan, provider)
           : undefined;
+      if (parsed.chatId) {
+        if (plan.actions.length === 0 && hasWriteIntent(resolvedPrompt)) {
+          chatStore.setPendingWritePrompt(parsed.chatId, resolvedPrompt);
+        } else if (hasWritePlanActions(plan)) {
+          chatStore.clearPendingWritePrompt(parsed.chatId);
+        }
+      }
 
       if (parsed.chatId) {
         if (noActionAssistantText) {

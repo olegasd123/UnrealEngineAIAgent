@@ -134,6 +134,44 @@ test("Rule planner builds context.getSceneSummary for scene summary request", ()
   assert.equal(action.risk, "low");
 });
 
+test("Rule planner builds editor.undo action for undo prompt", () => {
+  const request: TaskRequest = {
+    prompt: "undo",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.summary, "Undo last editor action.");
+  const action = plan.actions[0];
+  assert.equal(action.command, "editor.undo");
+  if (action.command !== "editor.undo") {
+    return;
+  }
+  assert.deepEqual(action.params, {});
+  assert.equal(action.risk, "low");
+});
+
+test("Rule planner builds editor.redo action for redo prompt", () => {
+  const request: TaskRequest = {
+    prompt: "redo",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.summary, "Redo last editor action.");
+  const action = plan.actions[0];
+  assert.equal(action.command, "editor.redo");
+  if (action.command !== "editor.redo") {
+    return;
+  }
+  assert.deepEqual(action.params, {});
+  assert.equal(action.risk, "low");
+});
+
 test("Validation normalizes context action risk to low", () => {
   const request: TaskRequest = {
     prompt: "show selection info",
@@ -299,4 +337,85 @@ test("Rule planner parses exposure compensation action", () => {
     return;
   }
   assert.equal(action.params.exposureCompensation, -1.2);
+});
+
+test("Rule planner parses landscape sculpt action", () => {
+  const request: TaskRequest = {
+    prompt: "sculpt terrain at x 1200 y -300 size 1800 strength 30% falloff 20%",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.sculpt");
+  if (action.command !== "landscape.sculpt") {
+    return;
+  }
+  assert.equal(action.params.center.x, 1200);
+  assert.equal(action.params.center.y, -300);
+  assert.equal(action.params.size.x, 1800);
+  assert.equal(action.params.size.y, 1800);
+  assert.equal(action.params.strength, 0.3);
+  assert.equal(action.params.falloff, 0.2);
+  assert.equal(action.params.mode, "raise");
+});
+
+test("Rule planner parses landscape paint layer action", () => {
+  const request: TaskRequest = {
+    prompt: "paint layer Grass at x 0 y 0 brush 900 strength 0.6 falloff 0.4",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.paintLayer");
+  if (action.command !== "landscape.paintLayer") {
+    return;
+  }
+  assert.equal(action.params.layerName, "Grass");
+  assert.equal(action.params.center.x, 0);
+  assert.equal(action.params.center.y, 0);
+  assert.equal(action.params.size.x, 900);
+  assert.equal(action.params.size.y, 900);
+  assert.equal(action.params.strength, 0.6);
+  assert.equal(action.params.falloff, 0.4);
+  assert.equal(action.params.mode, "add");
+});
+
+test("Rule planner parses mixed sculpt+paint prompt with separate values", () => {
+  const request: TaskRequest = {
+    prompt: "sculpt terrain at x 1200 y -300 size 1800 strength 30% and paint layer Grass at x 0 y 0 brush 900 strength 0.6",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 2);
+
+  const sculpt = plan.actions.find((action) => action.command === "landscape.sculpt");
+  assert.ok(sculpt);
+  if (!sculpt || sculpt.command !== "landscape.sculpt") {
+    return;
+  }
+  assert.equal(sculpt.params.center.x, 1200);
+  assert.equal(sculpt.params.center.y, -300);
+  assert.equal(sculpt.params.size.x, 1800);
+  assert.equal(sculpt.params.size.y, 1800);
+  assert.equal(sculpt.params.strength, 0.3);
+
+  const paint = plan.actions.find((action) => action.command === "landscape.paintLayer");
+  assert.ok(paint);
+  if (!paint || paint.command !== "landscape.paintLayer") {
+    return;
+  }
+  assert.equal(paint.params.layerName, "Grass");
+  assert.equal(paint.params.center.x, 0);
+  assert.equal(paint.params.center.y, 0);
+  assert.equal(paint.params.size.x, 900);
+  assert.equal(paint.params.size.y, 900);
+  assert.equal(paint.params.strength, 0.6);
 });

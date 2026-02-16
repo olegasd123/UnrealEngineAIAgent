@@ -329,6 +329,33 @@ export function buildPlanPrompt(input: PlanInput): string {
               exposureCompensation: -0.5
             },
             risk: "low"
+          },
+          {
+            command: "landscape.sculpt",
+            params: {
+              target: "selection",
+              actorNames: ["landscape_name_if_target_byName"],
+              center: { x: 0, y: 0 },
+              size: { x: 1000, y: 1000 },
+              strength: 0.2,
+              falloff: 0.5,
+              mode: "raise"
+            },
+            risk: "medium"
+          },
+          {
+            command: "landscape.paintLayer",
+            params: {
+              target: "selection",
+              actorNames: ["landscape_name_if_target_byName"],
+              center: { x: 0, y: 0 },
+              size: { x: 1000, y: 1000 },
+              layerName: "Grass",
+              strength: 0.4,
+              falloff: 0.5,
+              mode: "add"
+            },
+            risk: "medium"
           }
         ]
       },
@@ -358,6 +385,10 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- scene.setDirectionalLightIntensity: include target + intensity number.",
     "- scene.setFogDensity: include target + density number.",
     "- scene.setPostProcessExposureCompensation: include target + exposureCompensation number.",
+    "- landscape.sculpt: include target + center{x,y} + size{x,y} + strength(0-1). Optional falloff(0-1), mode(raise|lower).",
+    "- landscape.paintLayer: include target + center{x,y} + size{x,y} + layerName + strength(0-1). Optional falloff(0-1), mode(add|remove).",
+    "- editor.undo: use params: {} for explicit undo requests like 'undo', 'revert', or 'roll back'.",
+    "- editor.redo: use params: {} for explicit redo requests like 'redo', 'do again', or 'reapply'.",
     "- session transaction begin/commit/rollback are internal. Do not include any session.* action.",
     "- risk must be low|medium|high.",
     "- Use low for small transform/create, medium for large create (many actors), high for delete.",

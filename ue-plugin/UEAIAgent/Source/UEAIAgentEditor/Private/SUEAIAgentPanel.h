@@ -186,8 +186,8 @@ private:
     TSharedPtr<SEditableText> PlanText;
     TSharedPtr<SVerticalBox> ActionListBox;
     TArray<TSharedPtr<SCheckBox>> ActionChecks;
-    TArray<TSharedPtr<STextBlock>> ActionTexts;
-    TArray<TSharedPtr<STextBlock>> ActionDetailTexts;
+    TArray<TSharedPtr<SEditableText>> ActionTexts;
+    TArray<TSharedPtr<SMultiLineEditableTextBox>> ActionDetailTexts;
     TArray<bool> ActionExpandedStates;
     int32 PromptVisibleLineCount = 1;
     FString CachedSelectionSummary;
