@@ -233,6 +233,8 @@ namespace
             return TEXT("Landscape Sculpt");
         case EUEAIAgentPlannedActionType::LandscapePaintLayer:
             return TEXT("Landscape Paint Layer");
+        case EUEAIAgentPlannedActionType::LandscapeGenerate:
+            return TEXT("Landscape Generate");
         case EUEAIAgentPlannedActionType::SessionBeginTransaction:
             return TEXT("Begin Internal Transaction");
         case EUEAIAgentPlannedActionType::SessionCommitTransaction:
@@ -2518,6 +2520,27 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         Params.bRemove = PlannedAction.bLandscapeInvertMode;
         Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty();
         return FUEAIAgentSceneTools::LandscapePaintLayer(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::LandscapeGenerate)
+    {
+        FUEAIAgentLandscapeGenerateParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.Theme = PlannedAction.LandscapeTheme;
+        Params.DetailLevel = PlannedAction.LandscapeDetailLevel;
+        Params.MoonProfile = PlannedAction.LandscapeMoonProfile;
+        Params.bUseFullArea = PlannedAction.bLandscapeUseFullArea;
+        Params.Center = PlannedAction.LandscapeCenter;
+        Params.Size = PlannedAction.LandscapeSize;
+        Params.Seed = PlannedAction.LandscapeSeed;
+        Params.MountainCount = PlannedAction.LandscapeMountainCount;
+        Params.MaxHeight = PlannedAction.LandscapeMaxHeight;
+        Params.CraterCountMin = PlannedAction.LandscapeCraterCountMin;
+        Params.CraterCountMax = PlannedAction.LandscapeCraterCountMax;
+        Params.CraterWidthMin = PlannedAction.LandscapeCraterWidthMin;
+        Params.CraterWidthMax = PlannedAction.LandscapeCraterWidthMax;
+        Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty();
+        return FUEAIAgentSceneTools::LandscapeGenerate(Params, OutMessage);
     }
 
     FUEAIAgentModifyActorParams Params;

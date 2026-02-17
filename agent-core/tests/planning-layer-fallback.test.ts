@@ -76,6 +76,17 @@ test("PlanningLayer uses local fallback for redo prompt when provider returns no
   assert.match(plan.steps[0] ?? "", /Using local fallback/i);
 });
 
+test("PlanningLayer uses local fallback for landscape generate prompt when provider returns no actions", async () => {
+  const provider = new NoActionProvider();
+  const planning = new PlanningLayer();
+  const intent = new IntentLayer().normalize(makeRequest("create moon surface using all available space on the landscape"));
+
+  const plan = await planning.buildPlan(intent, provider);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0]?.command, "landscape.generate");
+  assert.match(plan.steps[0] ?? "", /Using local fallback/i);
+});
+
 test("PlanningLayer keeps provider no-action result for non-write prompt", async () => {
   const provider = new NoActionProvider();
   const planning = new PlanningLayer();

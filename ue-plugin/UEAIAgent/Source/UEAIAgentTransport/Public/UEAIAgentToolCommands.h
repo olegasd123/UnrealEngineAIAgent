@@ -8,7 +8,7 @@
 
 namespace UEAIAgentToolCommands
 {
-    static constexpr int32 CommandCount = 22;
+    static constexpr int32 CommandCount = 23;
     static const TCHAR* const Commands[CommandCount] = {
         TEXT("context.getSceneSummary"),
         TEXT("context.getSelection"),
@@ -27,6 +27,7 @@ namespace UEAIAgentToolCommands
         TEXT("scene.duplicateActors"),
         TEXT("landscape.sculpt"),
         TEXT("landscape.paintLayer"),
+        TEXT("landscape.generate"),
         TEXT("editor.undo"),
         TEXT("editor.redo"),
         TEXT("session.beginTransaction"),

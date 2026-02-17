@@ -858,6 +858,233 @@ function parseLandscapePaintFromPrompt(prompt: string): {
   return { center, size, layerName, strength, falloff, mode };
 }
 
+function parseLandscapeGenerateFromPrompt(prompt: string): {
+  theme: "moon_surface" | "nature_island";
+  detailLevel: "low" | "medium" | "high" | "cinematic";
+  moonProfile?: "ancient_heavily_cratered";
+  useFullArea: boolean;
+  center?: { x: number; y: number };
+  size?: { x: number; y: number };
+  seed?: number;
+  mountainCount?: number;
+  maxHeight?: number;
+  craterCountMin?: number;
+  craterCountMax?: number;
+  craterWidthMin?: number;
+  craterWidthMax?: number;
+} | null {
+  const lower = prompt.toLowerCase();
+  const hasLandscapeHint = /(landscape|terrain)/.test(lower);
+  const hasThemeHint = /(moon|lunar|crater|island|nature|natural)/.test(lower);
+  const hasGenerationIntent = /(create|build|generate|make|design|craft|form)/.test(lower);
+  if (!hasGenerationIntent && !hasThemeHint) {
+    return null;
+  }
+  if (!hasLandscapeHint && !hasThemeHint) {
+    return null;
+  }
+
+  let theme: "moon_surface" | "nature_island" | null = null;
+  if (/(moon|lunar|crater|moon surface)/.test(lower)) {
+    theme = "moon_surface";
+  } else if (/(island|nature|natural)/.test(lower)) {
+    theme = "nature_island";
+  }
+  if (!theme) {
+    return null;
+  }
+
+  let moonProfile: "ancient_heavily_cratered" | undefined;
+  if (theme === "moon_surface") {
+    const explicitAncient =
+      /\bmoon\s*profile\s*(?:to|=|:)?\s*(?:ancient|ancient[_\s-]heavily[_\s-]cratered|heavily[_\s-]cratered)\b/i.test(prompt) ||
+      /\bancient[_\s-]heavily[_\s-]cratered\b/i.test(prompt);
+    const ancientCueCount =
+      Number(/\bancient\b/i.test(prompt)) +
+      Number(/\bheavily\s+cratered\b/i.test(prompt)) +
+      Number(/\boverlapping\s+impact\s+craters?\b/i.test(prompt)) +
+      Number(/\bregolith\b/i.test(prompt)) +
+      Number(/\bejecta\b/i.test(prompt)) +
+      Number(/\bweathered\b/i.test(prompt)) +
+      Number(/\bterraces?\b/i.test(prompt));
+    if (explicitAncient || ancientCueCount >= 2) {
+      moonProfile = "ancient_heavily_cratered";
+    } else {
+      // Ancient heavily cratered is the default moon profile.
+      moonProfile = "ancient_heavily_cratered";
+    }
+  }
+
+  const explicitDetailMatch = /\bdetail(?:\s*level)?\s*(?:to|=|:)?\s*(low|medium|high|cinematic)\b/i.exec(prompt);
+  const explicitDetailLevel = explicitDetailMatch?.[1]?.toLowerCase();
+  let detailLevel: "low" | "medium" | "high" | "cinematic" | undefined;
+  if (explicitDetailLevel === "low" || explicitDetailLevel === "medium" || explicitDetailLevel === "high" || explicitDetailLevel === "cinematic") {
+    detailLevel = explicitDetailLevel;
+  } else if (/\b(cinematic|ultra|photoreal(?:istic)?)\b/i.test(prompt)) {
+    detailLevel = "cinematic";
+  } else if (/\b(realistic|high[\s-]*detail|detailed|fine detail|rich detail)\b/i.test(prompt)) {
+    detailLevel = "high";
+  } else if (/\b(stylized|stylised|simple|minimal|low[\s-]*detail|low[\s-]*poly)\b/i.test(prompt)) {
+    detailLevel = "low";
+  }
+  if (!detailLevel) {
+    detailLevel = theme === "moon_surface" ? "high" : "medium";
+  }
+  if (moonProfile === "ancient_heavily_cratered" && detailLevel === "medium") {
+    detailLevel = "high";
+  }
+
+  const center = parseLandscapeCenterFromPrompt(prompt) ?? undefined;
+  const size = parseLandscapeSizeFromPrompt(prompt) ?? undefined;
+  const hasAreaBounds = Boolean(center && size);
+  const useFullAreaHint = /(all available space|entire landscape|whole landscape|full landscape|across the landscape|all of the landscape)/.test(
+    lower
+  );
+  const useFullArea = useFullAreaHint || !hasAreaBounds;
+
+  const seedMatch = /\bseed\s*(?:to|=|:)?\s*(-?\d+)\b/i.exec(prompt);
+  const parsedSeed = seedMatch ? Number(seedMatch[1]) : Number.NaN;
+  const seed = Number.isInteger(parsedSeed) ? parsedSeed : undefined;
+
+  const mountainMatch =
+    /\b(\d+)\s+mountains?\b/i.exec(prompt) ?? /\bmountains?\s*(?:count|num(?:ber)?)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
+  const parsedMountainCount = mountainMatch ? Number(mountainMatch[1]) : Number.NaN;
+  const explicitMountainCount = Number.isFinite(parsedMountainCount)
+    ? Math.max(1, Math.min(8, Math.trunc(parsedMountainCount)))
+    : undefined;
+  const inferredMoonDensity =
+    detailLevel === "cinematic"
+      ? 8
+      : detailLevel === "high"
+      ? 6
+      : detailLevel === "medium"
+      ? 4
+      : 2;
+  const mountainCount = explicitMountainCount ?? (theme === "moon_surface" ? inferredMoonDensity : undefined);
+
+  const maxHeightMatch =
+    /\bmax(?:imum)?\s*height(?:\s*of)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+    /\bheight\s*(?:max(?:imum)?|limit)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+  const parsedMaxHeight = maxHeightMatch ? Number(maxHeightMatch[1]) : Number.NaN;
+  const maxHeight = Number.isFinite(parsedMaxHeight) && parsedMaxHeight > 0 ? parsedMaxHeight : undefined;
+
+  let craterCountMin: number | undefined;
+  let craterCountMax: number | undefined;
+  const craterCountRangeMatch =
+    /\b(?:between|from)\s*(\d+)\s*(?:and|to)\s*(\d+)\s+(?:craters?|crators?)\b/i.exec(prompt) ??
+    /\b(?:craters?|crators?)\s*(?:count)?\s*(?:between|from)\s*(\d+)\s*(?:and|to)\s*(\d+)\b/i.exec(prompt);
+  if (craterCountRangeMatch) {
+    const first = Number(craterCountRangeMatch[1]);
+    const second = Number(craterCountRangeMatch[2]);
+    if (Number.isFinite(first) && Number.isFinite(second)) {
+      craterCountMin = Math.max(1, Math.min(500, Math.trunc(Math.min(first, second))));
+      craterCountMax = Math.max(1, Math.min(500, Math.trunc(Math.max(first, second))));
+    }
+  } else {
+    const craterCountMinMatch =
+      /\b(?:min(?:imum)?|at least)\s*(?:(?:craters?|crators?)\s*)?(?:count\s*)?(?:of\s*)?(\d+)\b/i.exec(prompt) ??
+      /\b(?:craters?|crators?)\s*(?:count\s*)?min(?:imum)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
+    const craterCountMaxMatch =
+      /\b(?:max(?:imum)?|at most|up to|no more than)\s*(?:(?:craters?|crators?)\s*)?(?:count\s*)?(?:of\s*)?(\d+)\b/i.exec(prompt) ??
+      /\b(?:craters?|crators?)\s*(?:count\s*)?max(?:imum)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
+
+    const parsedCraterCountMin = craterCountMinMatch ? Number(craterCountMinMatch[1]) : Number.NaN;
+    const parsedCraterCountMax = craterCountMaxMatch ? Number(craterCountMaxMatch[1]) : Number.NaN;
+    if (Number.isFinite(parsedCraterCountMin)) {
+      craterCountMin = Math.max(1, Math.min(500, Math.trunc(parsedCraterCountMin)));
+    }
+    if (Number.isFinite(parsedCraterCountMax)) {
+      craterCountMax = Math.max(1, Math.min(500, Math.trunc(parsedCraterCountMax)));
+    }
+
+    if (craterCountMin === undefined && craterCountMax === undefined) {
+      const craterCountExactMatch =
+        /\b(?:craters?|crators?)\s*(?:count\s*)?(?:to|=|:)\s*(\d+)\b/i.exec(prompt) ??
+        /\b(\d+)\s+(?:craters?|crators?)\b/i.exec(prompt);
+      const parsedCraterCount = craterCountExactMatch ? Number(craterCountExactMatch[1]) : Number.NaN;
+      if (Number.isFinite(parsedCraterCount)) {
+        const clamped = Math.max(1, Math.min(500, Math.trunc(parsedCraterCount)));
+        craterCountMin = clamped;
+        craterCountMax = clamped;
+      }
+    }
+  }
+  if (
+    craterCountMin !== undefined &&
+    craterCountMax !== undefined &&
+    craterCountMin > craterCountMax
+  ) {
+    const swap = craterCountMin;
+    craterCountMin = craterCountMax;
+    craterCountMax = swap;
+  }
+
+  let craterWidthMin: number | undefined;
+  let craterWidthMax: number | undefined;
+  const craterWidthRangeMatch =
+    /\b(?:craters?|crators?)\s*width\s*(?:between|from)\s*([+-]?\d+(?:\.\d+)?)\s*(?:and|to)\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+    /\bwidth\s*of\s*(?:craters?|crators?)\s*(?:between|from)\s*([+-]?\d+(?:\.\d+)?)\s*(?:and|to)\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+  if (craterWidthRangeMatch) {
+    const first = Number(craterWidthRangeMatch[1]);
+    const second = Number(craterWidthRangeMatch[2]);
+    if (Number.isFinite(first) && Number.isFinite(second) && first > 0 && second > 0) {
+      craterWidthMin = Math.max(1, Math.min(200000, Math.min(first, second)));
+      craterWidthMax = Math.max(1, Math.min(200000, Math.max(first, second)));
+    }
+  } else {
+    const craterWidthMinMatch =
+      /\b(?:min(?:imum)?|at least)\s*(?:(?:craters?|crators?)\s*)?width\s*(?:of\s*)?([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+      /\bmin(?:imum)?\s*width(?:\s*of)?\s*(?:craters?|crators?)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+      /\b(?:craters?|crators?)\s*width\s*min(?:imum)?\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+    const craterWidthMaxMatch =
+      /\b(?:max(?:imum)?|at most|up to|no more than)\s*(?:(?:craters?|crators?)\s*)?width\s*(?:of\s*)?([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+      /\bmax(?:imum)?\s*width(?:\s*of)?\s*(?:craters?|crators?)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
+      /\b(?:craters?|crators?)\s*width\s*max(?:imum)?\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+
+    const parsedCraterWidthMin = craterWidthMinMatch ? Number(craterWidthMinMatch[1]) : Number.NaN;
+    const parsedCraterWidthMax = craterWidthMaxMatch ? Number(craterWidthMaxMatch[1]) : Number.NaN;
+    if (Number.isFinite(parsedCraterWidthMin) && parsedCraterWidthMin > 0) {
+      craterWidthMin = Math.max(1, Math.min(200000, parsedCraterWidthMin));
+    }
+    if (Number.isFinite(parsedCraterWidthMax) && parsedCraterWidthMax > 0) {
+      craterWidthMax = Math.max(1, Math.min(200000, parsedCraterWidthMax));
+    }
+  }
+  if (
+    craterWidthMin !== undefined &&
+    craterWidthMax !== undefined &&
+    craterWidthMin > craterWidthMax
+  ) {
+    const swap = craterWidthMin;
+    craterWidthMin = craterWidthMax;
+    craterWidthMax = swap;
+  }
+  if (theme === "moon_surface" && moonProfile === "ancient_heavily_cratered") {
+    if (craterCountMin === undefined) {
+      craterCountMin = 140;
+    }
+    if (craterCountMax === undefined) {
+      craterCountMax = 340;
+    }
+  }
+
+  return {
+    theme,
+    detailLevel,
+    moonProfile,
+    useFullArea,
+    center: useFullArea ? undefined : center,
+    size: useFullArea ? undefined : size,
+    seed,
+    mountainCount,
+    maxHeight,
+    craterCountMin,
+    craterCountMax,
+    craterWidthMin,
+    craterWidthMax
+  };
+}
+
 function parseUndoFromPrompt(prompt: string): boolean {
   return /\b(undo|revert|roll\s*back|rollback|go\s+back|ctrl\+?z|control\+?z)\b/i.test(prompt);
 }
@@ -867,7 +1094,7 @@ function parseRedoFromPrompt(prompt: string): boolean {
 }
 
 function hasWriteIntent(prompt: string): boolean {
-  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)/i.test(
+  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)/i.test(
     prompt
   );
 }
@@ -1129,6 +1356,21 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
     return `Paint landscape layer "${first.params.layerName}" in bounded area.`;
   }
 
+  if (first.command === "landscape.generate") {
+    const moonDetail =
+      first.params.theme === "moon_surface" &&
+      (first.params.detailLevel === "high" || first.params.detailLevel === "cinematic");
+    const moonAncient = first.params.theme === "moon_surface" && first.params.moonProfile === "ancient_heavily_cratered";
+    const baseSummary = first.params.theme === "moon_surface"
+      ? moonAncient
+        ? "Generate ancient heavily cratered moon landscape."
+        : moonDetail
+        ? "Generate realistic moon-like landscape surface."
+        : "Generate moon-like landscape surface."
+      : "Generate natural island landscape.";
+    return first.params.useFullArea ? baseSummary : `${baseSummary} Use requested bounded area.`;
+  }
+
   if (first.command === "editor.undo") {
     return "Undo last editor action.";
   }
@@ -1181,6 +1423,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
   const directionalLightIntensity = parseDirectionalLightIntensityFromPrompt(input.prompt);
   const fogDensity = parseFogDensityFromPrompt(input.prompt);
   const exposureCompensation = parsePostProcessExposureCompensationFromPrompt(input.prompt);
+  const landscapeGenerate = parseLandscapeGenerateFromPrompt(input.prompt);
   const landscapeSculpt = parseLandscapeSculptFromPrompt(input.prompt);
   const landscapePaint = parseLandscapePaintFromPrompt(input.prompt);
   const undoLastAction = parseUndoFromPrompt(input.prompt);
@@ -1380,6 +1623,30 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         exposureCompensation
       },
       risk: "low"
+    });
+  }
+
+  if (landscapeGenerate) {
+    actions.push({
+      command: "landscape.generate",
+      params: {
+        target: resolvedActorNames && resolvedActorNames.length > 0 ? "byName" : "selection",
+        actorNames: resolvedActorNames && resolvedActorNames.length > 0 ? resolvedActorNames : undefined,
+        theme: landscapeGenerate.theme,
+        detailLevel: landscapeGenerate.detailLevel,
+        moonProfile: landscapeGenerate.moonProfile,
+        useFullArea: landscapeGenerate.useFullArea,
+        center: landscapeGenerate.useFullArea ? undefined : landscapeGenerate.center,
+        size: landscapeGenerate.useFullArea ? undefined : landscapeGenerate.size,
+        seed: landscapeGenerate.seed,
+        mountainCount: landscapeGenerate.mountainCount,
+        maxHeight: landscapeGenerate.maxHeight,
+        craterCountMin: landscapeGenerate.craterCountMin,
+        craterCountMax: landscapeGenerate.craterCountMax,
+        craterWidthMin: landscapeGenerate.craterWidthMin,
+        craterWidthMax: landscapeGenerate.craterWidthMax
+      },
+      risk: "medium"
     });
   }
 

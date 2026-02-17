@@ -131,6 +131,25 @@ struct FUEAIAgentLandscapePaintLayerParams
     bool bUseSelectionIfActorNamesEmpty = true;
 };
 
+struct FUEAIAgentLandscapeGenerateParams
+{
+    TArray<FString> ActorNames;
+    FString Theme = TEXT("nature_island");
+    FString DetailLevel = TEXT("medium");
+    FString MoonProfile = TEXT("ancient_heavily_cratered");
+    bool bUseFullArea = true;
+    FVector2D Center = FVector2D::ZeroVector;
+    FVector2D Size = FVector2D(1000.0f, 1000.0f);
+    int32 Seed = 0;
+    int32 MountainCount = 2;
+    float MaxHeight = 5000.0f;
+    int32 CraterCountMin = 0;
+    int32 CraterCountMax = 0;
+    float CraterWidthMin = 0.0f;
+    float CraterWidthMax = 0.0f;
+    bool bUseSelectionIfActorNamesEmpty = true;
+};
+
 class UEAIAGENTTOOLS_API FUEAIAgentSceneTools
 {
 public:
@@ -153,6 +172,7 @@ public:
         FString& OutMessage);
     static bool LandscapeSculpt(const FUEAIAgentLandscapeSculptParams& Params, FString& OutMessage);
     static bool LandscapePaintLayer(const FUEAIAgentLandscapePaintLayerParams& Params, FString& OutMessage);
+    static bool LandscapeGenerate(const FUEAIAgentLandscapeGenerateParams& Params, FString& OutMessage);
     static bool EditorUndo(FString& OutMessage);
     static bool EditorRedo(FString& OutMessage);
     static bool SessionBeginTransaction(const FString& Description, FString& OutMessage);

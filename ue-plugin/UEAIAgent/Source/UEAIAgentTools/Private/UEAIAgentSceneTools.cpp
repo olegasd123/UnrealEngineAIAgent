@@ -376,6 +376,41 @@ namespace
         return InOutLandscapes.Num() > 0;
     }
 
+    void CollectAllLandscapeTargets(UWorld* World, TArray<ALandscapeProxy*>& OutLandscapes)
+    {
+        OutLandscapes.Empty();
+        if (!World)
+        {
+            return;
+        }
+
+        for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+        {
+            AddLandscapeTargetUnique(*It, OutLandscapes);
+        }
+    }
+
+    bool ComputeLandscapeFullRect(
+        ALandscapeProxy* Landscape,
+        int32& OutMinX,
+        int32& OutMinY,
+        int32& OutMaxX,
+        int32& OutMaxY)
+    {
+        if (!Landscape)
+        {
+            return false;
+        }
+
+        ULandscapeInfo* LandscapeInfo = Landscape->GetLandscapeInfo();
+        if (!LandscapeInfo)
+        {
+            return false;
+        }
+
+        return LandscapeInfo->GetLandscapeExtent(OutMinX, OutMinY, OutMaxX, OutMaxY);
+    }
+
     FGuid ResolveLandscapeEditLayerGuid(ALandscapeProxy* Landscape)
     {
         if (!Landscape)
@@ -602,6 +637,319 @@ namespace
 
         const float BlendRange = FMath::Max(KINDA_SMALL_NUMBER, 1.0f - InnerRadius);
         return 1.0f - ((Radius - InnerRadius) / BlendRange);
+    }
+
+    enum class EUEAIAgentLandscapeDetailTier : uint8
+    {
+        Low,
+        Medium,
+        High,
+        Cinematic
+    };
+
+    enum class EUEAIAgentMoonProfile : uint8
+    {
+        AncientHeavilyCratered
+    };
+
+    struct FMoonCraterFeature
+    {
+        FVector2D Center = FVector2D(0.5f, 0.5f);
+        float Radius = 0.05f;
+        float Depth = 0.5f;
+        float Age = 0.5f; // 0 = fresh impact, 1 = ancient softened crater
+        float Ejecta = 0.5f;
+        float Terrace = 0.0f;
+        float Aspect = 1.0f;
+        float RotationRad = 0.0f;
+    };
+
+    EUEAIAgentLandscapeDetailTier ResolveLandscapeDetailTier(const FString& InDetailLevel, bool bMoonSurface)
+    {
+        const FString DetailLevel = InDetailLevel.TrimStartAndEnd().ToLower();
+        if (DetailLevel == TEXT("low"))
+        {
+            return EUEAIAgentLandscapeDetailTier::Low;
+        }
+        if (DetailLevel == TEXT("high"))
+        {
+            return EUEAIAgentLandscapeDetailTier::High;
+        }
+        if (DetailLevel == TEXT("cinematic"))
+        {
+            return EUEAIAgentLandscapeDetailTier::Cinematic;
+        }
+        if (DetailLevel == TEXT("medium"))
+        {
+            return EUEAIAgentLandscapeDetailTier::Medium;
+        }
+        return bMoonSurface ? EUEAIAgentLandscapeDetailTier::High : EUEAIAgentLandscapeDetailTier::Medium;
+    }
+
+    float LandscapeDetailScale(EUEAIAgentLandscapeDetailTier DetailTier)
+    {
+        switch (DetailTier)
+        {
+            case EUEAIAgentLandscapeDetailTier::Low:
+                return 0.72f;
+            case EUEAIAgentLandscapeDetailTier::High:
+                return 1.28f;
+            case EUEAIAgentLandscapeDetailTier::Cinematic:
+                return 1.62f;
+            case EUEAIAgentLandscapeDetailTier::Medium:
+            default:
+                return 1.0f;
+        }
+    }
+
+    const TCHAR* LandscapeDetailTierToText(EUEAIAgentLandscapeDetailTier DetailTier)
+    {
+        switch (DetailTier)
+        {
+            case EUEAIAgentLandscapeDetailTier::Low:
+                return TEXT("low");
+            case EUEAIAgentLandscapeDetailTier::High:
+                return TEXT("high");
+            case EUEAIAgentLandscapeDetailTier::Cinematic:
+                return TEXT("cinematic");
+            case EUEAIAgentLandscapeDetailTier::Medium:
+            default:
+                return TEXT("medium");
+        }
+    }
+
+    EUEAIAgentMoonProfile ResolveMoonProfile(const FString& InMoonProfile, bool bMoonSurface)
+    {
+        (void)bMoonSurface;
+
+        const FString MoonProfile = InMoonProfile.TrimStartAndEnd().ToLower();
+        if (
+            MoonProfile == TEXT("ancient_heavily_cratered") ||
+            MoonProfile == TEXT("ancient-heavily-cratered") ||
+            MoonProfile == TEXT("ancient heavily cratered") ||
+            MoonProfile == TEXT("heavily_cratered") ||
+            MoonProfile == TEXT("heavily-cratered") ||
+            MoonProfile == TEXT("heavily cratered") ||
+            MoonProfile == TEXT("ancient"))
+        {
+            return EUEAIAgentMoonProfile::AncientHeavilyCratered;
+        }
+
+        // Ancient heavily cratered is the default moon profile.
+        return EUEAIAgentMoonProfile::AncientHeavilyCratered;
+    }
+
+    const TCHAR* MoonProfileToText(EUEAIAgentMoonProfile MoonProfile)
+    {
+        switch (MoonProfile)
+        {
+            case EUEAIAgentMoonProfile::AncientHeavilyCratered:
+                return TEXT("ancient_heavily_cratered");
+            default:
+                return TEXT("ancient_heavily_cratered");
+        }
+    }
+
+    float SampleFractalNoise(const FVector2D& Position, int32 Seed, float BaseFrequency, int32 Octaves)
+    {
+        const FVector2D SeedOffset(
+            static_cast<float>(Seed % 1000) * 0.123f,
+            static_cast<float>((Seed / 1000) % 1000) * 0.157f);
+
+        float Total = 0.0f;
+        float TotalWeight = 0.0f;
+        float Amplitude = 1.0f;
+        float Frequency = FMath::Max(0.001f, BaseFrequency);
+        for (int32 OctaveIndex = 0; OctaveIndex < FMath::Max(1, Octaves); ++OctaveIndex)
+        {
+            const FVector2D OctaveShift(
+                static_cast<float>(OctaveIndex) * 17.0f,
+                static_cast<float>(OctaveIndex) * 23.0f);
+            Total += Amplitude * FMath::PerlinNoise2D((Position * Frequency) + SeedOffset + OctaveShift);
+            TotalWeight += Amplitude;
+            Amplitude *= 0.5f;
+            Frequency *= 2.0f;
+        }
+
+        return TotalWeight > KINDA_SMALL_NUMBER ? (Total / TotalWeight) : 0.0f;
+    }
+
+    float HashSigned(uint32 Value)
+    {
+        uint32 N = Value;
+        N = (N << 13U) ^ N;
+        const uint32 Hash = N * (N * N * 15731U + 789221U) + 1376312589U;
+        return 1.0f - static_cast<float>(Hash & 0x7fffffffU) / 1073741824.0f;
+    }
+
+    float SampleMicroCraterField(const FVector2D& UV, int32 Seed, float CellCount)
+    {
+        const float SafeCellCount = FMath::Max(4.0f, CellCount);
+        const FVector2D GridPosition = UV * SafeCellCount;
+        const int32 BaseX = FMath::FloorToInt(GridPosition.X);
+        const int32 BaseY = FMath::FloorToInt(GridPosition.Y);
+
+        float NearestNormalizedDistance = TNumericLimits<float>::Max();
+        float BestDepth = 0.5f;
+        for (int32 OffsetY = -1; OffsetY <= 1; ++OffsetY)
+        {
+            for (int32 OffsetX = -1; OffsetX <= 1; ++OffsetX)
+            {
+                const int32 CellX = BaseX + OffsetX;
+                const int32 CellY = BaseY + OffsetY;
+                const uint32 HashX = static_cast<uint32>(static_cast<int64>(CellX) * 92837111LL);
+                const uint32 HashY = static_cast<uint32>(static_cast<int64>(CellY) * 689287499LL);
+                const uint32 HashSeed = static_cast<uint32>(static_cast<int64>(Seed) * 283923481LL);
+                const uint32 HashBase =
+                    HashX ^
+                    HashY ^
+                    HashSeed;
+                const float JitterX = 0.5f + (0.5f * HashSigned(HashBase));
+                const float JitterY = 0.5f + (0.5f * HashSigned(HashBase + 1013U));
+                const float RadiusAlpha = 0.5f + (0.5f * HashSigned(HashBase + 3571U));
+                const float DepthAlpha = 0.5f + (0.5f * HashSigned(HashBase + 9151U));
+                const float Radius = FMath::Lerp(0.18f, 0.48f, RadiusAlpha);
+                const float Depth = FMath::Lerp(0.30f, 0.95f, DepthAlpha);
+
+                const FVector2D Center(static_cast<float>(CellX) + JitterX, static_cast<float>(CellY) + JitterY);
+                const float Distance = FVector2D::Distance(GridPosition, Center);
+                const float NormalizedDistance = Distance / FMath::Max(0.05f, Radius);
+                if (NormalizedDistance < NearestNormalizedDistance)
+                {
+                    NearestNormalizedDistance = NormalizedDistance;
+                    BestDepth = Depth;
+                }
+            }
+        }
+
+        if (!FMath::IsFinite(NearestNormalizedDistance))
+        {
+            return 0.0f;
+        }
+
+        const float Bowl =
+            NearestNormalizedDistance < 1.0f
+                ? -BestDepth * FMath::Square(1.0f - NearestNormalizedDistance)
+                : 0.0f;
+        const float RimSigma = 0.22f;
+        const float RimDistance = NearestNormalizedDistance - 1.02f;
+        const float Rim = (0.52f * BestDepth) *
+            FMath::Exp(-(RimDistance * RimDistance) / (2.0f * RimSigma * RimSigma));
+        return Bowl + Rim;
+    }
+
+    float EvaluateMoonSurfaceRaw(
+        const FVector2D& UV,
+        const TArray<FMoonCraterFeature>& Craters,
+        int32 Seed,
+        float DetailScale,
+        EUEAIAgentMoonProfile MoonProfile,
+        float MicroCraterScale)
+    {
+        const bool bAncientCratered = MoonProfile == EUEAIAgentMoonProfile::AncientHeavilyCratered;
+        const float MacroNoise = SampleFractalNoise(UV, Seed + 19, bAncientCratered ? 2.2f : 2.8f, 4);
+        const float RidgeNoise = 1.0f - FMath::Abs(SampleFractalNoise(UV, Seed + 137, bAncientCratered ? 7.6f : 6.4f, 4));
+        const float ChannelNoise = -FMath::Abs(SampleFractalNoise(UV + FVector2D(0.13f, 0.07f), Seed + 251, 14.0f * DetailScale, 2));
+        const float RegolithNoise = SampleFractalNoise(UV, Seed + 503, 34.0f * DetailScale, 3);
+        const float GranularNoise = SampleFractalNoise(UV + FVector2D(0.23f, 0.41f), Seed + 587, 58.0f * DetailScale, 2);
+        const float RockyPatches = 1.0f - FMath::Abs(SampleFractalNoise(UV + FVector2D(0.31f, 0.17f), Seed + 809, 19.0f * DetailScale, 3));
+
+        // Keep craters strong while flattening broad base relief.
+        const float GroundReliefScale = 0.1f;
+        float Height = GroundReliefScale * (bAncientCratered
+            ? (0.30f * MacroNoise) + (0.22f * (RidgeNoise - 0.5f)) + (0.09f * ChannelNoise) + (0.14f * RegolithNoise) + (0.10f * GranularNoise) + (0.10f * (RockyPatches - 0.5f))
+            : (0.40f * MacroNoise) + (0.24f * (RidgeNoise - 0.5f)) + (0.14f * RegolithNoise) + (0.05f * GranularNoise));
+
+        for (const FMoonCraterFeature& Crater : Craters)
+        {
+            const FVector2D Delta = UV - Crater.Center;
+            const float CosA = FMath::Cos(Crater.RotationRad);
+            const float SinA = FMath::Sin(Crater.RotationRad);
+            const float RotX = (Delta.X * CosA) + (Delta.Y * SinA);
+            const float RotY = (-Delta.X * SinA) + (Delta.Y * CosA);
+            const float RadiusX = FMath::Max(0.001f, Crater.Radius * Crater.Aspect);
+            const float RadiusY = FMath::Max(0.001f, Crater.Radius / FMath::Max(0.2f, Crater.Aspect));
+            const float NormalizedDistance = FMath::Sqrt(
+                FMath::Square(RotX / RadiusX) +
+                FMath::Square(RotY / RadiusY));
+
+            if (NormalizedDistance <= 1.0f)
+            {
+                const float AgeSoftening = FMath::Lerp(1.0f, 0.58f, Crater.Age);
+                const float BowlWeight = 1.0f - (NormalizedDistance * NormalizedDistance);
+                Height -= Crater.Depth * BowlWeight * AgeSoftening;
+
+                if (Crater.Terrace > 0.01f && NormalizedDistance > 0.35f && NormalizedDistance < 0.96f)
+                {
+                    const float WallAlpha = (NormalizedDistance - 0.35f) / 0.61f;
+                    const float QuantizedWall = FMath::FloorToFloat(WallAlpha * 4.0f) / 4.0f;
+                    Height += Crater.Depth * Crater.Terrace * (0.08f - (0.06f * QuantizedWall));
+                }
+
+                // Large craters get a flatter floor.
+                if (Crater.Radius > 0.11f && NormalizedDistance < 0.42f)
+                {
+                    const float FloorAlpha = 1.0f - (NormalizedDistance / 0.42f);
+                    Height += Crater.Depth * 0.11f * FloorAlpha;
+                }
+            }
+
+            const float RimCenter = 1.0f + FMath::Lerp(0.03f, 0.09f, Crater.Age);
+            const float RimSigma = FMath::Lerp(0.07f, 0.16f, Crater.Age);
+            const float RimDistance = NormalizedDistance - RimCenter;
+            const float RimAmplitude = Crater.Depth * FMath::Lerp(0.38f, 0.16f, Crater.Age);
+            Height += RimAmplitude *
+                FMath::Exp(-(RimDistance * RimDistance) / (2.0f * RimSigma * RimSigma));
+
+            // Ejecta around rims with uneven spread.
+            const float EjectaDistance = NormalizedDistance - 1.0f;
+            if (EjectaDistance > 0.0f && EjectaDistance < 1.8f)
+            {
+                const float DirectionNoise = 0.65f + (0.35f * SampleFractalNoise(UV + (Crater.Center * 3.0f), Seed + 1207, 9.0f, 1));
+                const float EjectaFalloff = FMath::Exp(-1.8f * EjectaDistance);
+                const float EjectaStrength = Crater.Ejecta * Crater.Depth * DirectionNoise * EjectaFalloff;
+                Height += EjectaStrength * FMath::Lerp(0.26f, 0.10f, Crater.Age);
+            }
+        }
+
+        const float ClampedMicroCraterScale = FMath::Clamp(MicroCraterScale, 0.0f, 1.0f);
+        if (ClampedMicroCraterScale > KINDA_SMALL_NUMBER)
+        {
+            const float MicroCratersA = SampleMicroCraterField(UV, Seed + 701, (bAncientCratered ? 20.0f : 14.0f) * DetailScale);
+            const float MicroCratersB = SampleMicroCraterField(UV + FVector2D(0.137f, 0.271f), Seed + 977, (bAncientCratered ? 34.0f : 24.0f) * DetailScale);
+            Height += ((bAncientCratered ? 0.14f : 0.10f) * ClampedMicroCraterScale) * MicroCratersA;
+            Height += ((bAncientCratered ? 0.10f : 0.06f) * ClampedMicroCraterScale) * MicroCratersB;
+        }
+
+        return Height;
+    }
+
+    float EvaluateNatureIslandRaw(
+        const FVector2D& UV,
+        const TArray<FVector4f>& Mountains,
+        int32 Seed)
+    {
+        const float DX = UV.X - 0.5f;
+        const float DY = UV.Y - 0.5f;
+        const float DistanceFromCenter = FMath::Sqrt(DX * DX + DY * DY) * 1.8f;
+        const float IslandMask = FMath::Pow(FMath::Clamp(1.0f - DistanceFromCenter, 0.0f, 1.0f), 1.6f);
+
+        const float BaseNoise = 0.33f * SampleFractalNoise(UV, Seed + 71, 3.0f, 3) +
+            0.20f * SampleFractalNoise(UV, Seed + 211, 10.0f, 2);
+
+        float MountainHeight = 0.0f;
+        for (const FVector4f& Mountain : Mountains)
+        {
+            const FVector2D PeakCenter(Mountain.X, Mountain.Y);
+            const float Radius = FMath::Max(0.01f, Mountain.Z);
+            const float Amplitude = Mountain.W;
+            const float DistSq = FVector2D::DistSquared(UV, PeakCenter);
+            const float SigmaSq = Radius * Radius;
+            MountainHeight += Amplitude * FMath::Exp(-DistSq / (2.0f * SigmaSq));
+        }
+
+        const float ShoreDrop = (1.0f - IslandMask) * 0.35f;
+        return IslandMask * (0.25f + BaseNoise + MountainHeight) - ShoreDrop;
     }
 }
 
@@ -2063,6 +2411,458 @@ bool FUEAIAgentSceneTools::LandscapePaintLayer(const FUEAIAgentLandscapePaintLay
     if (AutoCreatedPaintLayerCount > 0)
     {
         OutMessage += FString::Printf(TEXT(" Paint layer info was auto-created for '%s'."), *Params.LayerName);
+    }
+    return true;
+}
+
+bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGenerateParams& Params, FString& OutMessage)
+{
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    FString Theme = Params.Theme.TrimStartAndEnd().ToLower();
+    if (Theme.IsEmpty())
+    {
+        Theme = TEXT("nature_island");
+    }
+
+    const bool bMoonSurface =
+        Theme == TEXT("moon_surface") ||
+        Theme == TEXT("moon") ||
+        Theme == TEXT("lunar");
+    const bool bNatureIsland =
+        Theme == TEXT("nature_island") ||
+        Theme == TEXT("nature") ||
+        Theme == TEXT("island");
+    if (!bMoonSurface && !bNatureIsland)
+    {
+        OutMessage = TEXT("Unsupported landscape theme. Use moon_surface or nature_island.");
+        return false;
+    }
+    const EUEAIAgentLandscapeDetailTier DetailTier = ResolveLandscapeDetailTier(Params.DetailLevel, bMoonSurface);
+    const float DetailScale = LandscapeDetailScale(DetailTier);
+    const EUEAIAgentMoonProfile MoonProfile = ResolveMoonProfile(Params.MoonProfile, bMoonSurface);
+
+    TArray<ALandscapeProxy*> TargetLandscapes;
+    CollectLandscapeTargets(World, Params.ActorNames, Params.bUseSelectionIfActorNamesEmpty, TargetLandscapes);
+    bool bUsedAreaFallback = false;
+    if (TargetLandscapes.IsEmpty())
+    {
+        if (Params.bUseFullArea)
+        {
+            CollectAllLandscapeTargets(World, TargetLandscapes);
+        }
+        else
+        {
+            bUsedAreaFallback = ResolveLandscapeTargetsForArea(World, Params.Center, Params.Size, TargetLandscapes);
+        }
+    }
+
+    if (TargetLandscapes.IsEmpty())
+    {
+        OutMessage = TEXT("No target landscape actors found. Select a landscape actor or provide actorNames.");
+        return false;
+    }
+
+    const float MaxHeight = FMath::Clamp(Params.MaxHeight, 100.0f, 10000.0f);
+    const int32 MountainCount = FMath::Clamp(Params.MountainCount, 1, 8);
+    int32 CraterCountMin = Params.CraterCountMin > 0 ? FMath::Clamp(Params.CraterCountMin, 1, 500) : 0;
+    int32 CraterCountMax = Params.CraterCountMax > 0 ? FMath::Clamp(Params.CraterCountMax, 1, 500) : 0;
+    if (CraterCountMin > 0 && CraterCountMax > 0 && CraterCountMin > CraterCountMax)
+    {
+        Swap(CraterCountMin, CraterCountMax);
+    }
+    float CraterWidthMin = Params.CraterWidthMin > 0.0f ? FMath::Clamp(Params.CraterWidthMin, 1.0f, 200000.0f) : 0.0f;
+    float CraterWidthMax = Params.CraterWidthMax > 0.0f ? FMath::Clamp(Params.CraterWidthMax, 1.0f, 200000.0f) : 0.0f;
+    if (CraterWidthMin > 0.0f && CraterWidthMax > 0.0f && CraterWidthMin > CraterWidthMax)
+    {
+        Swap(CraterWidthMin, CraterWidthMax);
+    }
+    const bool bHasExplicitCraterCount = CraterCountMin > 0 || CraterCountMax > 0;
+    const bool bHasExplicitCraterWidth = CraterWidthMin > 0.0f || CraterWidthMax > 0.0f;
+    const bool bHasStrictCraterConstraints = bHasExplicitCraterCount || bHasExplicitCraterWidth;
+    const float MicroCraterScale = !bHasStrictCraterConstraints
+        ? 1.0f
+        : (CraterCountMax > 0 && CraterCountMax <= 20)
+        ? 0.0f
+        : (CraterWidthMin > 0.0f)
+        ? 0.15f
+        : 0.35f;
+    int32 Seed = Params.Seed;
+    if (Seed == 0)
+    {
+        Seed = FMath::RandRange(1, TNumericLimits<int32>::Max() - 1);
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("LandscapeGenerateTransaction", "UE AI Agent Landscape Generate"));
+    int32 UpdatedLandscapes = 0;
+    int32 SkippedTooLarge = 0;
+
+    for (int32 LandscapeIndex = 0; LandscapeIndex < TargetLandscapes.Num(); ++LandscapeIndex)
+    {
+        ALandscapeProxy* Landscape = TargetLandscapes[LandscapeIndex];
+        if (!Landscape)
+        {
+            continue;
+        }
+
+        int32 MinX = 0;
+        int32 MinY = 0;
+        int32 MaxX = 0;
+        int32 MaxY = 0;
+        const bool bHasRect = Params.bUseFullArea
+            ? ComputeLandscapeFullRect(Landscape, MinX, MinY, MaxX, MaxY)
+            : ComputeLandscapeEditRect(Landscape, Params.Center, Params.Size, MinX, MinY, MaxX, MaxY);
+        if (!bHasRect)
+        {
+            continue;
+        }
+
+        ULandscapeInfo* LandscapeInfo = Landscape->GetLandscapeInfo();
+        if (!LandscapeInfo)
+        {
+            continue;
+        }
+
+        const int32 Width = MaxX - MinX + 1;
+        const int32 Height = MaxY - MinY + 1;
+        if (Width <= 1 || Height <= 1)
+        {
+            continue;
+        }
+        const int64 SampleCount = static_cast<int64>(Width) * static_cast<int64>(Height);
+        if (SampleCount > 12000000)
+        {
+            SkippedTooLarge += 1;
+            continue;
+        }
+
+        const FVector LandscapeScale = Landscape->GetActorScale3D();
+        const float ScaleX = FMath::Max(KINDA_SMALL_NUMBER, FMath::Abs(LandscapeScale.X));
+        const float ScaleY = FMath::Max(KINDA_SMALL_NUMBER, FMath::Abs(LandscapeScale.Y));
+        const float ScaleZ = FMath::Max(KINDA_SMALL_NUMBER, FMath::Abs(LandscapeScale.Z));
+
+        FLandscapeEditDataInterface LandscapeEdit(LandscapeInfo, ResolveLandscapeEditLayerGuid(Landscape));
+        TArray<uint16> HeightData;
+        HeightData.SetNumUninitialized(Width * Height);
+        LandscapeEdit.GetHeightDataFast(MinX, MinY, MaxX, MaxY, HeightData.GetData(), 0);
+
+        int64 HeightSum = 0;
+        for (const uint16 HeightValue : HeightData)
+        {
+            HeightSum += HeightValue;
+        }
+        const int32 BaseHeight = HeightData.Num() > 0
+            ? static_cast<int32>(HeightSum / HeightData.Num())
+            : 32768;
+
+        TArray<FMoonCraterFeature> MoonCraters;
+        TArray<FVector4f> NatureFeatures;
+        const int32 LandscapeSeed = Seed + (LandscapeIndex * 1013);
+        FRandomStream Stream(LandscapeSeed);
+        if (bMoonSurface)
+        {
+            const float DensityFromCount = FMath::Lerp(0.65f, 1.35f, static_cast<float>(MountainCount - 1) / 7.0f);
+            const int32 BaseCraterCount = FMath::Clamp((Width * Height) / 65000, 10, 44);
+            int32 CraterCount = FMath::Clamp(
+                FMath::RoundToInt(static_cast<float>(BaseCraterCount) * DetailScale * DensityFromCount),
+                10,
+                500);
+            const bool bAncientCratered = MoonProfile == EUEAIAgentMoonProfile::AncientHeavilyCratered;
+            if (bAncientCratered)
+            {
+                CraterCount = FMath::Clamp(FMath::RoundToInt(static_cast<float>(CraterCount) * 2.3f), 70, 500);
+            }
+            if (CraterCountMin > 0)
+            {
+                CraterCount = FMath::Max(CraterCount, CraterCountMin);
+            }
+            if (CraterCountMax > 0)
+            {
+                CraterCount = FMath::Min(CraterCount, CraterCountMax);
+            }
+            CraterCount = FMath::Clamp(CraterCount, 1, 500);
+
+            float RadiusMin = FMath::Clamp(0.012f / FMath::Sqrt(DetailScale), 0.008f, 0.020f);
+            float RadiusMax = FMath::Clamp(0.082f / FMath::Sqrt(DetailScale), 0.045f, 0.110f);
+            if (CraterWidthMin > 0.0f || CraterWidthMax > 0.0f)
+            {
+                const float AreaWorldWidth = FMath::Max(1.0f, static_cast<float>(Width - 1) * ScaleX);
+                const float AreaWorldHeight = FMath::Max(1.0f, static_cast<float>(Height - 1) * ScaleY);
+                const float AreaWorldSpan = FMath::Max(1.0f, 0.5f * (AreaWorldWidth + AreaWorldHeight));
+                if (CraterWidthMin > 0.0f)
+                {
+                    const float RequestedRadiusMin = 0.5f * (CraterWidthMin / AreaWorldSpan);
+                    RadiusMin = FMath::Max(RadiusMin, RequestedRadiusMin);
+                }
+                if (CraterWidthMax > 0.0f)
+                {
+                    const float RequestedRadiusMax = 0.5f * (CraterWidthMax / AreaWorldSpan);
+                    RadiusMax = FMath::Min(RadiusMax, RequestedRadiusMax);
+                }
+            }
+            RadiusMin = FMath::Clamp(RadiusMin, 0.003f, 0.45f);
+            RadiusMax = FMath::Clamp(RadiusMax, RadiusMin, 0.49f);
+            const float DepthMin = FMath::Clamp(0.18f * DetailScale, 0.15f, 0.95f);
+            const float DepthMax = FMath::Clamp(0.65f * DetailScale, 0.30f, 1.35f);
+            if (bAncientCratered && !bHasStrictCraterConstraints)
+            {
+                const FMoonCraterFeature DominantCrater = [&]()
+                {
+                    FMoonCraterFeature Feature;
+                    const bool bLeftSide = Stream.FRand() < 0.5f;
+                    Feature.Center = FVector2D(
+                        bLeftSide ? Stream.FRandRange(0.10f, 0.28f) : Stream.FRandRange(0.72f, 0.90f),
+                        Stream.FRandRange(0.22f, 0.78f));
+                    Feature.Radius = FMath::Clamp(RadiusMax * Stream.FRandRange(1.35f, 1.95f), 0.14f, 0.34f);
+                    Feature.Depth = FMath::Clamp(DepthMax * Stream.FRandRange(0.8f, 1.05f), 0.35f, 1.5f);
+                    Feature.Age = Stream.FRandRange(0.25f, 0.65f);
+                    Feature.Ejecta = Stream.FRandRange(0.35f, 0.80f);
+                    Feature.Terrace = Stream.FRandRange(0.55f, 1.0f);
+                    Feature.Aspect = Stream.FRandRange(0.88f, 1.12f);
+                    Feature.RotationRad = Stream.FRandRange(0.0f, 2.0f * PI);
+                    return Feature;
+                }();
+                MoonCraters.Add(DominantCrater);
+            }
+
+            MoonCraters.Reserve(CraterCount + (CraterCount / 3) + 2);
+            for (int32 CraterIndex = 0; CraterIndex < CraterCount; ++CraterIndex)
+            {
+                const float SizeSelector = Stream.FRand();
+                const float SmallMax = FMath::Lerp(RadiusMin, RadiusMax, bAncientCratered ? 0.34f : 0.45f);
+                const float MediumMax = FMath::Lerp(RadiusMin, RadiusMax, bAncientCratered ? 0.68f : 0.78f);
+
+                FMoonCraterFeature Feature;
+                if (SizeSelector < (bAncientCratered ? 0.76f : 0.66f))
+                {
+                    Feature.Radius = Stream.FRandRange(RadiusMin, SmallMax);
+                }
+                else if (SizeSelector < 0.95f)
+                {
+                    Feature.Radius = Stream.FRandRange(SmallMax, MediumMax);
+                }
+                else
+                {
+                    Feature.Radius = Stream.FRandRange(MediumMax, RadiusMax);
+                }
+
+                Feature.Center = FVector2D(
+                    Stream.FRandRange(0.03f, 0.97f),
+                    Stream.FRandRange(0.03f, 0.97f));
+                Feature.Age = bAncientCratered
+                    ? Stream.FRandRange(0.35f, 1.0f)
+                    : Stream.FRandRange(0.08f, 0.90f);
+                const float RadiusDepthAlpha = FMath::Clamp((Feature.Radius - RadiusMin) / FMath::Max(0.001f, RadiusMax - RadiusMin), 0.0f, 1.0f);
+                const float BaseDepth = FMath::Lerp(DepthMin, DepthMax, RadiusDepthAlpha);
+                Feature.Depth = BaseDepth * FMath::Lerp(1.05f, 0.55f, Feature.Age);
+                Feature.Ejecta = Stream.FRandRange(0.35f, 1.0f) * FMath::Lerp(1.0f, 0.35f, Feature.Age);
+                Feature.Terrace = Feature.Radius > (0.55f * RadiusMax) ? Stream.FRandRange(0.20f, 1.0f) : 0.0f;
+                Feature.Aspect = bAncientCratered
+                    ? Stream.FRandRange(0.82f, 1.20f)
+                    : Stream.FRandRange(0.90f, 1.12f);
+                Feature.RotationRad = Stream.FRandRange(0.0f, 2.0f * PI);
+                MoonCraters.Add(Feature);
+
+                const bool bAllowNestedCrater = !bHasStrictCraterConstraints;
+                const bool bCanHaveNestedCrater = bAllowNestedCrater && Feature.Radius > (SmallMax * 0.8f);
+                if (bCanHaveNestedCrater && Stream.FRand() < (bAncientCratered ? 0.42f : 0.24f))
+                {
+                    const int32 NestedCount = Stream.RandRange(1, bAncientCratered ? 3 : 2);
+                    for (int32 NestedIndex = 0; NestedIndex < NestedCount; ++NestedIndex)
+                    {
+                        FMoonCraterFeature NestedFeature;
+                        const float OffsetRadius = Feature.Radius * Stream.FRandRange(0.08f, 0.55f);
+                        const float OffsetAngle = Stream.FRandRange(0.0f, 2.0f * PI);
+                        NestedFeature.Center = Feature.Center + FVector2D(
+                            OffsetRadius * FMath::Cos(OffsetAngle),
+                            OffsetRadius * FMath::Sin(OffsetAngle));
+                        NestedFeature.Center.X = FMath::Clamp(NestedFeature.Center.X, 0.02f, 0.98f);
+                        NestedFeature.Center.Y = FMath::Clamp(NestedFeature.Center.Y, 0.02f, 0.98f);
+                        NestedFeature.Radius = FMath::Clamp(
+                            Feature.Radius * Stream.FRandRange(0.14f, 0.34f),
+                            RadiusMin,
+                            RadiusMax);
+                        NestedFeature.Age = Stream.FRandRange(0.03f, 0.60f);
+                        NestedFeature.Depth = Feature.Depth * Stream.FRandRange(0.35f, 0.78f);
+                        NestedFeature.Ejecta = Stream.FRandRange(0.45f, 1.0f);
+                        NestedFeature.Terrace = 0.0f;
+                        NestedFeature.Aspect = Stream.FRandRange(0.90f, 1.10f);
+                        NestedFeature.RotationRad = Stream.FRandRange(0.0f, 2.0f * PI);
+                        MoonCraters.Add(NestedFeature);
+                    }
+                }
+            }
+        }
+        else
+        {
+            NatureFeatures.Reserve(MountainCount);
+            for (int32 MountainIndex = 0; MountainIndex < MountainCount; ++MountainIndex)
+            {
+                const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
+                const float RadiusOffset = Stream.FRandRange(0.0f, 0.22f);
+                const FVector2D Center(0.5f + RadiusOffset * FMath::Cos(Angle), 0.5f + RadiusOffset * FMath::Sin(Angle));
+                NatureFeatures.Add(FVector4f(
+                    FMath::Clamp(Center.X, 0.08f, 0.92f),
+                    FMath::Clamp(Center.Y, 0.08f, 0.92f),
+                    Stream.FRandRange(0.06f, 0.16f),
+                    Stream.FRandRange(0.55f, 1.10f)));
+            }
+        }
+
+        TArray<float> RawHeightData;
+        RawHeightData.SetNumUninitialized(Width * Height);
+        float RawMin = TNumericLimits<float>::Max();
+        float RawMax = TNumericLimits<float>::Lowest();
+        double RawSum = 0.0;
+        double RawSquaredSum = 0.0;
+        for (int32 Y = MinY; Y <= MaxY; ++Y)
+        {
+            const float V = Height > 1
+                ? static_cast<float>(Y - MinY) / static_cast<float>(Height - 1)
+                : 0.5f;
+            for (int32 X = MinX; X <= MaxX; ++X)
+            {
+                const float U = Width > 1
+                    ? static_cast<float>(X - MinX) / static_cast<float>(Width - 1)
+                    : 0.5f;
+                const FVector2D UV(U, V);
+                const int32 DataIndex = (Y - MinY) * Width + (X - MinX);
+                const float RawHeight = bMoonSurface
+                    ? EvaluateMoonSurfaceRaw(UV, MoonCraters, LandscapeSeed, DetailScale, MoonProfile, MicroCraterScale)
+                    : EvaluateNatureIslandRaw(UV, NatureFeatures, LandscapeSeed);
+                RawHeightData[DataIndex] = RawHeight;
+                RawMin = FMath::Min(RawMin, RawHeight);
+                RawMax = FMath::Max(RawMax, RawHeight);
+                RawSum += static_cast<double>(RawHeight);
+                RawSquaredSum += static_cast<double>(RawHeight) * static_cast<double>(RawHeight);
+            }
+        }
+
+        if (RawMax <= RawMin)
+        {
+            continue;
+        }
+
+        const float DetailAlpha = FMath::Clamp((DetailScale - 0.72f) / (1.62f - 0.72f), 0.0f, 1.0f);
+        const float TargetMinHeight = bMoonSurface
+            ? (FMath::Lerp(-0.30f, -0.52f, DetailAlpha) * MaxHeight)
+            : (-0.12f * MaxHeight);
+        const float TargetMaxHeight = bMoonSurface
+            ? (FMath::Lerp(0.56f, 0.95f, DetailAlpha) * MaxHeight)
+            : MaxHeight;
+        const float RawRange = FMath::Max(KINDA_SMALL_NUMBER, RawMax - RawMin);
+        const double SafeSampleCount = RawHeightData.Num() > 0 ? static_cast<double>(RawHeightData.Num()) : 1.0;
+        const float RawMean = static_cast<float>(RawSum / SafeSampleCount);
+        const double RawVarianceRaw = (RawSquaredSum / SafeSampleCount) - (static_cast<double>(RawMean) * static_cast<double>(RawMean));
+        const float RawStdDev = FMath::Sqrt(FMath::Max(0.0f, static_cast<float>(RawVarianceRaw)));
+        const float StdRange = FMath::Max(0.18f, 2.35f * RawStdDev);
+        const float StdMin = RawMean - StdRange;
+        const float StdMax = RawMean + StdRange;
+        const float StdBlend = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+            ? 0.35f
+            : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+            ? 0.55f
+            : DetailTier == EUEAIAgentLandscapeDetailTier::High
+            ? 0.72f
+            : 0.82f;
+
+        bool bEditedLandscape = false;
+        for (int32 DataIndex = 0; DataIndex < RawHeightData.Num(); ++DataIndex)
+        {
+            const float MinMaxNormalized = (RawHeightData[DataIndex] - RawMin) / RawRange;
+            float Normalized = MinMaxNormalized;
+            if (bMoonSurface && RawStdDev > KINDA_SMALL_NUMBER)
+            {
+                const float StdNormalized = FMath::Clamp(
+                    (RawHeightData[DataIndex] - StdMin) / FMath::Max(KINDA_SMALL_NUMBER, StdMax - StdMin),
+                    0.0f,
+                    1.0f);
+                Normalized = FMath::Lerp(MinMaxNormalized, StdNormalized, StdBlend);
+            }
+            const float WorldOffset = FMath::Lerp(TargetMinHeight, TargetMaxHeight, Normalized);
+            const int32 HeightDelta = FMath::RoundToInt((WorldOffset * 128.0f) / ScaleZ);
+            const int32 NewHeight = FMath::Clamp(BaseHeight + HeightDelta, 0, 65535);
+            const int32 CurrentHeight = HeightData[DataIndex];
+            if (NewHeight == CurrentHeight)
+            {
+                continue;
+            }
+
+            HeightData[DataIndex] = static_cast<uint16>(NewHeight);
+            bEditedLandscape = true;
+        }
+
+        if (!bEditedLandscape)
+        {
+            continue;
+        }
+
+        Landscape->Modify();
+        LandscapeEdit.SetHeightData(MinX, MinY, MaxX, MaxY, HeightData.GetData(), 0, true);
+        LandscapeEdit.Flush();
+        RequestLandscapeLayersContentRefresh(Landscape);
+        UpdatedLandscapes += 1;
+    }
+
+    if (UpdatedLandscapes <= 0)
+    {
+        OutMessage = TEXT("Could not generate landscape in the requested area. Check target landscape and bounds.");
+        if (SkippedTooLarge > 0)
+        {
+            OutMessage += TEXT(" Generation area is too large for safe execution.");
+        }
+        return false;
+    }
+
+    if (bMoonSurface)
+    {
+        const FString CraterCountText = (CraterCountMin > 0 || CraterCountMax > 0)
+            ? FString::Printf(TEXT("%d-%d"), CraterCountMin > 0 ? CraterCountMin : 1, CraterCountMax > 0 ? CraterCountMax : 500)
+            : TEXT("auto");
+        const FString CraterWidthText = (CraterWidthMin > 0.0f || CraterWidthMax > 0.0f)
+            ? FString::Printf(TEXT("%.0f-%.0f"), CraterWidthMin > 0.0f ? CraterWidthMin : 1.0f, CraterWidthMax > 0.0f ? CraterWidthMax : 200000.0f)
+            : TEXT("auto");
+        OutMessage = FString::Printf(
+            TEXT("Generated moon surface over %s. Affected landscapes=%d, detail=%s, profile=%s, maxHeight=%.0f, craterDensity=%d, craterCount=%s, craterWidth=%s, seed=%d."),
+            Params.bUseFullArea ? TEXT("full landscape area") : TEXT("bounded area"),
+            UpdatedLandscapes,
+            LandscapeDetailTierToText(DetailTier),
+            MoonProfileToText(MoonProfile),
+            MaxHeight,
+            MountainCount,
+            *CraterCountText,
+            *CraterWidthText,
+            Seed);
+    }
+    else
+    {
+        OutMessage = FString::Printf(
+            TEXT("Generated nature island over %s. Affected landscapes=%d, detail=%s, maxHeight=%.0f, mountains=%d, seed=%d."),
+            Params.bUseFullArea ? TEXT("full landscape area") : TEXT("bounded area"),
+            UpdatedLandscapes,
+            LandscapeDetailTierToText(DetailTier),
+            MaxHeight,
+            MountainCount,
+            Seed);
+    }
+    if (bUsedAreaFallback)
+    {
+        OutMessage += TEXT(" Target was auto-resolved.");
+    }
+    if (SkippedTooLarge > 0)
+    {
+        OutMessage += FString::Printf(TEXT(" Skipped %d oversized landscape area(s)."), SkippedTooLarge);
     }
     return true;
 }

@@ -513,6 +513,161 @@ namespace
             return true;
         }
 
+        if (Command == TEXT("landscape.generate"))
+        {
+            FString Target;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            {
+                return false;
+            }
+
+            FString Theme;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("theme"), Theme) || Theme.IsEmpty())
+            {
+                return false;
+            }
+            const FString ThemeLower = Theme.TrimStartAndEnd().ToLower();
+            const bool bMoonTheme =
+                ThemeLower == TEXT("moon_surface") ||
+                ThemeLower == TEXT("moon") ||
+                ThemeLower == TEXT("lunar");
+            const float ThemeDefaultMaxHeight = bMoonTheme ? 600.0f : 5000.0f;
+
+            FString DetailLevel;
+            (*ParamsObj)->TryGetStringField(TEXT("detailLevel"), DetailLevel);
+
+            FString MoonProfile;
+            (*ParamsObj)->TryGetStringField(TEXT("moonProfile"), MoonProfile);
+
+            bool bUseFullArea = true;
+            (*ParamsObj)->TryGetBoolField(TEXT("useFullArea"), bUseFullArea);
+
+            FVector2D Center = FVector2D::ZeroVector;
+            FVector2D Size = FVector2D(1000.0f, 1000.0f);
+            bool bHasBounds = false;
+
+            const TSharedPtr<FJsonObject>* CenterObj = nullptr;
+            const TSharedPtr<FJsonObject>* SizeObj = nullptr;
+            const bool bHasCenter = (*ParamsObj)->TryGetObjectField(TEXT("center"), CenterObj) && CenterObj && CenterObj->IsValid();
+            const bool bHasSize = (*ParamsObj)->TryGetObjectField(TEXT("size"), SizeObj) && SizeObj && SizeObj->IsValid();
+            if (bHasCenter || bHasSize)
+            {
+                if (!bHasCenter || !bHasSize)
+                {
+                    return false;
+                }
+
+                double CenterX = 0.0;
+                double CenterY = 0.0;
+                double SizeX = 0.0;
+                double SizeY = 0.0;
+                if (!(*CenterObj)->TryGetNumberField(TEXT("x"), CenterX) ||
+                    !(*CenterObj)->TryGetNumberField(TEXT("y"), CenterY) ||
+                    !(*SizeObj)->TryGetNumberField(TEXT("x"), SizeX) ||
+                    !(*SizeObj)->TryGetNumberField(TEXT("y"), SizeY))
+                {
+                    return false;
+                }
+
+                Center = FVector2D(static_cast<float>(CenterX), static_cast<float>(CenterY));
+                Size = FVector2D(
+                    FMath::Max(1.0f, FMath::Abs(static_cast<float>(SizeX))),
+                    FMath::Max(1.0f, FMath::Abs(static_cast<float>(SizeY))));
+                bHasBounds = true;
+            }
+
+            if (!bUseFullArea && !bHasBounds)
+            {
+                return false;
+            }
+
+            double SeedValue = 0.0;
+            const bool bHasSeed = (*ParamsObj)->TryGetNumberField(TEXT("seed"), SeedValue);
+
+            double MountainCountValue = 2.0;
+            const bool bHasMountainCount = (*ParamsObj)->TryGetNumberField(TEXT("mountainCount"), MountainCountValue);
+
+            double MaxHeightValue = static_cast<double>(ThemeDefaultMaxHeight);
+            const bool bHasMaxHeight = (*ParamsObj)->TryGetNumberField(TEXT("maxHeight"), MaxHeightValue);
+
+            double CraterCountMinValue = 0.0;
+            const bool bHasCraterCountMin = (*ParamsObj)->TryGetNumberField(TEXT("craterCountMin"), CraterCountMinValue);
+
+            double CraterCountMaxValue = 0.0;
+            const bool bHasCraterCountMax = (*ParamsObj)->TryGetNumberField(TEXT("craterCountMax"), CraterCountMaxValue);
+
+            double CraterWidthMinValue = 0.0;
+            const bool bHasCraterWidthMin = (*ParamsObj)->TryGetNumberField(TEXT("craterWidthMin"), CraterWidthMinValue);
+
+            double CraterWidthMaxValue = 0.0;
+            const bool bHasCraterWidthMax = (*ParamsObj)->TryGetNumberField(TEXT("craterWidthMax"), CraterWidthMaxValue);
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::LandscapeGenerate;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.LandscapeTheme = ThemeLower;
+            ParsedAction.LandscapeDetailLevel = DetailLevel.TrimStartAndEnd().ToLower();
+            ParsedAction.LandscapeMoonProfile = MoonProfile.TrimStartAndEnd().ToLower();
+            if (bMoonTheme && ParsedAction.LandscapeMoonProfile.IsEmpty())
+            {
+                ParsedAction.LandscapeMoonProfile = TEXT("ancient_heavily_cratered");
+            }
+            ParsedAction.bLandscapeUseFullArea = bUseFullArea;
+            ParsedAction.LandscapeCenter = Center;
+            ParsedAction.LandscapeSize = Size;
+            ParsedAction.LandscapeSeed = bHasSeed ? FMath::TruncToInt(static_cast<float>(SeedValue)) : 0;
+            ParsedAction.LandscapeMountainCount = bHasMountainCount
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(MountainCountValue)), 1, 8)
+                : 2;
+            ParsedAction.LandscapeMaxHeight = bHasMaxHeight
+                ? FMath::Clamp(static_cast<float>(MaxHeightValue), 100.0f, 20000.0f)
+                : ThemeDefaultMaxHeight;
+            ParsedAction.LandscapeCraterCountMin = bHasCraterCountMin
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(CraterCountMinValue)), 1, 500)
+                : 0;
+            ParsedAction.LandscapeCraterCountMax = bHasCraterCountMax
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(CraterCountMaxValue)), 1, 500)
+                : 0;
+            ParsedAction.LandscapeCraterWidthMin = bHasCraterWidthMin
+                ? FMath::Clamp(static_cast<float>(CraterWidthMinValue), 1.0f, 200000.0f)
+                : 0.0f;
+            ParsedAction.LandscapeCraterWidthMax = bHasCraterWidthMax
+                ? FMath::Clamp(static_cast<float>(CraterWidthMaxValue), 1.0f, 200000.0f)
+                : 0.0f;
+            if (
+                ParsedAction.LandscapeCraterCountMin > 0 &&
+                ParsedAction.LandscapeCraterCountMax > 0 &&
+                ParsedAction.LandscapeCraterCountMin > ParsedAction.LandscapeCraterCountMax)
+            {
+                Swap(ParsedAction.LandscapeCraterCountMin, ParsedAction.LandscapeCraterCountMax);
+            }
+            if (
+                ParsedAction.LandscapeCraterWidthMin > 0.0f &&
+                ParsedAction.LandscapeCraterWidthMax > 0.0f &&
+                ParsedAction.LandscapeCraterWidthMin > ParsedAction.LandscapeCraterWidthMax)
+            {
+                Swap(ParsedAction.LandscapeCraterWidthMin, ParsedAction.LandscapeCraterWidthMax);
+            }
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
         if (Command == TEXT("scene.modifyActor"))
         {
             FString Target;
@@ -3280,6 +3435,56 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             Action.LandscapeSize.X,
             Action.LandscapeSize.Y,
             Action.LandscapeStrength);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::LandscapeGenerate)
+    {
+        const FString ThemeDisplayText = Action.LandscapeTheme.Replace(TEXT("_"), TEXT(" "));
+        const bool bMoonTheme =
+            Action.LandscapeTheme.Equals(TEXT("moon_surface"), ESearchCase::IgnoreCase) ||
+            Action.LandscapeTheme.Equals(TEXT("moon"), ESearchCase::IgnoreCase) ||
+            Action.LandscapeTheme.Equals(TEXT("lunar"), ESearchCase::IgnoreCase);
+        const FString AreaText = Action.bLandscapeUseFullArea
+            ? TEXT("full landscape")
+            : FString::Printf(TEXT("center=(%.0f, %.0f), size=(%.0f, %.0f)"),
+                Action.LandscapeCenter.X,
+                Action.LandscapeCenter.Y,
+                Action.LandscapeSize.X,
+                Action.LandscapeSize.Y);
+        const FString SeedText = Action.LandscapeSeed == 0
+            ? TEXT("auto")
+            : FString::FromInt(Action.LandscapeSeed);
+        const FString DetailText = Action.LandscapeDetailLevel.IsEmpty()
+            ? TEXT("auto")
+            : Action.LandscapeDetailLevel;
+        const FString ProfileText = Action.LandscapeMoonProfile.IsEmpty()
+            ? TEXT("auto")
+            : Action.LandscapeMoonProfile;
+        const FString CraterCountText =
+            Action.LandscapeCraterCountMin > 0 || Action.LandscapeCraterCountMax > 0
+                ? FString::Printf(TEXT("%d-%d"),
+                    Action.LandscapeCraterCountMin > 0 ? Action.LandscapeCraterCountMin : 1,
+                    Action.LandscapeCraterCountMax > 0 ? Action.LandscapeCraterCountMax : 500)
+                : TEXT("auto");
+        const FString CraterWidthText =
+            Action.LandscapeCraterWidthMin > 0.0f || Action.LandscapeCraterWidthMax > 0.0f
+                ? FString::Printf(TEXT("%.0f-%.0f"),
+                    Action.LandscapeCraterWidthMin > 0.0f ? Action.LandscapeCraterWidthMin : 1.0f,
+                    Action.LandscapeCraterWidthMax > 0.0f ? Action.LandscapeCraterWidthMax : 200000.0f)
+                : TEXT("auto");
+        return FString::Printf(
+            TEXT("Action %d: Generate %s (%s), detail=%s, profile=%s, maxHeight=%.0f, %s=%d, craters=%s, craterWidth=%s, seed=%s"),
+            ActionIndex + 1,
+            *ThemeDisplayText,
+            *AreaText,
+            *DetailText,
+            *ProfileText,
+            Action.LandscapeMaxHeight,
+            bMoonTheme ? TEXT("craterDensity") : TEXT("mountains"),
+            Action.LandscapeMountainCount,
+            *CraterCountText,
+            *CraterWidthText,
+            *SeedText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)

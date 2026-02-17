@@ -23,6 +23,7 @@ export const AllowedCommands = [
   "scene.duplicateActors",
   "landscape.sculpt",
   "landscape.paintLayer",
+  "landscape.generate",
   "editor.undo",
   "editor.redo",
   "session.beginTransaction",

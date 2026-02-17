@@ -319,6 +319,9 @@ const LandscapeSize2Schema = z.object({
   y: z.number().finite().positive()
 });
 
+const LandscapeDetailLevelSchema = z.enum(["low", "medium", "high", "cinematic"]);
+const LandscapeMoonProfileSchema = z.enum(["ancient_heavily_cratered"]);
+
 const LandscapeSculptParamsSchema = z
   .object({
     target: z.enum(["selection", "byName"]),
@@ -346,6 +349,54 @@ const LandscapePaintLayerParamsSchema = z
   })
   .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
     message: "landscape.paintLayer target=byName needs actorNames"
+  });
+
+const LandscapeGenerateParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName"]),
+    actorNames: z.array(z.string().min(1)).optional(),
+    theme: z.enum(["moon_surface", "nature_island"]),
+    detailLevel: LandscapeDetailLevelSchema.optional(),
+    moonProfile: LandscapeMoonProfileSchema.optional(),
+    useFullArea: z.boolean().default(true),
+    center: LandscapePoint2Schema.optional(),
+    size: LandscapeSize2Schema.optional(),
+    seed: z.number().int().optional(),
+    mountainCount: z.number().int().min(1).max(8).optional(),
+    maxHeight: z.number().finite().positive().max(20000).optional(),
+    craterCountMin: z.number().int().min(1).max(500).optional(),
+    craterCountMax: z.number().int().min(1).max(500).optional(),
+    craterWidthMin: z.number().finite().positive().max(200000).optional(),
+    craterWidthMax: z.number().finite().positive().max(200000).optional()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "landscape.generate target=byName needs actorNames"
+  })
+  .refine((value) => (value.useFullArea ? true : Boolean(value.center && value.size)), {
+    message: "landscape.generate with useFullArea=false needs center and size"
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.craterCountMin !== undefined &&
+      value.craterCountMax !== undefined &&
+      value.craterCountMin > value.craterCountMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate craterCountMin must be <= craterCountMax"
+      });
+    }
+
+    if (
+      value.craterWidthMin !== undefined &&
+      value.craterWidthMax !== undefined &&
+      value.craterWidthMin > value.craterWidthMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate craterWidthMin must be <= craterWidthMax"
+      });
+    }
   });
 
 const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
@@ -493,6 +544,12 @@ export const LandscapePaintLayerActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const LandscapeGenerateActionSchema = z.object({
+  command: z.literal("landscape.generate"),
+  params: LandscapeGenerateParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   ContextGetSceneSummaryActionSchema,
   ContextGetSelectionActionSchema,
@@ -515,7 +572,8 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneSetFogDensityActionSchema,
   SceneSetPostProcessExposureCompensationActionSchema,
   LandscapeSculptActionSchema,
-  LandscapePaintLayerActionSchema
+  LandscapePaintLayerActionSchema,
+  LandscapeGenerateActionSchema
 ]);
 
 const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");

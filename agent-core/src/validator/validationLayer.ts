@@ -129,6 +129,7 @@ function isSceneWriteAction(action: PlanOutput["actions"][number]): boolean {
     action.command === "scene.setPostProcessExposureCompensation" ||
     action.command === "landscape.sculpt" ||
     action.command === "landscape.paintLayer" ||
+    action.command === "landscape.generate" ||
     action.command === "editor.undo" ||
     action.command === "editor.redo"
   );

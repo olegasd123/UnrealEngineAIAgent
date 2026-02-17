@@ -43,7 +43,8 @@ function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): n
     action.command === "scene.setFogDensity" ||
     action.command === "scene.setPostProcessExposureCompensation" ||
     action.command === "landscape.sculpt" ||
-    action.command === "landscape.paintLayer"
+    action.command === "landscape.paintLayer" ||
+    action.command === "landscape.generate"
   ) {
     if (action.params.target === "byName") {
       return Math.max(1, action.params.actorNames?.length ?? 0);
@@ -78,6 +79,16 @@ function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig):
   if (action.command === "landscape.sculpt" || action.command === "landscape.paintLayer") {
     const area = Math.abs(action.params.size.x * action.params.size.y);
     return Math.max(1, Math.round(area / 250000));
+  }
+  if (action.command === "landscape.generate") {
+    if (action.params.useFullArea) {
+      return 250;
+    }
+    if (action.params.size) {
+      const area = Math.abs(action.params.size.x * action.params.size.y);
+      return Math.max(1, Math.round(area / 200000));
+    }
+    return 200;
   }
   return 0;
 }
@@ -229,6 +240,81 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     message = decision.message;
   }
 
+  if (action.command === "landscape.generate") {
+    if (typeof action.params.maxHeight === "number") {
+      const clampedMaxHeight = Math.max(100, Math.min(10000, action.params.maxHeight));
+      if (clampedMaxHeight !== action.params.maxHeight) {
+        action.params.maxHeight = clampedMaxHeight;
+      }
+    }
+
+    if (typeof action.params.mountainCount === "number") {
+      const clampedMountainCount = Math.max(1, Math.min(8, action.params.mountainCount));
+      if (clampedMountainCount !== action.params.mountainCount) {
+        action.params.mountainCount = clampedMountainCount;
+      }
+    }
+
+    if (typeof action.params.craterCountMin === "number") {
+      const clampedCraterCountMin = Math.max(1, Math.min(500, Math.trunc(action.params.craterCountMin)));
+      if (clampedCraterCountMin !== action.params.craterCountMin) {
+        action.params.craterCountMin = clampedCraterCountMin;
+      }
+    }
+
+    if (typeof action.params.craterCountMax === "number") {
+      const clampedCraterCountMax = Math.max(1, Math.min(500, Math.trunc(action.params.craterCountMax)));
+      if (clampedCraterCountMax !== action.params.craterCountMax) {
+        action.params.craterCountMax = clampedCraterCountMax;
+      }
+    }
+
+    if (
+      typeof action.params.craterCountMin === "number" &&
+      typeof action.params.craterCountMax === "number" &&
+      action.params.craterCountMin > action.params.craterCountMax
+    ) {
+      const swap = action.params.craterCountMin;
+      action.params.craterCountMin = action.params.craterCountMax;
+      action.params.craterCountMax = swap;
+    }
+
+    if (typeof action.params.craterWidthMin === "number") {
+      const clampedCraterWidthMin = Math.max(1, Math.min(200000, action.params.craterWidthMin));
+      if (clampedCraterWidthMin !== action.params.craterWidthMin) {
+        action.params.craterWidthMin = clampedCraterWidthMin;
+      }
+    }
+
+    if (typeof action.params.craterWidthMax === "number") {
+      const clampedCraterWidthMax = Math.max(1, Math.min(200000, action.params.craterWidthMax));
+      if (clampedCraterWidthMax !== action.params.craterWidthMax) {
+        action.params.craterWidthMax = clampedCraterWidthMax;
+      }
+    }
+
+    if (
+      typeof action.params.craterWidthMin === "number" &&
+      typeof action.params.craterWidthMax === "number" &&
+      action.params.craterWidthMin > action.params.craterWidthMax
+    ) {
+      const swap = action.params.craterWidthMin;
+      action.params.craterWidthMin = action.params.craterWidthMax;
+      action.params.craterWidthMax = swap;
+    }
+
+    if (!action.params.useFullArea && (!action.params.center || !action.params.size)) {
+      action.params.useFullArea = true;
+      action.params.center = undefined;
+      action.params.size = undefined;
+    }
+
+    const decision = requireApproval(action, "Policy: landscape generation always requires approval.", policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
   if (action.command === "scene.deleteActor") {
     if (action.params.target === "selection") {
       return hardDeny(
@@ -264,7 +350,8 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     action.command === "scene.setFogDensity" ||
     action.command === "scene.setPostProcessExposureCompensation" ||
     action.command === "landscape.sculpt" ||
-    action.command === "landscape.paintLayer"
+    action.command === "landscape.paintLayer" ||
+    action.command === "landscape.generate"
   ) {
     if (action.params.target === "byName" && action.params.actorNames) {
       if (action.params.actorNames.length > policy.maxTargetNames) {

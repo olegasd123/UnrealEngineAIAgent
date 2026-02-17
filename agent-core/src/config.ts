@@ -78,8 +78,8 @@ const RawEnvSchema = z.object({
   AGENT_POLICY_MAX_DUPLICATE_COUNT: PositiveIntSchema.default(10),
   AGENT_POLICY_MAX_TARGET_NAMES: PositiveIntSchema.default(50),
   AGENT_POLICY_MAX_DELETE_BY_NAME_COUNT: PositiveIntSchema.default(20),
-  AGENT_POLICY_SELECTION_TARGET_ESTIMATE: PositiveIntSchema.default(5),
-  AGENT_POLICY_MAX_SESSION_CHANGE_UNITS: PositiveIntSchema.default(120),
+  AGENT_POLICY_SELECTION_TARGET_ESTIMATE: PositiveIntSchema.default(10),
+  AGENT_POLICY_MAX_SESSION_CHANGE_UNITS: PositiveIntSchema.default(500),
   AGENT_POLICY_MAX_LANDSCAPE_BRUSH_SIZE: PositiveNumberSchema.default(4096),
   AGENT_POLICY_MAX_LANDSCAPE_BRUSH_STRENGTH: PositiveNumberSchema.default(0.5)
 });

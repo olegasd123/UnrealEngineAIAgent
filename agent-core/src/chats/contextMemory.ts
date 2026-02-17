@@ -6,7 +6,7 @@ function isReferentialPrompt(prompt: string): boolean {
 }
 
 export function hasWriteIntent(prompt: string): boolean {
-  return /\b(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)\b/i.test(
+  return /\b(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)\b/i.test(
     prompt
   );
 }

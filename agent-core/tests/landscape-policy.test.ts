@@ -76,3 +76,40 @@ test("Landscape paint requires approval even with safe values", () => {
   assert.equal(sessionAction.state, "pending");
   assert.equal(sessionAction.action.risk, "medium");
 });
+
+test("Landscape generate requires approval and clamps limits", () => {
+  const action: PlanAction = {
+    command: "landscape.generate",
+    params: {
+      target: "selection",
+      theme: "nature_island",
+      useFullArea: false,
+      maxHeight: 50000,
+      mountainCount: 50,
+      craterCountMin: 1000,
+      craterCountMax: 10,
+      craterWidthMin: 5000,
+      craterWidthMax: 100
+    },
+    risk: "low"
+  };
+
+  const [sessionAction] = buildSessionActionsForMode([action], basePolicy(), "agent");
+  assert.ok(sessionAction);
+  if (!sessionAction) {
+    return;
+  }
+
+  assert.equal(sessionAction.approved, false);
+  assert.equal(sessionAction.action.risk, "medium");
+  if (sessionAction.action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(sessionAction.action.params.maxHeight, 10000);
+  assert.equal(sessionAction.action.params.mountainCount, 8);
+  assert.equal(sessionAction.action.params.craterCountMin, 10);
+  assert.equal(sessionAction.action.params.craterCountMax, 500);
+  assert.equal(sessionAction.action.params.craterWidthMin, 100);
+  assert.equal(sessionAction.action.params.craterWidthMax, 5000);
+  assert.equal(sessionAction.action.params.useFullArea, true);
+});

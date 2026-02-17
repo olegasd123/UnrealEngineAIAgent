@@ -172,6 +172,137 @@ test("Rule planner builds editor.redo action for redo prompt", () => {
   assert.equal(action.risk, "low");
 });
 
+test("Rule planner builds landscape.generate for moon surface prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create moon surface using all available space on the landscape",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "moon_surface");
+  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.detailLevel, "high");
+  assert.equal(action.params.mountainCount, 6);
+  assert.equal(action.params.useFullArea, true);
+  assert.equal(action.risk, "medium");
+});
+
+test("Rule planner respects explicit moon detail level hints", () => {
+  const request: TaskRequest = {
+    prompt: "create realistic moon surface with cinematic detail on the full landscape",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "moon_surface");
+  assert.equal(action.params.detailLevel, "cinematic");
+  assert.equal(action.params.mountainCount, 8);
+});
+
+test("Rule planner parses crater min/max constraints for moon surface prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create moon surface with min crater count 20 max crater count 60, min crater width 400 max crater width 1800, max height 7000",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "moon_surface");
+  assert.equal(action.params.craterCountMin, 20);
+  assert.equal(action.params.craterCountMax, 60);
+  assert.equal(action.params.craterWidthMin, 400);
+  assert.equal(action.params.craterWidthMax, 1800);
+  assert.equal(action.params.maxHeight, 7000);
+});
+
+test("Rule planner parses singular crater wording for strict count and width constraints", () => {
+  const request: TaskRequest = {
+    prompt:
+      "Generate an ancient heavily cratered lunar field across the full landscape with crater count between 2 and 5, crater width between 300 and 10000",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+
+  assert.equal(action.params.theme, "moon_surface");
+  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.craterCountMin, 2);
+  assert.equal(action.params.craterCountMax, 5);
+  assert.equal(action.params.craterWidthMin, 300);
+  assert.equal(action.params.craterWidthMax, 10000);
+});
+
+test("Rule planner infers ancient heavily cratered moon profile from descriptive prompt", () => {
+  const request: TaskRequest = {
+    prompt:
+      "Generate an ancient heavily cratered lunar field with overlapping impact craters, regolith, ejecta patterns, and terraces inside a large crater.",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+
+  assert.equal(action.params.theme, "moon_surface");
+  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.detailLevel, "high");
+  assert.equal(action.params.craterCountMin, 140);
+  assert.equal(action.params.craterCountMax, 340);
+});
+
+test("Rule planner builds landscape.generate for nature island prompt with constraints", () => {
+  const request: TaskRequest = {
+    prompt: "create a nature island with 2 mountains, max height of 5000",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainCount, 2);
+  assert.equal(action.params.maxHeight, 5000);
+  assert.equal(action.params.useFullArea, true);
+  assert.equal(action.risk, "medium");
+});
+
 test("Validation normalizes context action risk to low", () => {
   const request: TaskRequest = {
     prompt: "show selection info",
