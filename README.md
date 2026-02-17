@@ -29,6 +29,48 @@ Agent Core plans actions, applies safety checks, and returns decisions for chat 
   - `/v1/session/resume`
 - Token-efficient context strategy: use the `fetch-more` pattern (ask for more context only when needed)
 
+## Landscape Features (Current)
+
+Supported landscape actions:
+
+- `landscape.sculpt` (bounded area, raise/lower, strength/falloff)
+- `landscape.paintLayer` (bounded area, add/remove, strength/falloff)
+- `landscape.generate` with themes:
+  - `moon_surface`
+  - `nature_island`
+
+`landscape.generate` supports:
+
+- area mode: full landscape or bounded `center/size`
+- quality: `detailLevel` (`low|medium|high|cinematic`)
+- reproducibility: `seed`
+- height: `maxHeight`
+
+Moon surface options:
+
+- `moonProfile`: `ancient_heavily_cratered` (default)
+- crater controls:
+  - `craterCountMin` / `craterCountMax`
+  - `craterWidthMin` / `craterWidthMax`
+
+Nature island options:
+
+- mountain controls:
+  - `mountainCount`
+  - `mountainWidthMin` / `mountainWidthMax`
+- river hollow controls:
+  - `riverCountMin` / `riverCountMax`
+  - `riverWidthMin` / `riverWidthMax`
+- lake hollow controls:
+  - `lakeCountMin` / `lakeCountMax`
+  - `lakeWidthMin` / `lakeWidthMax`
+
+Default behavior for prompt `create a nature island`:
+
+- mountains: random `1-3`
+- rivers: none (unless user asks)
+- lakes: none (unless user asks)
+
 ## Quick start
 
 ### 1) Prerequisites
