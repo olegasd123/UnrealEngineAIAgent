@@ -187,7 +187,7 @@ test("Rule planner builds landscape.generate for moon surface prompt", () => {
     return;
   }
   assert.equal(action.params.theme, "moon_surface");
-  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.moonProfile, "moon_surface");
   assert.equal(action.params.detailLevel, "high");
   assert.equal(action.params.mountainCount, 6);
   assert.equal(action.params.useFullArea, true);
@@ -252,7 +252,7 @@ test("Rule planner parses singular crater wording for strict count and width con
   }
 
   assert.equal(action.params.theme, "moon_surface");
-  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.moonProfile, "moon_surface");
   assert.equal(action.params.craterCountMin, 2);
   assert.equal(action.params.craterCountMax, 5);
   assert.equal(action.params.craterWidthMin, 300);
@@ -276,7 +276,7 @@ test("Rule planner infers ancient heavily cratered moon profile from descriptive
   }
 
   assert.equal(action.params.theme, "moon_surface");
-  assert.equal(action.params.moonProfile, "ancient_heavily_cratered");
+  assert.equal(action.params.moonProfile, "moon_surface");
   assert.equal(action.params.detailLevel, "high");
   assert.equal(action.params.craterCountMin, 140);
   assert.equal(action.params.craterCountMax, 340);
@@ -301,6 +301,57 @@ test("Rule planner builds landscape.generate for nature island prompt with const
   assert.equal(action.params.maxHeight, 5000);
   assert.equal(action.params.useFullArea, true);
   assert.equal(action.risk, "medium");
+});
+
+test("Rule planner leaves rivers/lakes unspecified for plain nature island prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create a nature island",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainCount, undefined);
+  assert.equal(action.params.riverCountMin, undefined);
+  assert.equal(action.params.riverCountMax, undefined);
+  assert.equal(action.params.lakeCountMin, undefined);
+  assert.equal(action.params.lakeCountMax, undefined);
+});
+
+test("Rule planner parses nature island rivers/lakes and mountain size constraints", () => {
+  const request: TaskRequest = {
+    prompt:
+      "create a nature island with 3 mountains, mountain width between 1200 and 3800, rivers between 2 and 4, river width between 300 and 700, lakes count 2, lake size between 900 and 2400",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+  assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainCount, 3);
+  assert.equal(action.params.mountainWidthMin, 1200);
+  assert.equal(action.params.mountainWidthMax, 3800);
+  assert.equal(action.params.riverCountMin, 2);
+  assert.equal(action.params.riverCountMax, 4);
+  assert.equal(action.params.riverWidthMin, 300);
+  assert.equal(action.params.riverWidthMax, 700);
+  assert.equal(action.params.lakeCountMin, 2);
+  assert.equal(action.params.lakeCountMax, 2);
+  assert.equal(action.params.lakeWidthMin, 900);
+  assert.equal(action.params.lakeWidthMax, 2400);
 });
 
 test("Validation normalizes context action risk to low", () => {

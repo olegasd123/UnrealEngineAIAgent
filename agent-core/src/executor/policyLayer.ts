@@ -255,6 +255,126 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
       }
     }
 
+    if (typeof action.params.mountainWidthMin === "number") {
+      const clampedMountainWidthMin = Math.max(1, Math.min(200000, action.params.mountainWidthMin));
+      if (clampedMountainWidthMin !== action.params.mountainWidthMin) {
+        action.params.mountainWidthMin = clampedMountainWidthMin;
+      }
+    }
+
+    if (typeof action.params.mountainWidthMax === "number") {
+      const clampedMountainWidthMax = Math.max(1, Math.min(200000, action.params.mountainWidthMax));
+      if (clampedMountainWidthMax !== action.params.mountainWidthMax) {
+        action.params.mountainWidthMax = clampedMountainWidthMax;
+      }
+    }
+
+    if (
+      typeof action.params.mountainWidthMin === "number" &&
+      typeof action.params.mountainWidthMax === "number" &&
+      action.params.mountainWidthMin > action.params.mountainWidthMax
+    ) {
+      const swap = action.params.mountainWidthMin;
+      action.params.mountainWidthMin = action.params.mountainWidthMax;
+      action.params.mountainWidthMax = swap;
+    }
+
+    if (typeof action.params.riverCountMin === "number") {
+      const clampedRiverCountMin = Math.max(0, Math.min(32, Math.trunc(action.params.riverCountMin)));
+      if (clampedRiverCountMin !== action.params.riverCountMin) {
+        action.params.riverCountMin = clampedRiverCountMin;
+      }
+    }
+
+    if (typeof action.params.riverCountMax === "number") {
+      const clampedRiverCountMax = Math.max(0, Math.min(32, Math.trunc(action.params.riverCountMax)));
+      if (clampedRiverCountMax !== action.params.riverCountMax) {
+        action.params.riverCountMax = clampedRiverCountMax;
+      }
+    }
+
+    if (
+      typeof action.params.riverCountMin === "number" &&
+      typeof action.params.riverCountMax === "number" &&
+      action.params.riverCountMin > action.params.riverCountMax
+    ) {
+      const swap = action.params.riverCountMin;
+      action.params.riverCountMin = action.params.riverCountMax;
+      action.params.riverCountMax = swap;
+    }
+
+    if (typeof action.params.riverWidthMin === "number") {
+      const clampedRiverWidthMin = Math.max(1, Math.min(200000, action.params.riverWidthMin));
+      if (clampedRiverWidthMin !== action.params.riverWidthMin) {
+        action.params.riverWidthMin = clampedRiverWidthMin;
+      }
+    }
+
+    if (typeof action.params.riverWidthMax === "number") {
+      const clampedRiverWidthMax = Math.max(1, Math.min(200000, action.params.riverWidthMax));
+      if (clampedRiverWidthMax !== action.params.riverWidthMax) {
+        action.params.riverWidthMax = clampedRiverWidthMax;
+      }
+    }
+
+    if (
+      typeof action.params.riverWidthMin === "number" &&
+      typeof action.params.riverWidthMax === "number" &&
+      action.params.riverWidthMin > action.params.riverWidthMax
+    ) {
+      const swap = action.params.riverWidthMin;
+      action.params.riverWidthMin = action.params.riverWidthMax;
+      action.params.riverWidthMax = swap;
+    }
+
+    if (typeof action.params.lakeCountMin === "number") {
+      const clampedLakeCountMin = Math.max(0, Math.min(32, Math.trunc(action.params.lakeCountMin)));
+      if (clampedLakeCountMin !== action.params.lakeCountMin) {
+        action.params.lakeCountMin = clampedLakeCountMin;
+      }
+    }
+
+    if (typeof action.params.lakeCountMax === "number") {
+      const clampedLakeCountMax = Math.max(0, Math.min(32, Math.trunc(action.params.lakeCountMax)));
+      if (clampedLakeCountMax !== action.params.lakeCountMax) {
+        action.params.lakeCountMax = clampedLakeCountMax;
+      }
+    }
+
+    if (
+      typeof action.params.lakeCountMin === "number" &&
+      typeof action.params.lakeCountMax === "number" &&
+      action.params.lakeCountMin > action.params.lakeCountMax
+    ) {
+      const swap = action.params.lakeCountMin;
+      action.params.lakeCountMin = action.params.lakeCountMax;
+      action.params.lakeCountMax = swap;
+    }
+
+    if (typeof action.params.lakeWidthMin === "number") {
+      const clampedLakeWidthMin = Math.max(1, Math.min(200000, action.params.lakeWidthMin));
+      if (clampedLakeWidthMin !== action.params.lakeWidthMin) {
+        action.params.lakeWidthMin = clampedLakeWidthMin;
+      }
+    }
+
+    if (typeof action.params.lakeWidthMax === "number") {
+      const clampedLakeWidthMax = Math.max(1, Math.min(200000, action.params.lakeWidthMax));
+      if (clampedLakeWidthMax !== action.params.lakeWidthMax) {
+        action.params.lakeWidthMax = clampedLakeWidthMax;
+      }
+    }
+
+    if (
+      typeof action.params.lakeWidthMin === "number" &&
+      typeof action.params.lakeWidthMax === "number" &&
+      action.params.lakeWidthMin > action.params.lakeWidthMax
+    ) {
+      const swap = action.params.lakeWidthMin;
+      action.params.lakeWidthMin = action.params.lakeWidthMax;
+      action.params.lakeWidthMax = swap;
+    }
+
     if (typeof action.params.craterCountMin === "number") {
       const clampedCraterCountMin = Math.max(1, Math.min(500, Math.trunc(action.params.craterCountMin)));
       if (clampedCraterCountMin !== action.params.craterCountMin) {

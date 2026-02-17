@@ -858,16 +858,154 @@ function parseLandscapePaintFromPrompt(prompt: string): {
   return { center, size, layerName, strength, falloff, mode };
 }
 
+function clampLandscapeCount(value: number, minValue: number, maxValue: number): number {
+  return Math.max(minValue, Math.min(maxValue, Math.trunc(value)));
+}
+
+function parseLandscapeFeatureCountRange(
+  prompt: string,
+  featureRegex: string,
+  maxValue: number
+): { min?: number; max?: number } {
+  let minValue: number | undefined;
+  let maxValueParsed: number | undefined;
+
+  const rangeMatch =
+    new RegExp(`\\b(?:between|from)\\s*(\\d+)\\s*(?:and|to)\\s*(\\d+)\\s*${featureRegex}\\b`, "i").exec(prompt) ??
+    new RegExp(`\\b${featureRegex}\\s*(?:count)?\\s*(?:between|from)\\s*(\\d+)\\s*(?:and|to)\\s*(\\d+)\\b`, "i").exec(prompt);
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (Number.isFinite(first) && Number.isFinite(second)) {
+      minValue = clampLandscapeCount(Math.min(first, second), 0, maxValue);
+      maxValueParsed = clampLandscapeCount(Math.max(first, second), 0, maxValue);
+    }
+  } else {
+    const minMatch =
+      new RegExp(`\\b(?:min(?:imum)?|at least)\\s*(?:${featureRegex}\\s*)?(?:count\\s*)?(?:of\\s*)?(\\d+)\\b`, "i").exec(prompt) ??
+      new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?min(?:imum)?\\s*(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt);
+    const maxMatch =
+      new RegExp(
+        `\\b(?:max(?:imum)?|at most|up to|no more than)\\s*(?:${featureRegex}\\s*)?(?:count\\s*)?(?:of\\s*)?(\\d+)\\b`,
+        "i"
+      ).exec(prompt) ??
+      new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?max(?:imum)?\\s*(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt);
+
+    const parsedMin = minMatch ? Number(minMatch[1]) : Number.NaN;
+    const parsedMax = maxMatch ? Number(maxMatch[1]) : Number.NaN;
+    if (Number.isFinite(parsedMin)) {
+      minValue = clampLandscapeCount(parsedMin, 0, maxValue);
+    }
+    if (Number.isFinite(parsedMax)) {
+      maxValueParsed = clampLandscapeCount(parsedMax, 0, maxValue);
+    }
+
+    if (minValue === undefined && maxValueParsed === undefined) {
+      const exactMatch =
+        new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt) ??
+        new RegExp(`\\b(\\d+)\\s*${featureRegex}\\b`, "i").exec(prompt);
+      const parsedExact = exactMatch ? Number(exactMatch[1]) : Number.NaN;
+      if (Number.isFinite(parsedExact)) {
+        const clamped = clampLandscapeCount(parsedExact, 0, maxValue);
+        minValue = clamped;
+        maxValueParsed = clamped;
+      }
+    }
+  }
+
+  if (minValue !== undefined && maxValueParsed !== undefined && minValue > maxValueParsed) {
+    return { min: maxValueParsed, max: minValue };
+  }
+  return { min: minValue, max: maxValueParsed };
+}
+
+function parseLandscapeFeatureSizeRange(
+  prompt: string,
+  featureRegex: string,
+  maxValue: number
+): { min?: number; max?: number } {
+  let minValue: number | undefined;
+  let maxValueParsed: number | undefined;
+
+  const rangeMatch =
+    new RegExp(
+      `\\b${featureRegex}\\s*(?:width|size)\\s*(?:between|from)\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
+      "i"
+    ).exec(prompt) ??
+    new RegExp(
+      `\\b(?:width|size)\\s*of\\s*${featureRegex}\\s*(?:between|from)\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
+      "i"
+    ).exec(prompt);
+  if (rangeMatch) {
+    const first = Number(rangeMatch[1]);
+    const second = Number(rangeMatch[2]);
+    if (Number.isFinite(first) && Number.isFinite(second) && first > 0 && second > 0) {
+      minValue = Math.max(1, Math.min(maxValue, Math.min(first, second)));
+      maxValueParsed = Math.max(1, Math.min(maxValue, Math.max(first, second)));
+    }
+  } else {
+    const minMatch =
+      new RegExp(
+        `\\b(?:min(?:imum)?|at least)\\s*(?:${featureRegex}\\s*)?(?:width|size)\\s*(?:of\\s*)?([+-]?\\d+(?:\\.\\d+)?)\\b`,
+        "i"
+      ).exec(prompt) ??
+      new RegExp(`\\b${featureRegex}\\s*(?:width|size)\\s*min(?:imum)?\\s*(?:to|=|:)?\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`, "i").exec(prompt);
+    const maxMatch =
+      new RegExp(
+        `\\b(?:max(?:imum)?|at most|up to|no more than)\\s*(?:${featureRegex}\\s*)?(?:width|size)\\s*(?:of\\s*)?([+-]?\\d+(?:\\.\\d+)?)\\b`,
+        "i"
+      ).exec(prompt) ??
+      new RegExp(`\\b${featureRegex}\\s*(?:width|size)\\s*max(?:imum)?\\s*(?:to|=|:)?\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`, "i").exec(prompt);
+
+    const parsedMin = minMatch ? Number(minMatch[1]) : Number.NaN;
+    const parsedMax = maxMatch ? Number(maxMatch[1]) : Number.NaN;
+    if (Number.isFinite(parsedMin) && parsedMin > 0) {
+      minValue = Math.max(1, Math.min(maxValue, parsedMin));
+    }
+    if (Number.isFinite(parsedMax) && parsedMax > 0) {
+      maxValueParsed = Math.max(1, Math.min(maxValue, parsedMax));
+    }
+
+    if (minValue === undefined && maxValueParsed === undefined) {
+      const exactMatch = new RegExp(
+        `\\b${featureRegex}\\s*(?:width|size)\\s*(?:to|=|:)?\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
+        "i"
+      ).exec(prompt);
+      const parsedExact = exactMatch ? Number(exactMatch[1]) : Number.NaN;
+      if (Number.isFinite(parsedExact) && parsedExact > 0) {
+        const clamped = Math.max(1, Math.min(maxValue, parsedExact));
+        minValue = clamped;
+        maxValueParsed = clamped;
+      }
+    }
+  }
+
+  if (minValue !== undefined && maxValueParsed !== undefined && minValue > maxValueParsed) {
+    return { min: maxValueParsed, max: minValue };
+  }
+  return { min: minValue, max: maxValueParsed };
+}
+
 function parseLandscapeGenerateFromPrompt(prompt: string): {
   theme: "moon_surface" | "nature_island";
   detailLevel: "low" | "medium" | "high" | "cinematic";
-  moonProfile?: "ancient_heavily_cratered";
+  moonProfile?: "moon_surface";
   useFullArea: boolean;
   center?: { x: number; y: number };
   size?: { x: number; y: number };
   seed?: number;
   mountainCount?: number;
+  mountainWidthMin?: number;
+  mountainWidthMax?: number;
   maxHeight?: number;
+  riverCountMin?: number;
+  riverCountMax?: number;
+  riverWidthMin?: number;
+  riverWidthMax?: number;
+  lakeCountMin?: number;
+  lakeCountMax?: number;
+  lakeWidthMin?: number;
+  lakeWidthMax?: number;
   craterCountMin?: number;
   craterCountMax?: number;
   craterWidthMin?: number;
@@ -894,7 +1032,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     return null;
   }
 
-  let moonProfile: "ancient_heavily_cratered" | undefined;
+  let moonProfile: "moon_surface" | undefined;
   if (theme === "moon_surface") {
     const explicitAncient =
       /\bmoon\s*profile\s*(?:to|=|:)?\s*(?:ancient|ancient[_\s-]heavily[_\s-]cratered|heavily[_\s-]cratered)\b/i.test(prompt) ||
@@ -908,10 +1046,10 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
       Number(/\bweathered\b/i.test(prompt)) +
       Number(/\bterraces?\b/i.test(prompt));
     if (explicitAncient || ancientCueCount >= 2) {
-      moonProfile = "ancient_heavily_cratered";
+      moonProfile = "moon_surface";
     } else {
       // Ancient heavily cratered is the default moon profile.
-      moonProfile = "ancient_heavily_cratered";
+      moonProfile = "moon_surface";
     }
   }
 
@@ -930,7 +1068,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
   if (!detailLevel) {
     detailLevel = theme === "moon_surface" ? "high" : "medium";
   }
-  if (moonProfile === "ancient_heavily_cratered" && detailLevel === "medium") {
+  if (moonProfile === "moon_surface" && detailLevel === "medium") {
     detailLevel = "high";
   }
 
@@ -962,11 +1100,29 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
       : 2;
   const mountainCount = explicitMountainCount ?? (theme === "moon_surface" ? inferredMoonDensity : undefined);
 
+  const mountainWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:mountains?)", 200000);
+  const mountainWidthMin = mountainWidthRange.min;
+  const mountainWidthMax = mountainWidthRange.max;
+
   const maxHeightMatch =
     /\bmax(?:imum)?\s*height(?:\s*of)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
     /\bheight\s*(?:max(?:imum)?|limit)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
   const parsedMaxHeight = maxHeightMatch ? Number(maxHeightMatch[1]) : Number.NaN;
   const maxHeight = Number.isFinite(parsedMaxHeight) && parsedMaxHeight > 0 ? parsedMaxHeight : undefined;
+
+  const riverCountRange = parseLandscapeFeatureCountRange(prompt, "(?:rivers?)", 32);
+  const riverWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:rivers?)", 200000);
+  const lakeCountRange = parseLandscapeFeatureCountRange(prompt, "(?:lakes?)", 32);
+  const lakeWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:lakes?)", 200000);
+
+  let riverCountMin = riverCountRange.min;
+  let riverCountMax = riverCountRange.max;
+  let lakeCountMin = lakeCountRange.min;
+  let lakeCountMax = lakeCountRange.max;
+  const riverWidthMin = riverWidthRange.min;
+  const riverWidthMax = riverWidthRange.max;
+  const lakeWidthMin = lakeWidthRange.min;
+  const lakeWidthMax = lakeWidthRange.max;
 
   let craterCountMin: number | undefined;
   let craterCountMax: number | undefined;
@@ -1059,7 +1215,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     craterWidthMin = craterWidthMax;
     craterWidthMax = swap;
   }
-  if (theme === "moon_surface" && moonProfile === "ancient_heavily_cratered") {
+  if (theme === "moon_surface" && moonProfile === "moon_surface") {
     if (craterCountMin === undefined) {
       craterCountMin = 140;
     }
@@ -1077,7 +1233,17 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     size: useFullArea ? undefined : size,
     seed,
     mountainCount,
+    mountainWidthMin,
+    mountainWidthMax,
     maxHeight,
+    riverCountMin,
+    riverCountMax,
+    riverWidthMin,
+    riverWidthMax,
+    lakeCountMin,
+    lakeCountMax,
+    lakeWidthMin,
+    lakeWidthMax,
     craterCountMin,
     craterCountMax,
     craterWidthMin,
@@ -1360,7 +1526,7 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
     const moonDetail =
       first.params.theme === "moon_surface" &&
       (first.params.detailLevel === "high" || first.params.detailLevel === "cinematic");
-    const moonAncient = first.params.theme === "moon_surface" && first.params.moonProfile === "ancient_heavily_cratered";
+    const moonAncient = first.params.theme === "moon_surface" && first.params.moonProfile === "moon_surface";
     const baseSummary = first.params.theme === "moon_surface"
       ? moonAncient
         ? "Generate ancient heavily cratered moon landscape."
@@ -1640,7 +1806,17 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         size: landscapeGenerate.useFullArea ? undefined : landscapeGenerate.size,
         seed: landscapeGenerate.seed,
         mountainCount: landscapeGenerate.mountainCount,
+        mountainWidthMin: landscapeGenerate.mountainWidthMin,
+        mountainWidthMax: landscapeGenerate.mountainWidthMax,
         maxHeight: landscapeGenerate.maxHeight,
+        riverCountMin: landscapeGenerate.riverCountMin,
+        riverCountMax: landscapeGenerate.riverCountMax,
+        riverWidthMin: landscapeGenerate.riverWidthMin,
+        riverWidthMax: landscapeGenerate.riverWidthMax,
+        lakeCountMin: landscapeGenerate.lakeCountMin,
+        lakeCountMax: landscapeGenerate.lakeCountMax,
+        lakeWidthMin: landscapeGenerate.lakeWidthMin,
+        lakeWidthMax: landscapeGenerate.lakeWidthMax,
         craterCountMin: landscapeGenerate.craterCountMin,
         craterCountMax: landscapeGenerate.craterCountMax,
         craterWidthMin: landscapeGenerate.craterWidthMin,

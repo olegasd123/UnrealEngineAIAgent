@@ -664,6 +664,22 @@ namespace
         float RotationRad = 0.0f;
     };
 
+    struct FNatureLakeFeature
+    {
+        FVector2D Center = FVector2D(0.5f, 0.5f);
+        float Radius = 0.08f;
+        float Depth = 0.15f;
+        float RimHeight = 0.04f;
+    };
+
+    struct FNatureRiverFeature
+    {
+        TArray<FVector2D> PathPoints;
+        float Width = 0.03f;
+        float Depth = 0.10f;
+        float BankHeight = 0.03f;
+    };
+
     EUEAIAgentLandscapeDetailTier ResolveLandscapeDetailTier(const FString& InDetailLevel, bool bMoonSurface)
     {
         const FString DetailLevel = InDetailLevel.TrimStartAndEnd().ToLower();
@@ -724,7 +740,7 @@ namespace
 
         const FString MoonProfile = InMoonProfile.TrimStartAndEnd().ToLower();
         if (
-            MoonProfile == TEXT("ancient_heavily_cratered") ||
+            MoonProfile == TEXT("moon_surface") ||
             MoonProfile == TEXT("ancient-heavily-cratered") ||
             MoonProfile == TEXT("ancient heavily cratered") ||
             MoonProfile == TEXT("heavily_cratered") ||
@@ -744,9 +760,9 @@ namespace
         switch (MoonProfile)
         {
             case EUEAIAgentMoonProfile::AncientHeavilyCratered:
-                return TEXT("ancient_heavily_cratered");
+                return TEXT("moon_surface");
             default:
-                return TEXT("ancient_heavily_cratered");
+                return TEXT("moon_surface");
         }
     }
 
@@ -924,9 +940,77 @@ namespace
         return Height;
     }
 
+    float DistanceToSegment2D(const FVector2D& Point, const FVector2D& SegmentStart, const FVector2D& SegmentEnd, float& OutT)
+    {
+        const FVector2D Segment = SegmentEnd - SegmentStart;
+        const float SegmentLengthSq = Segment.SizeSquared();
+        if (SegmentLengthSq <= KINDA_SMALL_NUMBER)
+        {
+            OutT = 0.0f;
+            return FVector2D::Distance(Point, SegmentStart);
+        }
+
+        OutT = FMath::Clamp(FVector2D::DotProduct(Point - SegmentStart, Segment) / SegmentLengthSq, 0.0f, 1.0f);
+        const FVector2D ClosestPoint = SegmentStart + (Segment * OutT);
+        return FVector2D::Distance(Point, ClosestPoint);
+    }
+
+    float EvaluateRiverCarve(
+        const FVector2D& UV,
+        const FNatureRiverFeature& River,
+        int32 Seed,
+        int32 RiverIndex)
+    {
+        if (River.PathPoints.Num() < 2)
+        {
+            return 0.0f;
+        }
+
+        float ClosestDistance = TNumericLimits<float>::Max();
+        float RiverProgress = 0.0f;
+        const int32 SegmentCount = River.PathPoints.Num() - 1;
+        for (int32 SegmentIndex = 0; SegmentIndex < SegmentCount; ++SegmentIndex)
+        {
+            float SegmentT = 0.0f;
+            const float SegmentDistance = DistanceToSegment2D(
+                UV,
+                River.PathPoints[SegmentIndex],
+                River.PathPoints[SegmentIndex + 1],
+                SegmentT);
+            if (SegmentDistance < ClosestDistance)
+            {
+                ClosestDistance = SegmentDistance;
+                RiverProgress = (static_cast<float>(SegmentIndex) + SegmentT) / static_cast<float>(FMath::Max(1, SegmentCount));
+            }
+        }
+
+        const float HalfWidth = FMath::Max(0.004f, River.Width * 0.5f);
+        if (ClosestDistance > HalfWidth * 2.4f)
+        {
+            return 0.0f;
+        }
+
+        const float WidthAlpha = 1.0f - FMath::Clamp(ClosestDistance / HalfWidth, 0.0f, 1.0f);
+        const float FlowDepthScale = FMath::Lerp(1.0f, 0.42f, FMath::Clamp(RiverProgress, 0.0f, 1.0f));
+        float HeightDelta = -River.Depth * FlowDepthScale * FMath::Square(WidthAlpha);
+
+        const float BankDistance = ClosestDistance - HalfWidth;
+        if (BankDistance > 0.0f && BankDistance < (HalfWidth * 1.4f))
+        {
+            const float BankAlpha = 1.0f - FMath::Clamp(BankDistance / (HalfWidth * 1.4f), 0.0f, 1.0f);
+            HeightDelta += River.BankHeight * BankAlpha * 0.75f;
+        }
+
+        const float RiverNoise = SampleFractalNoise(UV + FVector2D(0.09f, 0.17f), Seed + (RiverIndex * 911), 24.0f, 2);
+        HeightDelta += 0.015f * RiverNoise * WidthAlpha;
+        return HeightDelta;
+    }
+
     float EvaluateNatureIslandRaw(
         const FVector2D& UV,
         const TArray<FVector4f>& Mountains,
+        const TArray<FNatureLakeFeature>& Lakes,
+        const TArray<FNatureRiverFeature>& Rivers,
         int32 Seed)
     {
         const float DX = UV.X - 0.5f;
@@ -948,8 +1032,36 @@ namespace
             MountainHeight += Amplitude * FMath::Exp(-DistSq / (2.0f * SigmaSq));
         }
 
+        float LakeHeight = 0.0f;
+        for (const FNatureLakeFeature& Lake : Lakes)
+        {
+            const float SafeRadius = FMath::Max(0.01f, Lake.Radius);
+            const float Distance = FVector2D::Distance(UV, Lake.Center) / SafeRadius;
+            if (Distance <= 1.0f)
+            {
+                const float BowlAlpha = 1.0f - (Distance * Distance);
+                LakeHeight -= Lake.Depth * BowlAlpha;
+            }
+
+            const float RimDistance = Distance - 1.0f;
+            if (RimDistance > -0.4f && RimDistance < 0.8f)
+            {
+                const float RimSigma = 0.22f;
+                LakeHeight += Lake.RimHeight *
+                    FMath::Exp(-(RimDistance * RimDistance) / (2.0f * RimSigma * RimSigma));
+            }
+        }
+
+        float RiverHeight = 0.0f;
+        for (int32 RiverIndex = 0; RiverIndex < Rivers.Num(); ++RiverIndex)
+        {
+            RiverHeight += EvaluateRiverCarve(UV, Rivers[RiverIndex], Seed + 4001, RiverIndex);
+        }
+
+        const float SurfaceNoise = 0.06f * SampleFractalNoise(UV + FVector2D(0.24f, 0.18f), Seed + 401, 18.0f, 3);
         const float ShoreDrop = (1.0f - IslandMask) * 0.35f;
-        return IslandMask * (0.25f + BaseNoise + MountainHeight) - ShoreDrop;
+        const float RawHeight = 0.25f + BaseNoise + MountainHeight + LakeHeight + RiverHeight + SurfaceNoise;
+        return (IslandMask * RawHeight) - ShoreDrop;
     }
 }
 
@@ -2475,7 +2587,37 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
     }
 
     const float MaxHeight = FMath::Clamp(Params.MaxHeight, 100.0f, 10000.0f);
-    const int32 MountainCount = FMath::Clamp(Params.MountainCount, 1, 8);
+    int32 MountainCount = FMath::Clamp(Params.MountainCount, 1, 8);
+    float MountainWidthMin = Params.MountainWidthMin > 0.0f ? FMath::Clamp(Params.MountainWidthMin, 1.0f, 200000.0f) : 0.0f;
+    float MountainWidthMax = Params.MountainWidthMax > 0.0f ? FMath::Clamp(Params.MountainWidthMax, 1.0f, 200000.0f) : 0.0f;
+    if (MountainWidthMin > 0.0f && MountainWidthMax > 0.0f && MountainWidthMin > MountainWidthMax)
+    {
+        Swap(MountainWidthMin, MountainWidthMax);
+    }
+    int32 RiverCountMin = Params.RiverCountMin > 0 ? FMath::Clamp(Params.RiverCountMin, 0, 32) : 0;
+    int32 RiverCountMax = Params.RiverCountMax > 0 ? FMath::Clamp(Params.RiverCountMax, 0, 32) : 0;
+    if (RiverCountMin > 0 && RiverCountMax > 0 && RiverCountMin > RiverCountMax)
+    {
+        Swap(RiverCountMin, RiverCountMax);
+    }
+    float RiverWidthMin = Params.RiverWidthMin > 0.0f ? FMath::Clamp(Params.RiverWidthMin, 1.0f, 200000.0f) : 0.0f;
+    float RiverWidthMax = Params.RiverWidthMax > 0.0f ? FMath::Clamp(Params.RiverWidthMax, 1.0f, 200000.0f) : 0.0f;
+    if (RiverWidthMin > 0.0f && RiverWidthMax > 0.0f && RiverWidthMin > RiverWidthMax)
+    {
+        Swap(RiverWidthMin, RiverWidthMax);
+    }
+    int32 LakeCountMin = Params.LakeCountMin > 0 ? FMath::Clamp(Params.LakeCountMin, 0, 32) : 0;
+    int32 LakeCountMax = Params.LakeCountMax > 0 ? FMath::Clamp(Params.LakeCountMax, 0, 32) : 0;
+    if (LakeCountMin > 0 && LakeCountMax > 0 && LakeCountMin > LakeCountMax)
+    {
+        Swap(LakeCountMin, LakeCountMax);
+    }
+    float LakeWidthMin = Params.LakeWidthMin > 0.0f ? FMath::Clamp(Params.LakeWidthMin, 1.0f, 200000.0f) : 0.0f;
+    float LakeWidthMax = Params.LakeWidthMax > 0.0f ? FMath::Clamp(Params.LakeWidthMax, 1.0f, 200000.0f) : 0.0f;
+    if (LakeWidthMin > 0.0f && LakeWidthMax > 0.0f && LakeWidthMin > LakeWidthMax)
+    {
+        Swap(LakeWidthMin, LakeWidthMax);
+    }
     int32 CraterCountMin = Params.CraterCountMin > 0 ? FMath::Clamp(Params.CraterCountMin, 1, 500) : 0;
     int32 CraterCountMax = Params.CraterCountMax > 0 ? FMath::Clamp(Params.CraterCountMax, 1, 500) : 0;
     if (CraterCountMin > 0 && CraterCountMax > 0 && CraterCountMin > CraterCountMax)
@@ -2502,6 +2644,11 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
     if (Seed == 0)
     {
         Seed = FMath::RandRange(1, TNumericLimits<int32>::Max() - 1);
+    }
+    if (bNatureIsland && Params.MountainCount <= 0)
+    {
+        FRandomStream MountainCountStream(Seed + 17);
+        MountainCount = MountainCountStream.RandRange(1, 3);
     }
 
     const FScopedTransaction Transaction(LOCTEXT("LandscapeGenerateTransaction", "UE AI Agent Landscape Generate"));
@@ -2567,7 +2714,9 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
             : 32768;
 
         TArray<FMoonCraterFeature> MoonCraters;
-        TArray<FVector4f> NatureFeatures;
+        TArray<FVector4f> NatureMountains;
+        TArray<FNatureLakeFeature> NatureLakes;
+        TArray<FNatureRiverFeature> NatureRivers;
         const int32 LandscapeSeed = Seed + (LandscapeIndex * 1013);
         FRandomStream Stream(LandscapeSeed);
         if (bMoonSurface)
@@ -2706,17 +2855,194 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
         }
         else
         {
-            NatureFeatures.Reserve(MountainCount);
+            const float AreaWorldWidth = FMath::Max(1.0f, static_cast<float>(Width - 1) * ScaleX);
+            const float AreaWorldHeight = FMath::Max(1.0f, static_cast<float>(Height - 1) * ScaleY);
+            const float AreaWorldSpan = FMath::Max(1.0f, 0.5f * (AreaWorldWidth + AreaWorldHeight));
+            const float DetailAlpha = FMath::Clamp((DetailScale - 0.72f) / (1.62f - 0.72f), 0.0f, 1.0f);
+
+            float MountainRadiusMin = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.10f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.07f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.05f
+                : 0.04f;
+            float MountainRadiusMax = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.20f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.16f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.14f
+                : 0.12f;
+            if (MountainWidthMin > 0.0f || MountainWidthMax > 0.0f)
+            {
+                if (MountainWidthMin > 0.0f)
+                {
+                    MountainRadiusMin = FMath::Max(MountainRadiusMin, 0.5f * (MountainWidthMin / AreaWorldSpan));
+                }
+                if (MountainWidthMax > 0.0f)
+                {
+                    MountainRadiusMax = FMath::Min(MountainRadiusMax, 0.5f * (MountainWidthMax / AreaWorldSpan));
+                }
+            }
+            MountainRadiusMin = FMath::Clamp(MountainRadiusMin, 0.02f, 0.45f);
+            MountainRadiusMax = FMath::Clamp(MountainRadiusMax, MountainRadiusMin, 0.48f);
+
+            NatureMountains.Reserve(MountainCount);
             for (int32 MountainIndex = 0; MountainIndex < MountainCount; ++MountainIndex)
             {
                 const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
                 const float RadiusOffset = Stream.FRandRange(0.0f, 0.22f);
                 const FVector2D Center(0.5f + RadiusOffset * FMath::Cos(Angle), 0.5f + RadiusOffset * FMath::Sin(Angle));
-                NatureFeatures.Add(FVector4f(
+                NatureMountains.Add(FVector4f(
                     FMath::Clamp(Center.X, 0.08f, 0.92f),
                     FMath::Clamp(Center.Y, 0.08f, 0.92f),
-                    Stream.FRandRange(0.06f, 0.16f),
+                    Stream.FRandRange(MountainRadiusMin, MountainRadiusMax),
                     Stream.FRandRange(0.55f, 1.10f)));
+            }
+
+            int32 ResolvedLakeMin = LakeCountMin;
+            int32 ResolvedLakeMax = LakeCountMax;
+            if (ResolvedLakeMin > ResolvedLakeMax)
+            {
+                Swap(ResolvedLakeMin, ResolvedLakeMax);
+            }
+            const int32 LakeCount = ResolvedLakeMax > 0 ? Stream.RandRange(ResolvedLakeMin, ResolvedLakeMax) : 0;
+
+            float LakeDiameterMin = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.12f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.09f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.07f
+                : 0.05f;
+            float LakeDiameterMax = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.22f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.18f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.15f
+                : 0.12f;
+            if (LakeWidthMin > 0.0f || LakeWidthMax > 0.0f)
+            {
+                if (LakeWidthMin > 0.0f)
+                {
+                    LakeDiameterMin = FMath::Max(LakeDiameterMin, LakeWidthMin / AreaWorldSpan);
+                }
+                if (LakeWidthMax > 0.0f)
+                {
+                    LakeDiameterMax = FMath::Min(LakeDiameterMax, LakeWidthMax / AreaWorldSpan);
+                }
+            }
+            LakeDiameterMin = FMath::Clamp(LakeDiameterMin, 0.03f, 0.84f);
+            LakeDiameterMax = FMath::Clamp(LakeDiameterMax, LakeDiameterMin, 0.88f);
+
+            NatureLakes.Reserve(LakeCount);
+            for (int32 LakeIndex = 0; LakeIndex < LakeCount; ++LakeIndex)
+            {
+                FNatureLakeFeature Lake;
+                const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
+                const float Offset = Stream.FRandRange(0.05f, 0.30f);
+                Lake.Center = FVector2D(0.5f + Offset * FMath::Cos(Angle), 0.5f + Offset * FMath::Sin(Angle));
+                Lake.Center.X = FMath::Clamp(Lake.Center.X, 0.10f, 0.90f);
+                Lake.Center.Y = FMath::Clamp(Lake.Center.Y, 0.10f, 0.90f);
+                Lake.Radius = 0.5f * Stream.FRandRange(LakeDiameterMin, LakeDiameterMax);
+                Lake.Depth = Stream.FRandRange(0.10f, 0.28f) * FMath::Lerp(0.88f, 1.15f, DetailAlpha);
+                Lake.RimHeight = Stream.FRandRange(0.02f, 0.07f);
+                NatureLakes.Add(Lake);
+            }
+
+            int32 ResolvedRiverMin = RiverCountMin;
+            int32 ResolvedRiverMax = RiverCountMax;
+            if (ResolvedRiverMin > ResolvedRiverMax)
+            {
+                Swap(ResolvedRiverMin, ResolvedRiverMax);
+            }
+            int32 RiverCount = ResolvedRiverMax > 0 ? Stream.RandRange(ResolvedRiverMin, ResolvedRiverMax) : 0;
+            RiverCount = FMath::Clamp(RiverCount, 0, 32);
+
+            float RiverWidthNormMin = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.028f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.020f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.014f
+                : 0.010f;
+            float RiverWidthNormMax = DetailTier == EUEAIAgentLandscapeDetailTier::Low
+                ? 0.045f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::Medium
+                ? 0.035f
+                : DetailTier == EUEAIAgentLandscapeDetailTier::High
+                ? 0.028f
+                : 0.022f;
+            if (RiverWidthMin > 0.0f || RiverWidthMax > 0.0f)
+            {
+                if (RiverWidthMin > 0.0f)
+                {
+                    RiverWidthNormMin = FMath::Max(RiverWidthNormMin, RiverWidthMin / AreaWorldSpan);
+                }
+                if (RiverWidthMax > 0.0f)
+                {
+                    RiverWidthNormMax = FMath::Min(RiverWidthNormMax, RiverWidthMax / AreaWorldSpan);
+                }
+            }
+            RiverWidthNormMin = FMath::Clamp(RiverWidthNormMin, 0.006f, 0.26f);
+            RiverWidthNormMax = FMath::Clamp(RiverWidthNormMax, RiverWidthNormMin, 0.30f);
+
+            NatureRivers.Reserve(RiverCount);
+            for (int32 RiverIndex = 0; RiverIndex < RiverCount; ++RiverIndex)
+            {
+                FNatureRiverFeature River;
+                const FVector4f& SourceMountain = NatureMountains[Stream.RandRange(0, NatureMountains.Num() - 1)];
+                const FVector2D Start(SourceMountain.X, SourceMountain.Y);
+                FVector2D End;
+                if (!NatureLakes.IsEmpty() && Stream.FRand() < 0.45f)
+                {
+                    const FNatureLakeFeature& TargetLake = NatureLakes[Stream.RandRange(0, NatureLakes.Num() - 1)];
+                    End = TargetLake.Center;
+                }
+                else
+                {
+                    FVector2D Outward = Start - FVector2D(0.5f, 0.5f);
+                    if (Outward.SizeSquared() < KINDA_SMALL_NUMBER)
+                    {
+                        Outward = FVector2D(Stream.FRandRange(-1.0f, 1.0f), Stream.FRandRange(-1.0f, 1.0f));
+                    }
+                    Outward.Normalize();
+                    End = FVector2D(0.5f, 0.5f) + (Outward * Stream.FRandRange(0.42f, 0.52f));
+                }
+                End.X = FMath::Clamp(End.X, 0.04f, 0.96f);
+                End.Y = FMath::Clamp(End.Y, 0.04f, 0.96f);
+
+                const int32 PathSteps = Stream.RandRange(6, 10);
+                const FVector2D Direction = End - Start;
+                FVector2D Perp(-Direction.Y, Direction.X);
+                if (Perp.SizeSquared() < KINDA_SMALL_NUMBER)
+                {
+                    Perp = FVector2D(0.0f, 1.0f);
+                }
+                Perp.Normalize();
+                const float Meander = Stream.FRandRange(0.02f, 0.08f) * (DetailScale * 0.8f);
+
+                River.PathPoints.Reserve(PathSteps + 1);
+                for (int32 StepIndex = 0; StepIndex <= PathSteps; ++StepIndex)
+                {
+                    const float T = static_cast<float>(StepIndex) / static_cast<float>(FMath::Max(1, PathSteps));
+                    FVector2D Point = FMath::Lerp(Start, End, T);
+                    if (StepIndex > 0 && StepIndex < PathSteps)
+                    {
+                        const float Wave = FMath::Sin((T * PI * 2.0f) + Stream.FRandRange(0.0f, PI * 2.0f));
+                        Point += Perp * (Wave * Meander * FMath::Lerp(1.0f, 0.4f, T));
+                    }
+                    Point.X = FMath::Clamp(Point.X, 0.03f, 0.97f);
+                    Point.Y = FMath::Clamp(Point.Y, 0.03f, 0.97f);
+                    River.PathPoints.Add(Point);
+                }
+
+                River.Width = Stream.FRandRange(RiverWidthNormMin, RiverWidthNormMax);
+                River.Depth = Stream.FRandRange(0.10f, 0.26f);
+                River.BankHeight = Stream.FRandRange(0.02f, 0.06f);
+                NatureRivers.Add(River);
             }
         }
 
@@ -2740,7 +3066,7 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
                 const int32 DataIndex = (Y - MinY) * Width + (X - MinX);
                 const float RawHeight = bMoonSurface
                     ? EvaluateMoonSurfaceRaw(UV, MoonCraters, LandscapeSeed, DetailScale, MoonProfile, MicroCraterScale)
-                    : EvaluateNatureIslandRaw(UV, NatureFeatures, LandscapeSeed);
+                    : EvaluateNatureIslandRaw(UV, NatureMountains, NatureLakes, NatureRivers, LandscapeSeed);
                 RawHeightData[DataIndex] = RawHeight;
                 RawMin = FMath::Min(RawMin, RawHeight);
                 RawMax = FMath::Max(RawMax, RawHeight);
@@ -2847,13 +3173,33 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
     }
     else
     {
+        const FString MountainWidthText = (MountainWidthMin > 0.0f || MountainWidthMax > 0.0f)
+            ? FString::Printf(TEXT("%.0f-%.0f"), MountainWidthMin > 0.0f ? MountainWidthMin : 1.0f, MountainWidthMax > 0.0f ? MountainWidthMax : 200000.0f)
+            : TEXT("auto");
+        const FString RiverCountText = (RiverCountMin > 0 || RiverCountMax > 0)
+            ? FString::Printf(TEXT("%d-%d"), RiverCountMin > 0 ? RiverCountMin : 0, RiverCountMax > 0 ? RiverCountMax : 32)
+            : TEXT("none");
+        const FString RiverWidthText = (RiverWidthMin > 0.0f || RiverWidthMax > 0.0f)
+            ? FString::Printf(TEXT("%.0f-%.0f"), RiverWidthMin > 0.0f ? RiverWidthMin : 1.0f, RiverWidthMax > 0.0f ? RiverWidthMax : 200000.0f)
+            : TEXT("n/a");
+        const FString LakeCountText = (LakeCountMin > 0 || LakeCountMax > 0)
+            ? FString::Printf(TEXT("%d-%d"), LakeCountMin > 0 ? LakeCountMin : 0, LakeCountMax > 0 ? LakeCountMax : 32)
+            : TEXT("none");
+        const FString LakeWidthText = (LakeWidthMin > 0.0f || LakeWidthMax > 0.0f)
+            ? FString::Printf(TEXT("%.0f-%.0f"), LakeWidthMin > 0.0f ? LakeWidthMin : 1.0f, LakeWidthMax > 0.0f ? LakeWidthMax : 200000.0f)
+            : TEXT("n/a");
         OutMessage = FString::Printf(
-            TEXT("Generated nature island over %s. Affected landscapes=%d, detail=%s, maxHeight=%.0f, mountains=%d, seed=%d."),
+            TEXT("Generated nature island over %s. Affected landscapes=%d, detail=%s, maxHeight=%.0f, mountains=%d, mountainWidth=%s, rivers=%s, riverWidth=%s, lakes=%s, lakeWidth=%s, seed=%d."),
             Params.bUseFullArea ? TEXT("full landscape area") : TEXT("bounded area"),
             UpdatedLandscapes,
             LandscapeDetailTierToText(DetailTier),
             MaxHeight,
             MountainCount,
+            *MountainWidthText,
+            *RiverCountText,
+            *RiverWidthText,
+            *LakeCountText,
+            *LakeWidthText,
             Seed);
     }
     if (bUsedAreaFallback)

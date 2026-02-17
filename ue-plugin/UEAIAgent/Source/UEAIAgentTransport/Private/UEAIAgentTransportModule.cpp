@@ -587,8 +587,38 @@ namespace
             double MountainCountValue = 2.0;
             const bool bHasMountainCount = (*ParamsObj)->TryGetNumberField(TEXT("mountainCount"), MountainCountValue);
 
+            double MountainWidthMinValue = 0.0;
+            const bool bHasMountainWidthMin = (*ParamsObj)->TryGetNumberField(TEXT("mountainWidthMin"), MountainWidthMinValue);
+
+            double MountainWidthMaxValue = 0.0;
+            const bool bHasMountainWidthMax = (*ParamsObj)->TryGetNumberField(TEXT("mountainWidthMax"), MountainWidthMaxValue);
+
             double MaxHeightValue = static_cast<double>(ThemeDefaultMaxHeight);
             const bool bHasMaxHeight = (*ParamsObj)->TryGetNumberField(TEXT("maxHeight"), MaxHeightValue);
+
+            double RiverCountMinValue = 0.0;
+            const bool bHasRiverCountMin = (*ParamsObj)->TryGetNumberField(TEXT("riverCountMin"), RiverCountMinValue);
+
+            double RiverCountMaxValue = 0.0;
+            const bool bHasRiverCountMax = (*ParamsObj)->TryGetNumberField(TEXT("riverCountMax"), RiverCountMaxValue);
+
+            double RiverWidthMinValue = 0.0;
+            const bool bHasRiverWidthMin = (*ParamsObj)->TryGetNumberField(TEXT("riverWidthMin"), RiverWidthMinValue);
+
+            double RiverWidthMaxValue = 0.0;
+            const bool bHasRiverWidthMax = (*ParamsObj)->TryGetNumberField(TEXT("riverWidthMax"), RiverWidthMaxValue);
+
+            double LakeCountMinValue = 0.0;
+            const bool bHasLakeCountMin = (*ParamsObj)->TryGetNumberField(TEXT("lakeCountMin"), LakeCountMinValue);
+
+            double LakeCountMaxValue = 0.0;
+            const bool bHasLakeCountMax = (*ParamsObj)->TryGetNumberField(TEXT("lakeCountMax"), LakeCountMaxValue);
+
+            double LakeWidthMinValue = 0.0;
+            const bool bHasLakeWidthMin = (*ParamsObj)->TryGetNumberField(TEXT("lakeWidthMin"), LakeWidthMinValue);
+
+            double LakeWidthMaxValue = 0.0;
+            const bool bHasLakeWidthMax = (*ParamsObj)->TryGetNumberField(TEXT("lakeWidthMax"), LakeWidthMaxValue);
 
             double CraterCountMinValue = 0.0;
             const bool bHasCraterCountMin = (*ParamsObj)->TryGetNumberField(TEXT("craterCountMin"), CraterCountMinValue);
@@ -610,7 +640,7 @@ namespace
             ParsedAction.LandscapeMoonProfile = MoonProfile.TrimStartAndEnd().ToLower();
             if (bMoonTheme && ParsedAction.LandscapeMoonProfile.IsEmpty())
             {
-                ParsedAction.LandscapeMoonProfile = TEXT("ancient_heavily_cratered");
+                ParsedAction.LandscapeMoonProfile = TEXT("moon_surface");
             }
             ParsedAction.bLandscapeUseFullArea = bUseFullArea;
             ParsedAction.LandscapeCenter = Center;
@@ -618,10 +648,40 @@ namespace
             ParsedAction.LandscapeSeed = bHasSeed ? FMath::TruncToInt(static_cast<float>(SeedValue)) : 0;
             ParsedAction.LandscapeMountainCount = bHasMountainCount
                 ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(MountainCountValue)), 1, 8)
-                : 2;
+                : (bMoonTheme ? 2 : 0);
+            ParsedAction.LandscapeMountainWidthMin = bHasMountainWidthMin
+                ? FMath::Clamp(static_cast<float>(MountainWidthMinValue), 1.0f, 200000.0f)
+                : 0.0f;
+            ParsedAction.LandscapeMountainWidthMax = bHasMountainWidthMax
+                ? FMath::Clamp(static_cast<float>(MountainWidthMaxValue), 1.0f, 200000.0f)
+                : 0.0f;
             ParsedAction.LandscapeMaxHeight = bHasMaxHeight
                 ? FMath::Clamp(static_cast<float>(MaxHeightValue), 100.0f, 20000.0f)
                 : ThemeDefaultMaxHeight;
+            ParsedAction.LandscapeRiverCountMin = bHasRiverCountMin
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(RiverCountMinValue)), 0, 32)
+                : 0;
+            ParsedAction.LandscapeRiverCountMax = bHasRiverCountMax
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(RiverCountMaxValue)), 0, 32)
+                : 0;
+            ParsedAction.LandscapeRiverWidthMin = bHasRiverWidthMin
+                ? FMath::Clamp(static_cast<float>(RiverWidthMinValue), 1.0f, 200000.0f)
+                : 0.0f;
+            ParsedAction.LandscapeRiverWidthMax = bHasRiverWidthMax
+                ? FMath::Clamp(static_cast<float>(RiverWidthMaxValue), 1.0f, 200000.0f)
+                : 0.0f;
+            ParsedAction.LandscapeLakeCountMin = bHasLakeCountMin
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(LakeCountMinValue)), 0, 32)
+                : 0;
+            ParsedAction.LandscapeLakeCountMax = bHasLakeCountMax
+                ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(LakeCountMaxValue)), 0, 32)
+                : 0;
+            ParsedAction.LandscapeLakeWidthMin = bHasLakeWidthMin
+                ? FMath::Clamp(static_cast<float>(LakeWidthMinValue), 1.0f, 200000.0f)
+                : 0.0f;
+            ParsedAction.LandscapeLakeWidthMax = bHasLakeWidthMax
+                ? FMath::Clamp(static_cast<float>(LakeWidthMaxValue), 1.0f, 200000.0f)
+                : 0.0f;
             ParsedAction.LandscapeCraterCountMin = bHasCraterCountMin
                 ? FMath::Clamp(FMath::RoundToInt(static_cast<float>(CraterCountMinValue)), 1, 500)
                 : 0;
@@ -634,6 +694,41 @@ namespace
             ParsedAction.LandscapeCraterWidthMax = bHasCraterWidthMax
                 ? FMath::Clamp(static_cast<float>(CraterWidthMaxValue), 1.0f, 200000.0f)
                 : 0.0f;
+            if (
+                ParsedAction.LandscapeMountainWidthMin > 0.0f &&
+                ParsedAction.LandscapeMountainWidthMax > 0.0f &&
+                ParsedAction.LandscapeMountainWidthMin > ParsedAction.LandscapeMountainWidthMax)
+            {
+                Swap(ParsedAction.LandscapeMountainWidthMin, ParsedAction.LandscapeMountainWidthMax);
+            }
+            if (
+                ParsedAction.LandscapeRiverCountMin > 0 &&
+                ParsedAction.LandscapeRiverCountMax > 0 &&
+                ParsedAction.LandscapeRiverCountMin > ParsedAction.LandscapeRiverCountMax)
+            {
+                Swap(ParsedAction.LandscapeRiverCountMin, ParsedAction.LandscapeRiverCountMax);
+            }
+            if (
+                ParsedAction.LandscapeRiverWidthMin > 0.0f &&
+                ParsedAction.LandscapeRiverWidthMax > 0.0f &&
+                ParsedAction.LandscapeRiverWidthMin > ParsedAction.LandscapeRiverWidthMax)
+            {
+                Swap(ParsedAction.LandscapeRiverWidthMin, ParsedAction.LandscapeRiverWidthMax);
+            }
+            if (
+                ParsedAction.LandscapeLakeCountMin > 0 &&
+                ParsedAction.LandscapeLakeCountMax > 0 &&
+                ParsedAction.LandscapeLakeCountMin > ParsedAction.LandscapeLakeCountMax)
+            {
+                Swap(ParsedAction.LandscapeLakeCountMin, ParsedAction.LandscapeLakeCountMax);
+            }
+            if (
+                ParsedAction.LandscapeLakeWidthMin > 0.0f &&
+                ParsedAction.LandscapeLakeWidthMax > 0.0f &&
+                ParsedAction.LandscapeLakeWidthMin > ParsedAction.LandscapeLakeWidthMax)
+            {
+                Swap(ParsedAction.LandscapeLakeWidthMin, ParsedAction.LandscapeLakeWidthMax);
+            }
             if (
                 ParsedAction.LandscapeCraterCountMin > 0 &&
                 ParsedAction.LandscapeCraterCountMax > 0 &&
@@ -3460,6 +3555,39 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
         const FString ProfileText = Action.LandscapeMoonProfile.IsEmpty()
             ? TEXT("auto")
             : Action.LandscapeMoonProfile;
+        const FString MountainWidthText =
+            Action.LandscapeMountainWidthMin > 0.0f || Action.LandscapeMountainWidthMax > 0.0f
+                ? FString::Printf(TEXT("%.0f-%.0f"),
+                    Action.LandscapeMountainWidthMin > 0.0f ? Action.LandscapeMountainWidthMin : 1.0f,
+                    Action.LandscapeMountainWidthMax > 0.0f ? Action.LandscapeMountainWidthMax : 200000.0f)
+                : TEXT("auto");
+        const FString MountainCountText = Action.LandscapeMountainCount > 0
+            ? FString::FromInt(Action.LandscapeMountainCount)
+            : TEXT("1-3(auto)");
+        const FString RiverCountText =
+            Action.LandscapeRiverCountMin > 0 || Action.LandscapeRiverCountMax > 0
+                ? FString::Printf(TEXT("%d-%d"),
+                    Action.LandscapeRiverCountMin > 0 ? Action.LandscapeRiverCountMin : 0,
+                    Action.LandscapeRiverCountMax > 0 ? Action.LandscapeRiverCountMax : 32)
+                : TEXT("none");
+        const FString RiverWidthText =
+            Action.LandscapeRiverWidthMin > 0.0f || Action.LandscapeRiverWidthMax > 0.0f
+                ? FString::Printf(TEXT("%.0f-%.0f"),
+                    Action.LandscapeRiverWidthMin > 0.0f ? Action.LandscapeRiverWidthMin : 1.0f,
+                    Action.LandscapeRiverWidthMax > 0.0f ? Action.LandscapeRiverWidthMax : 200000.0f)
+                : TEXT("n/a");
+        const FString LakeCountText =
+            Action.LandscapeLakeCountMin > 0 || Action.LandscapeLakeCountMax > 0
+                ? FString::Printf(TEXT("%d-%d"),
+                    Action.LandscapeLakeCountMin > 0 ? Action.LandscapeLakeCountMin : 0,
+                    Action.LandscapeLakeCountMax > 0 ? Action.LandscapeLakeCountMax : 32)
+                : TEXT("none");
+        const FString LakeWidthText =
+            Action.LandscapeLakeWidthMin > 0.0f || Action.LandscapeLakeWidthMax > 0.0f
+                ? FString::Printf(TEXT("%.0f-%.0f"),
+                    Action.LandscapeLakeWidthMin > 0.0f ? Action.LandscapeLakeWidthMin : 1.0f,
+                    Action.LandscapeLakeWidthMax > 0.0f ? Action.LandscapeLakeWidthMax : 200000.0f)
+                : TEXT("n/a");
         const FString CraterCountText =
             Action.LandscapeCraterCountMin > 0 || Action.LandscapeCraterCountMax > 0
                 ? FString::Printf(TEXT("%d-%d"),
@@ -3472,18 +3600,35 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
                     Action.LandscapeCraterWidthMin > 0.0f ? Action.LandscapeCraterWidthMin : 1.0f,
                     Action.LandscapeCraterWidthMax > 0.0f ? Action.LandscapeCraterWidthMax : 200000.0f)
                 : TEXT("auto");
+        if (bMoonTheme)
+        {
+            return FString::Printf(
+                TEXT("Action %d: Generate %s (%s), detail=%s, profile=%s, maxHeight=%.0f, craterDensity=%d, craters=%s, craterWidth=%s, seed=%s"),
+                ActionIndex + 1,
+                *ThemeDisplayText,
+                *AreaText,
+                *DetailText,
+                *ProfileText,
+                Action.LandscapeMaxHeight,
+                Action.LandscapeMountainCount,
+                *CraterCountText,
+                *CraterWidthText,
+                *SeedText);
+        }
+
         return FString::Printf(
-            TEXT("Action %d: Generate %s (%s), detail=%s, profile=%s, maxHeight=%.0f, %s=%d, craters=%s, craterWidth=%s, seed=%s"),
+            TEXT("Action %d: Generate %s (%s), detail=%s, maxHeight=%.0f, mountains=%s, mountainWidth=%s, rivers=%s, riverWidth=%s, lakes=%s, lakeWidth=%s, seed=%s"),
             ActionIndex + 1,
             *ThemeDisplayText,
             *AreaText,
             *DetailText,
-            *ProfileText,
             Action.LandscapeMaxHeight,
-            bMoonTheme ? TEXT("craterDensity") : TEXT("mountains"),
-            Action.LandscapeMountainCount,
-            *CraterCountText,
-            *CraterWidthText,
+            *MountainCountText,
+            *MountainWidthText,
+            *RiverCountText,
+            *RiverWidthText,
+            *LakeCountText,
+            *LakeWidthText,
             *SeedText);
     }
 

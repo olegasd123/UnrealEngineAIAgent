@@ -387,7 +387,7 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- scene.setPostProcessExposureCompensation: include target + exposureCompensation number.",
     "- landscape.sculpt: include target + center{x,y} + size{x,y} + strength(0-1). Optional falloff(0-1), mode(raise|lower).",
     "- landscape.paintLayer: include target + center{x,y} + size{x,y} + layerName + strength(0-1). Optional falloff(0-1), mode(add|remove).",
-    "- landscape.generate: include target + theme(moon_surface|nature_island). Optional detailLevel(low|medium|high|cinematic), moonProfile(ancient_heavily_cratered), useFullArea(bool), center/size when bounded, mountainCount(1-8), maxHeight, seed, craterCountMin/craterCountMax, craterWidthMin/craterWidthMax.",
+    "- landscape.generate: include target + theme(moon_surface|nature_island). Optional detailLevel(low|medium|high|cinematic), moonProfile(moon_surface), useFullArea(bool), center/size when bounded, mountainCount(1-8), mountainWidthMin/mountainWidthMax, maxHeight, seed, riverCountMin/riverCountMax, riverWidthMin/riverWidthMax, lakeCountMin/lakeCountMax, lakeWidthMin/lakeWidthMax, craterCountMin/craterCountMax, craterWidthMin/craterWidthMax.",
     "- editor.undo: use params: {} for explicit undo requests like 'undo', 'revert', or 'roll back'.",
     "- editor.redo: use params: {} for explicit redo requests like 'redo', 'do again', or 'reapply'.",
     "- session transaction begin/commit/rollback are internal. Do not include any session.* action.",

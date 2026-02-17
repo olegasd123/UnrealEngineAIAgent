@@ -320,7 +320,7 @@ const LandscapeSize2Schema = z.object({
 });
 
 const LandscapeDetailLevelSchema = z.enum(["low", "medium", "high", "cinematic"]);
-const LandscapeMoonProfileSchema = z.enum(["ancient_heavily_cratered"]);
+const LandscapeMoonProfileSchema = z.enum(["moon_surface"]);
 
 const LandscapeSculptParamsSchema = z
   .object({
@@ -363,7 +363,17 @@ const LandscapeGenerateParamsSchema = z
     size: LandscapeSize2Schema.optional(),
     seed: z.number().int().optional(),
     mountainCount: z.number().int().min(1).max(8).optional(),
+    mountainWidthMin: z.number().finite().positive().max(200000).optional(),
+    mountainWidthMax: z.number().finite().positive().max(200000).optional(),
     maxHeight: z.number().finite().positive().max(20000).optional(),
+    riverCountMin: z.number().int().min(0).max(32).optional(),
+    riverCountMax: z.number().int().min(0).max(32).optional(),
+    riverWidthMin: z.number().finite().positive().max(200000).optional(),
+    riverWidthMax: z.number().finite().positive().max(200000).optional(),
+    lakeCountMin: z.number().int().min(0).max(32).optional(),
+    lakeCountMax: z.number().int().min(0).max(32).optional(),
+    lakeWidthMin: z.number().finite().positive().max(200000).optional(),
+    lakeWidthMax: z.number().finite().positive().max(200000).optional(),
     craterCountMin: z.number().int().min(1).max(500).optional(),
     craterCountMax: z.number().int().min(1).max(500).optional(),
     craterWidthMin: z.number().finite().positive().max(200000).optional(),
@@ -376,6 +386,61 @@ const LandscapeGenerateParamsSchema = z
     message: "landscape.generate with useFullArea=false needs center and size"
   })
   .superRefine((value, ctx) => {
+    if (
+      value.mountainWidthMin !== undefined &&
+      value.mountainWidthMax !== undefined &&
+      value.mountainWidthMin > value.mountainWidthMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate mountainWidthMin must be <= mountainWidthMax"
+      });
+    }
+
+    if (
+      value.riverCountMin !== undefined &&
+      value.riverCountMax !== undefined &&
+      value.riverCountMin > value.riverCountMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate riverCountMin must be <= riverCountMax"
+      });
+    }
+
+    if (
+      value.riverWidthMin !== undefined &&
+      value.riverWidthMax !== undefined &&
+      value.riverWidthMin > value.riverWidthMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate riverWidthMin must be <= riverWidthMax"
+      });
+    }
+
+    if (
+      value.lakeCountMin !== undefined &&
+      value.lakeCountMax !== undefined &&
+      value.lakeCountMin > value.lakeCountMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate lakeCountMin must be <= lakeCountMax"
+      });
+    }
+
+    if (
+      value.lakeWidthMin !== undefined &&
+      value.lakeWidthMax !== undefined &&
+      value.lakeWidthMin > value.lakeWidthMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "landscape.generate lakeWidthMin must be <= lakeWidthMax"
+      });
+    }
+
     if (
       value.craterCountMin !== undefined &&
       value.craterCountMax !== undefined &&

@@ -35,6 +35,35 @@ class NoActionProvider implements LlmProvider {
   }
 }
 
+const contextOnlyPlan: PlanOutput = {
+  summary: "Collect current scene summary context.",
+  steps: ["Retrieve scene summary"],
+  actions: [{ command: "context.getSceneSummary", params: {}, risk: "low" }],
+  goal: {
+    id: "goal_context_scene",
+    description: "Collect scene context.",
+    priority: "low"
+  },
+  subgoals: [],
+  checks: [],
+  stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }]
+};
+
+class ContextOnlyProvider implements LlmProvider {
+  public readonly name = "local";
+  public readonly model = "test-model";
+  public readonly hasApiKey = true;
+  public readonly adapter = "stub" as const;
+
+  async planTask(_input: PlanInput): Promise<PlanOutput> {
+    return contextOnlyPlan;
+  }
+
+  async respondText(_input: TextReplyInput): Promise<string> {
+    return "ok";
+  }
+}
+
 function makeRequest(prompt: string): TaskRequest {
   return {
     prompt,
@@ -95,4 +124,15 @@ test("PlanningLayer keeps provider no-action result for non-write prompt", async
   const plan = await planning.buildPlan(intent, provider);
   assert.equal(plan.actions.length, 0);
   assert.equal(plan.summary, "No actionable intent detected.");
+});
+
+test("PlanningLayer uses local fallback when provider returns context-only plan for write intent", async () => {
+  const provider = new ContextOnlyProvider();
+  const planning = new PlanningLayer();
+  const intent = new IntentLayer().normalize(makeRequest("Generate a moon surface across the full landscape"));
+
+  const plan = await planning.buildPlan(intent, provider);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0]?.command, "landscape.generate");
+  assert.match(plan.steps[0] ?? "", /context-only actions.*local fallback/i);
 });

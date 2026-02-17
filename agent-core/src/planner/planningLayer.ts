@@ -30,16 +30,25 @@ export class PlanningLayer {
 
     try {
       const providerPlan = await provider.planTask(planInput);
-      if (providerPlan.actions.length > 0) {
-        return providerPlan;
-      }
-
+      const writeIntent = hasWriteIntent(intent.prompt);
       const fallback = buildRuleBasedPlan(intent.input, {
         goalType: intent.goalType,
         constraints: intent.constraints,
         successCriteria: intent.successCriteria
       });
-      if (hasWriteIntent(intent.prompt) && isWriteAction(fallback)) {
+
+      if (providerPlan.actions.length > 0 && writeIntent && !isWriteAction(providerPlan) && isWriteAction(fallback)) {
+        return {
+          ...fallback,
+          steps: ["Provider returned context-only actions for a write intent. Using local fallback.", ...fallback.steps]
+        };
+      }
+
+      if (providerPlan.actions.length > 0) {
+        return providerPlan;
+      }
+
+      if (writeIntent && isWriteAction(fallback)) {
         return {
           ...fallback,
           steps: ["Provider returned no executable actions for a write intent. Using local fallback.", ...fallback.steps]

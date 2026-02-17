@@ -117,7 +117,17 @@ struct FUEAIAgentPlannedSceneAction
     bool bLandscapeUseFullArea = true;
     int32 LandscapeSeed = 0;
     int32 LandscapeMountainCount = 2;
+    float LandscapeMountainWidthMin = 0.0f;
+    float LandscapeMountainWidthMax = 0.0f;
     float LandscapeMaxHeight = 5000.0f;
+    int32 LandscapeRiverCountMin = 0;
+    int32 LandscapeRiverCountMax = 0;
+    float LandscapeRiverWidthMin = 0.0f;
+    float LandscapeRiverWidthMax = 0.0f;
+    int32 LandscapeLakeCountMin = 0;
+    int32 LandscapeLakeCountMax = 0;
+    float LandscapeLakeWidthMin = 0.0f;
+    float LandscapeLakeWidthMax = 0.0f;
     int32 LandscapeCraterCountMin = 0;
     int32 LandscapeCraterCountMax = 0;
     float LandscapeCraterWidthMin = 0.0f;
