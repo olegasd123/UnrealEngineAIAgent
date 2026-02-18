@@ -57,19 +57,14 @@ Nature island options:
 
 - mountain controls:
   - `mountainCount`
+  - `mountainStyle` (`sharp_peaks` default, `hills` when requested)
   - `mountainWidthMin` / `mountainWidthMax`
-- river hollow controls:
-  - `riverCountMin` / `riverCountMax`
-  - `riverWidthMin` / `riverWidthMax`
-- lake hollow controls:
-  - `lakeCountMin` / `lakeCountMax`
-  - `lakeWidthMin` / `lakeWidthMax`
 
 Default behavior for prompt `create a nature island`:
 
-- mountains: random `1-3`
-- rivers: none (unless user asks)
-- lakes: none (unless user asks)
+- mountains: random `1-3` with `sharp_peaks` style
+
+If user asks for hills, use hill wording in prompt (example: `create a natural island with 2 hills, hill size between 1200 and 2000, at x 4000 y -1500`).
 
 ## Quick start
 

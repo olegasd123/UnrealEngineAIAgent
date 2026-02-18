@@ -990,6 +990,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
   theme: "moon_surface" | "nature_island";
   detailLevel: "low" | "medium" | "high" | "cinematic";
   moonProfile?: "moon_surface";
+  mountainStyle?: "sharp_peaks" | "hills";
   useFullArea: boolean;
   center?: { x: number; y: number };
   size?: { x: number; y: number };
@@ -998,14 +999,6 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
   mountainWidthMin?: number;
   mountainWidthMax?: number;
   maxHeight?: number;
-  riverCountMin?: number;
-  riverCountMax?: number;
-  riverWidthMin?: number;
-  riverWidthMax?: number;
-  lakeCountMin?: number;
-  lakeCountMax?: number;
-  lakeWidthMin?: number;
-  lakeWidthMax?: number;
   craterCountMin?: number;
   craterCountMax?: number;
   craterWidthMin?: number;
@@ -1072,20 +1065,32 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     detailLevel = "high";
   }
 
-  const center = parseLandscapeCenterFromPrompt(prompt) ?? undefined;
-  const size = parseLandscapeSizeFromPrompt(prompt) ?? undefined;
-  const hasAreaBounds = Boolean(center && size);
+  let center = parseLandscapeCenterFromPrompt(prompt) ?? undefined;
+  let size = parseLandscapeSizeFromPrompt(prompt) ?? undefined;
+  let hasAreaBounds = Boolean(center && size);
   const useFullAreaHint = /(all available space|entire landscape|whole landscape|full landscape|across the landscape|all of the landscape)/.test(
     lower
   );
-  const useFullArea = useFullAreaHint || !hasAreaBounds;
+  let useFullArea = useFullAreaHint || !hasAreaBounds;
 
   const seedMatch = /\bseed\s*(?:to|=|:)?\s*(-?\d+)\b/i.exec(prompt);
   const parsedSeed = seedMatch ? Number(seedMatch[1]) : Number.NaN;
   const seed = Number.isInteger(parsedSeed) ? parsedSeed : undefined;
 
+  const hasHillHint = /\bhills?\b/i.test(prompt);
+  const hasSharpPeakHint = /\b(sharp\s+peaks?|sharp\s+(?:mountains?|mountians?)|spiky\s+(?:mountains?|mountians?)|jagged\s+(?:mountains?|mountians?))\b/i.test(
+    prompt
+  );
+  const mountainStyle =
+    theme === "nature_island"
+      ? hasHillHint && !hasSharpPeakHint
+        ? "hills"
+        : "sharp_peaks"
+      : undefined;
+
   const mountainMatch =
-    /\b(\d+)\s+mountains?\b/i.exec(prompt) ?? /\bmountains?\s*(?:count|num(?:ber)?)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
+    /\b(\d+)\s+(?:mountains?|mountians?|hills?)\b/i.exec(prompt) ??
+    /\b(?:mountains?|mountians?|hills?)\s*(?:count|num(?:ber)?)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
   const parsedMountainCount = mountainMatch ? Number(mountainMatch[1]) : Number.NaN;
   const explicitMountainCount = Number.isFinite(parsedMountainCount)
     ? Math.max(1, Math.min(8, Math.trunc(parsedMountainCount)))
@@ -1100,29 +1105,22 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
       : 2;
   const mountainCount = explicitMountainCount ?? (theme === "moon_surface" ? inferredMoonDensity : undefined);
 
-  const mountainWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:mountains?)", 200000);
+  const mountainWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:mountains?|mountians?|hills?)", 200000);
   const mountainWidthMin = mountainWidthRange.min;
   const mountainWidthMax = mountainWidthRange.max;
+  if (theme === "nature_island" && mountainStyle === "hills" && center && !size) {
+    const explicitWidth = mountainWidthMax ?? mountainWidthMin;
+    const derivedSpan = Math.max(1000, Math.min(200000, (explicitWidth ?? 2000) * 3));
+    size = { x: derivedSpan, y: derivedSpan };
+    hasAreaBounds = true;
+    useFullArea = false;
+  }
 
   const maxHeightMatch =
     /\bmax(?:imum)?\s*height(?:\s*of)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
     /\bheight\s*(?:max(?:imum)?|limit)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
   const parsedMaxHeight = maxHeightMatch ? Number(maxHeightMatch[1]) : Number.NaN;
   const maxHeight = Number.isFinite(parsedMaxHeight) && parsedMaxHeight > 0 ? parsedMaxHeight : undefined;
-
-  const riverCountRange = parseLandscapeFeatureCountRange(prompt, "(?:rivers?)", 32);
-  const riverWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:rivers?)", 200000);
-  const lakeCountRange = parseLandscapeFeatureCountRange(prompt, "(?:lakes?)", 32);
-  const lakeWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:lakes?)", 200000);
-
-  let riverCountMin = riverCountRange.min;
-  let riverCountMax = riverCountRange.max;
-  let lakeCountMin = lakeCountRange.min;
-  let lakeCountMax = lakeCountRange.max;
-  const riverWidthMin = riverWidthRange.min;
-  const riverWidthMax = riverWidthRange.max;
-  const lakeWidthMin = lakeWidthRange.min;
-  const lakeWidthMax = lakeWidthRange.max;
 
   let craterCountMin: number | undefined;
   let craterCountMax: number | undefined;
@@ -1228,6 +1226,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     theme,
     detailLevel,
     moonProfile,
+    mountainStyle,
     useFullArea,
     center: useFullArea ? undefined : center,
     size: useFullArea ? undefined : size,
@@ -1236,14 +1235,6 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     mountainWidthMin,
     mountainWidthMax,
     maxHeight,
-    riverCountMin,
-    riverCountMax,
-    riverWidthMin,
-    riverWidthMax,
-    lakeCountMin,
-    lakeCountMax,
-    lakeWidthMin,
-    lakeWidthMax,
     craterCountMin,
     craterCountMax,
     craterWidthMin,
@@ -1801,6 +1792,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         theme: landscapeGenerate.theme,
         detailLevel: landscapeGenerate.detailLevel,
         moonProfile: landscapeGenerate.moonProfile,
+        mountainStyle: landscapeGenerate.mountainStyle,
         useFullArea: landscapeGenerate.useFullArea,
         center: landscapeGenerate.useFullArea ? undefined : landscapeGenerate.center,
         size: landscapeGenerate.useFullArea ? undefined : landscapeGenerate.size,
@@ -1809,14 +1801,6 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         mountainWidthMin: landscapeGenerate.mountainWidthMin,
         mountainWidthMax: landscapeGenerate.mountainWidthMax,
         maxHeight: landscapeGenerate.maxHeight,
-        riverCountMin: landscapeGenerate.riverCountMin,
-        riverCountMax: landscapeGenerate.riverCountMax,
-        riverWidthMin: landscapeGenerate.riverWidthMin,
-        riverWidthMax: landscapeGenerate.riverWidthMax,
-        lakeCountMin: landscapeGenerate.lakeCountMin,
-        lakeCountMax: landscapeGenerate.lakeCountMax,
-        lakeWidthMin: landscapeGenerate.lakeWidthMin,
-        lakeWidthMax: landscapeGenerate.lakeWidthMax,
         craterCountMin: landscapeGenerate.craterCountMin,
         craterCountMax: landscapeGenerate.craterCountMax,
         craterWidthMin: landscapeGenerate.craterWidthMin,

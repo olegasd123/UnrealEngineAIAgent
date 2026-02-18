@@ -297,13 +297,14 @@ test("Rule planner builds landscape.generate for nature island prompt with const
     return;
   }
   assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainStyle, "sharp_peaks");
   assert.equal(action.params.mountainCount, 2);
   assert.equal(action.params.maxHeight, 5000);
   assert.equal(action.params.useFullArea, true);
   assert.equal(action.risk, "medium");
 });
 
-test("Rule planner leaves rivers/lakes unspecified for plain nature island prompt", () => {
+test("Rule planner parses plain nature island prompt", () => {
   const request: TaskRequest = {
     prompt: "create a nature island",
     mode: "chat",
@@ -318,17 +319,14 @@ test("Rule planner leaves rivers/lakes unspecified for plain nature island promp
     return;
   }
   assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainStyle, "sharp_peaks");
   assert.equal(action.params.mountainCount, undefined);
-  assert.equal(action.params.riverCountMin, undefined);
-  assert.equal(action.params.riverCountMax, undefined);
-  assert.equal(action.params.lakeCountMin, undefined);
-  assert.equal(action.params.lakeCountMax, undefined);
 });
 
-test("Rule planner parses nature island rivers/lakes and mountain size constraints", () => {
+test("Rule planner parses nature island mountain size constraints", () => {
   const request: TaskRequest = {
     prompt:
-      "create a nature island with 3 mountains, mountain width between 1200 and 3800, rivers between 2 and 4, river width between 300 and 700, lakes count 2, lake size between 900 and 2400",
+      "create a nature island with 3 mountains, mountain width between 1200 and 3800",
     mode: "chat",
     context: {}
   };
@@ -341,17 +339,35 @@ test("Rule planner parses nature island rivers/lakes and mountain size constrain
     return;
   }
   assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainStyle, "sharp_peaks");
   assert.equal(action.params.mountainCount, 3);
   assert.equal(action.params.mountainWidthMin, 1200);
   assert.equal(action.params.mountainWidthMax, 3800);
-  assert.equal(action.params.riverCountMin, 2);
-  assert.equal(action.params.riverCountMax, 4);
-  assert.equal(action.params.riverWidthMin, 300);
-  assert.equal(action.params.riverWidthMax, 700);
-  assert.equal(action.params.lakeCountMin, 2);
-  assert.equal(action.params.lakeCountMax, 2);
-  assert.equal(action.params.lakeWidthMin, 900);
-  assert.equal(action.params.lakeWidthMax, 2400);
+});
+
+test("Rule planner parses hills style and applies bounded area from hill position", () => {
+  const request: TaskRequest = {
+    prompt: "create a natural island with 2 hills, hill size between 1200 and 2000, at x 4000 y -1500",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+
+  assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainStyle, "hills");
+  assert.equal(action.params.mountainCount, 2);
+  assert.equal(action.params.mountainWidthMin, 1200);
+  assert.equal(action.params.mountainWidthMax, 2000);
+  assert.equal(action.params.useFullArea, false);
+  assert.deepEqual(action.params.center, { x: 4000, y: -1500 });
+  assert.deepEqual(action.params.size, { x: 6000, y: 6000 });
 });
 
 test("Validation normalizes context action risk to low", () => {

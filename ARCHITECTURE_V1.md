@@ -149,15 +149,10 @@ Landscape generation options (current):
   - `craterWidthMin` / `craterWidthMax`
 - Nature island:
   - `mountainCount`
+  - `mountainStyle` (`sharp_peaks` | `hills`)
   - `mountainWidthMin` / `mountainWidthMax`
-  - `riverCountMin` / `riverCountMax`
-  - `riverWidthMin` / `riverWidthMax`
-  - `lakeCountMin` / `lakeCountMax`
-  - `lakeWidthMin` / `lakeWidthMax`
 - Nature island default when not specified:
-  - mountains: random `1-3`
-  - rivers: none
-  - lakes: none
+  - mountains: random `1-3` with `sharp_peaks`
 
 ## 6) Safety Model
 
@@ -240,7 +235,7 @@ Default localhost port configurable (ex: `127.0.0.1:4317`).
 - safety limits for brush size/strength
 - generate full/bounded landscape by theme:
   - moon surface (ancient heavily cratered profile, crater controls)
-  - nature island (mountains + optional river/lake hollows)
+  - nature island (mountains only)
 - support undo/redo commands
 
 ### Milestone 4: PCG tools

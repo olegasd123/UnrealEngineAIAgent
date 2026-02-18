@@ -88,14 +88,6 @@ test("Landscape generate requires approval and clamps limits", () => {
       mountainCount: 50,
       mountainWidthMin: 12000,
       mountainWidthMax: 500,
-      riverCountMin: 70,
-      riverCountMax: -3,
-      riverWidthMin: 6000,
-      riverWidthMax: 150,
-      lakeCountMin: 40,
-      lakeCountMax: -1,
-      lakeWidthMin: 8000,
-      lakeWidthMax: 200,
       craterCountMin: 1000,
       craterCountMax: 10,
       craterWidthMin: 5000,
@@ -119,14 +111,6 @@ test("Landscape generate requires approval and clamps limits", () => {
   assert.equal(sessionAction.action.params.mountainCount, 8);
   assert.equal(sessionAction.action.params.mountainWidthMin, 500);
   assert.equal(sessionAction.action.params.mountainWidthMax, 12000);
-  assert.equal(sessionAction.action.params.riverCountMin, 0);
-  assert.equal(sessionAction.action.params.riverCountMax, 32);
-  assert.equal(sessionAction.action.params.riverWidthMin, 150);
-  assert.equal(sessionAction.action.params.riverWidthMax, 6000);
-  assert.equal(sessionAction.action.params.lakeCountMin, 0);
-  assert.equal(sessionAction.action.params.lakeCountMax, 32);
-  assert.equal(sessionAction.action.params.lakeWidthMin, 200);
-  assert.equal(sessionAction.action.params.lakeWidthMax, 8000);
   assert.equal(sessionAction.action.params.craterCountMin, 10);
   assert.equal(sessionAction.action.params.craterCountMax, 500);
   assert.equal(sessionAction.action.params.craterWidthMin, 100);
