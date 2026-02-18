@@ -87,7 +87,7 @@ private:
         const TSharedRef<STableViewBase>& OwnerTable);
     TSharedRef<ITableRow> HandleGenerateChatHistoryRow(
         TSharedPtr<FUEAIAgentChatHistoryEntry> InItem,
-        const TSharedRef<STableViewBase>& OwnerTable) const;
+        const TSharedRef<STableViewBase>& OwnerTable);
     void HandleChatSearchTextChanged(const FText& NewText);
     void HandleArchivedFilterChanged(ECheckBoxState NewState);
     void HandleChatTitleCommitted(const FText& NewText, ETextCommit::Type CommitType, FString ChatId);
@@ -146,7 +146,6 @@ private:
     bool ShouldShowApprovalUi() const;
     ESessionStatus ParseSessionStatusFromMessage(const FString& Message) const;
     void UpdateActionApprovalUi();
-    void RebuildActionApprovalUi();
     bool ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& PlannedAction, FString& OutMessage) const;
     void AppendChatOutcomeToHistory(const FString& OutcomeText);
     TArray<FString> CollectSelectedActorNames() const;
@@ -184,11 +183,6 @@ private:
     TSharedPtr<SButton> RunButton;
     TSharedPtr<SButton> ResumeButton;
     TSharedPtr<SEditableText> PlanText;
-    TSharedPtr<SVerticalBox> ActionListBox;
-    TArray<TSharedPtr<SCheckBox>> ActionChecks;
-    TArray<TSharedPtr<SEditableText>> ActionTexts;
-    TArray<TSharedPtr<SMultiLineEditableTextBox>> ActionDetailTexts;
-    TArray<bool> ActionExpandedStates;
     int32 PromptVisibleLineCount = 1;
     FString CachedSelectionSummary;
     TArray<FString> LastNonEmptySelection;

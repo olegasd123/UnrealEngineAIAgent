@@ -927,44 +927,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
-                SNew(SHorizontalBox)
-                .Visibility_Lambda([this]()
-                {
-                    return ShouldShowApprovalUi() ? EVisibility::Visible : EVisibility::Collapsed;
-                })
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Check all")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnApproveLowRiskClicked)
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Uncheck all")))
-                    .OnClicked(this, &SUEAIAgentPanel::OnRejectAllClicked)
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
-                SNew(SBox)
-                .Visibility_Lambda([this]()
-                {
-                    return ShouldShowApprovalUi() ? EVisibility::Visible : EVisibility::Collapsed;
-                })
-                [
-                    SAssignNew(ActionListBox, SVerticalBox)
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
-            [
                 SNew(SBox)
                 .Visibility_Lambda([this]()
                 {
@@ -1085,15 +1047,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(220.0f)
-                    .Visibility_Lambda([this]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
-                            ? EVisibility::Visible
-                            : EVisibility::Collapsed;
-                    })
+                    .Visibility(EVisibility::Collapsed)
                     [
                         SAssignNew(ResumeButton, SButton)
                         .IsEnabled_Lambda([this]()
@@ -1113,15 +1067,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(220.0f)
-                    .Visibility_Lambda([this]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
-                            ? EVisibility::Visible
-                            : EVisibility::Collapsed;
-                    })
+                    .Visibility(EVisibility::Collapsed)
                     [
                         SNew(SButton)
                         .Text(FText::FromString(TEXT("Reject")))
@@ -1133,14 +1079,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(240.0f)
-                    .Visibility_Lambda([]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        const bool bCanApply = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
-                        return bCanApply ? EVisibility::Visible : EVisibility::Collapsed;
-                    })
+                    .Visibility(EVisibility::Collapsed)
                     [
                         SNew(SButton)
                         .Text(FText::FromString(TEXT("Apply")))
@@ -1153,14 +1092,7 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(200.0f)
-                    .Visibility_Lambda([]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        const bool bCanCancel = !bHasPendingSessionAction && Transport.GetPlannedActionCount() > 0;
-                        return bCanCancel ? EVisibility::Visible : EVisibility::Collapsed;
-                    })
+                    .Visibility(EVisibility::Collapsed)
                     [
                         SNew(SButton)
                         .Text(FText::FromString(TEXT("Cancel")))
@@ -2251,7 +2183,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
 
     if (CurrentSessionStatus == ESessionStatus::AwaitingApproval)
     {
-        PlanText->SetText(FText::FromString(FString::Printf(TEXT("Needs approval: %d action(s)"), Transport.GetPlannedActionCount())));
+        PlanText->SetText(FText::FromString(TEXT("Pending actions are shown in chat history.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -2265,7 +2197,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
 
     if (!NextAction.bApproved)
     {
-        PlanText->SetText(FText::FromString(FString::Printf(TEXT("Needs approval: %d action(s)"), Transport.GetPlannedActionCount())));
+        PlanText->SetText(FText::FromString(TEXT("Pending actions are shown in chat history.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -3154,7 +3086,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatRow(
 
 TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
     TSharedPtr<FUEAIAgentChatHistoryEntry> InItem,
-    const TSharedRef<STableViewBase>& OwnerTable) const
+    const TSharedRef<STableViewBase>& OwnerTable)
 {
     if (!InItem.IsValid())
     {
@@ -3168,11 +3100,164 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
         (InItem->DisplayRole.IsEmpty() && InItem->Kind.Equals(TEXT("asked"), ESearchCase::IgnoreCase));
     const FString MessageText = InItem->DisplayText.IsEmpty() ? InItem->Summary : InItem->DisplayText;
     const FString RichMessageText = bIsUserMessage ? MessageText : ConvertMarkdownToRichText(MessageText);
+    const bool bIsLastHistoryEntry = ChatHistoryItems.Num() > 0 && ChatHistoryItems.Last() == InItem;
+    const bool bShowInlineApprovalUi = bIsLastHistoryEntry && ShouldShowApprovalUi();
+
+    auto BuildApprovalUi = [this]() -> TSharedRef<SWidget>
+    {
+        TSharedRef<SVerticalBox> ApprovalBody = SNew(SVerticalBox);
+        ApprovalBody->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Check all")))
+                .OnClicked(this, &SUEAIAgentPanel::OnApproveLowRiskClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Uncheck all")))
+                .OnClicked(this, &SUEAIAgentPanel::OnRejectAllClicked)
+            ]
+        ];
+
+        const int32 ActionCount = FUEAIAgentTransportModule::Get().GetPlannedActionCount();
+        for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
+        {
+            ApprovalBody->AddSlot()
+            .AutoHeight()
+            .Padding(0.0f, 0.0f, 0.0f, 4.0f)
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SCheckBox)
+                    .IsChecked_Lambda([ActionIndex]()
+                    {
+                        return FUEAIAgentTransportModule::Get().IsPlannedActionApproved(ActionIndex)
+                            ? ECheckBoxState::Checked
+                            : ECheckBoxState::Unchecked;
+                    })
+                    .OnCheckStateChanged_Lambda([this, ActionIndex](ECheckBoxState NewState)
+                    {
+                        HandleActionApprovalChanged(ActionIndex, NewState);
+                        UpdateActionApprovalUi();
+                    })
+                ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .VAlign(VAlign_Center)
+                .Padding(6.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SNew(STextBlock)
+                    .AutoWrapText(true)
+                    .Text_Lambda([ActionIndex]()
+                    {
+                        return FText::FromString(FUEAIAgentTransportModule::Get().GetPlannedActionPreviewText(ActionIndex));
+                    })
+                    .ToolTipText_Lambda([this, ActionIndex]()
+                    {
+                        return FText::FromString(BuildActionDetailText(ActionIndex));
+                    })
+                ]
+            ];
+        }
+
+        ApprovalBody->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 6.0f, 0.0f, 0.0f)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Visibility_Lambda([this]()
+                {
+                    FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
+                        InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
+                    return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                        ? EVisibility::Visible
+                        : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Confirm and Continue")))
+                .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Visibility_Lambda([this]()
+                {
+                    FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
+                        InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
+                    return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                        ? EVisibility::Visible
+                        : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Reject")))
+                .OnClicked(this, &SUEAIAgentPanel::OnRejectCurrentActionClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            .Padding(0.0f, 0.0f, 8.0f, 0.0f)
+            [
+                SNew(SButton)
+                .Visibility_Lambda([]()
+                {
+                    FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
+                        InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
+                    const bool bCanApply = !bHasPendingSessionAction && InnerTransport.GetPlannedActionCount() > 0;
+                    return bCanApply ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Apply")))
+                .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
+            ]
+            + SHorizontalBox::Slot()
+            .AutoWidth()
+            [
+                SNew(SButton)
+                .Visibility_Lambda([]()
+                {
+                    FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
+                    const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
+                        InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
+                    const bool bCanCancel = !bHasPendingSessionAction && InnerTransport.GetPlannedActionCount() > 0;
+                    return bCanCancel ? EVisibility::Visible : EVisibility::Collapsed;
+                })
+                .Text(FText::FromString(TEXT("Cancel")))
+                .OnClicked(this, &SUEAIAgentPanel::OnCancelPlannedActionClicked)
+            ]
+        ];
+
+        return SNew(SBorder)
+            .Padding(8.0f)
+            .BorderImage(FCoreStyle::Get().GetBrush(TEXT("GenericWhiteBox")))
+            .BorderBackgroundColor(FLinearColor(0.14f, 0.14f, 0.14f, 0.35f))
+            [
+                ApprovalBody
+            ];
+    };
 
     if (bIsUserMessage)
     {
-        return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
-        .Padding(FMargin(8.0f, 8.0f))
+        TSharedRef<SVerticalBox> UserBody = SNew(SVerticalBox);
+        UserBody->AddSlot()
+        .AutoHeight()
         [
             SNew(SHorizontalBox)
             + SHorizontalBox::Slot()
@@ -3195,11 +3280,50 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
                 ]
             ]
         ];
+
+        if (bShowInlineApprovalUi)
+        {
+            UserBody->AddSlot()
+            .AutoHeight()
+            .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+            [
+                BuildApprovalUi()
+            ];
+        }
+
+        return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
+        .Padding(FMargin(8.0f, 8.0f))
+        [
+            UserBody
+        ];
     }
 
     TSharedPtr<ITextLayoutMarshaller> MarkdownMarshaller = FRichTextLayoutMarshaller::Create(
         TArray<TSharedRef<ITextDecorator>>(),
         &GetChatMarkdownStyle());
+
+    TSharedRef<SVerticalBox> AssistantBody = SNew(SVerticalBox);
+    AssistantBody->AddSlot()
+    .AutoHeight()
+    [
+        SNew(SMultiLineEditableText)
+        .IsReadOnly(true)
+        .ClearTextSelectionOnFocusLoss(false)
+        .AutoWrapText(true)
+        .Text(FText::FromString(RichMessageText))
+        .TextStyle(&GetChatMarkdownStyle().GetWidgetStyle<FTextBlockStyle>(TEXT("md.normal")))
+        .Marshaller(MarkdownMarshaller)
+    ];
+
+    if (bShowInlineApprovalUi)
+    {
+        AssistantBody->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 8.0f, 0.0f, 0.0f)
+        [
+            BuildApprovalUi()
+        ];
+    }
 
     return SNew(STableRow<TSharedPtr<FUEAIAgentChatHistoryEntry>>, OwnerTable)
     .Padding(FMargin(4.0f, 8.0f))
@@ -3212,13 +3336,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
             SNew(SBorder)
             .BorderBackgroundColor(FLinearColor(0.18f, 0.18f, 0.18f, 0.00f))
             [
-                SNew(SMultiLineEditableText)
-                .IsReadOnly(true)
-                .ClearTextSelectionOnFocusLoss(false)
-                .AutoWrapText(true)
-                .Text(FText::FromString(RichMessageText))
-                .TextStyle(&GetChatMarkdownStyle().GetWidgetStyle<FTextBlockStyle>(TEXT("md.normal")))
-                .Marshaller(MarkdownMarshaller)
+                AssistantBody
             ]
         ]
     ];
@@ -3521,189 +3639,10 @@ void SUEAIAgentPanel::HandleActionApprovalChanged(int32 ActionIndex, ECheckBoxSt
 
 void SUEAIAgentPanel::UpdateActionApprovalUi()
 {
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-    const int32 ActionCount = Transport.GetPlannedActionCount();
-
-    if (ActionChecks.Num() != ActionCount)
+    if (MainChatHistoryListView.IsValid())
     {
-        RebuildActionApprovalUi();
+        MainChatHistoryListView->RequestListRefresh();
     }
-
-    for (int32 ActionIndex = 0; ActionIndex < ActionCount; ++ActionIndex)
-    {
-        if (!ActionTexts.IsValidIndex(ActionIndex) || !ActionChecks.IsValidIndex(ActionIndex) ||
-            !ActionDetailTexts.IsValidIndex(ActionIndex))
-        {
-            continue;
-        }
-
-        if (ActionTexts[ActionIndex].IsValid())
-        {
-            ActionTexts[ActionIndex]->SetText(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)));
-        }
-        if (ActionDetailTexts[ActionIndex].IsValid())
-        {
-            ActionDetailTexts[ActionIndex]->SetText(FText::FromString(BuildActionDetailText(ActionIndex)));
-        }
-        if (ActionChecks[ActionIndex].IsValid())
-        {
-            ActionChecks[ActionIndex]->SetIsChecked(
-                Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
-        }
-    }
-}
-
-void SUEAIAgentPanel::RebuildActionApprovalUi()
-{
-    ActionChecks.Empty();
-    ActionTexts.Empty();
-    ActionDetailTexts.Empty();
-
-    if (!ActionListBox.IsValid())
-    {
-        return;
-    }
-
-    ActionListBox->ClearChildren();
-
-    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-    const int32 ActionCount = Transport.GetPlannedActionCount();
-    if (ActionCount == 0)
-    {
-        ActionExpandedStates.Empty();
-        ActionListBox->AddSlot()
-        .AutoHeight()
-        .Padding(0.0f, 0.0f, 0.0f, 4.0f)
-        [
-            SNew(STextBlock)
-            .Text(FText::FromString(TEXT("No planned actions.")))
-        ];
-        return;
-    }
-
-    if (ActionExpandedStates.Num() != ActionCount)
-    {
-        ActionExpandedStates.Init(false, ActionCount);
-    }
-    ActionChecks.SetNum(ActionCount);
-    ActionTexts.SetNum(ActionCount);
-    ActionDetailTexts.SetNum(ActionCount);
-
-    auto AddSection = [this, &Transport](EUEAIAgentRiskLevel Risk, const FString& Header)
-    {
-        TArray<int32> Indexes;
-        const int32 ActionCountLocal = Transport.GetPlannedActionCount();
-        for (int32 ActionIndex = 0; ActionIndex < ActionCountLocal; ++ActionIndex)
-        {
-            FUEAIAgentPlannedSceneAction Action;
-            if (!Transport.GetPlannedAction(ActionIndex, Action))
-            {
-                continue;
-            }
-            if (Action.Risk == Risk)
-            {
-                Indexes.Add(ActionIndex);
-            }
-        }
-
-        if (Indexes.Num() == 0)
-        {
-            return;
-        }
-
-        if (!Header.IsEmpty())
-        {
-            ActionListBox->AddSlot()
-            .AutoHeight()
-            .Padding(0.0f, 4.0f, 0.0f, 4.0f)
-            [
-                SNew(STextBlock)
-                .Text(FText::FromString(Header))
-            ];
-        }
-
-        for (const int32 ActionIndex : Indexes)
-        {
-            TSharedPtr<SCheckBox> RowCheckBox;
-            TSharedPtr<SEditableText> RowText;
-            TSharedPtr<SMultiLineEditableTextBox> RowDetailText;
-
-            ActionListBox->AddSlot()
-            .AutoHeight()
-            .Padding(0.0f, 0.0f, 0.0f, 4.0f)
-            [
-                SNew(SVerticalBox)
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                [
-                    SNew(SHorizontalBox)
-                    + SHorizontalBox::Slot()
-                    .AutoWidth()
-                    .VAlign(VAlign_Center)
-                    [
-                        SAssignNew(RowCheckBox, SCheckBox)
-                        .IsChecked(Transport.IsPlannedActionApproved(ActionIndex) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-                        .OnCheckStateChanged_Lambda([this, ActionIndex](ECheckBoxState NewState)
-                        {
-                            HandleActionApprovalChanged(ActionIndex, NewState);
-                        })
-                    ]
-                    + SHorizontalBox::Slot()
-                    .FillWidth(1.0f)
-                    .VAlign(VAlign_Center)
-                    .Padding(6.0f, 0.0f, 0.0f, 0.0f)
-                    [
-                        SAssignNew(RowText, SEditableText)
-                        .IsReadOnly(true)
-                        .Font(FAppStyle::Get().GetFontStyle("NormalFont"))
-                        .Text(FText::FromString(Transport.GetPlannedActionPreviewText(ActionIndex)))
-                    ]
-                    + SHorizontalBox::Slot()
-                    .AutoWidth()
-                    .VAlign(VAlign_Center)
-                    [
-                        SNew(SButton)
-                        .Text_Lambda([this, ActionIndex]()
-                        {
-                            const bool bExpanded = ActionExpandedStates.IsValidIndex(ActionIndex) && ActionExpandedStates[ActionIndex];
-                            return FText::FromString(bExpanded ? TEXT("Hide details") : TEXT("Show details"));
-                        })
-                        .OnClicked_Lambda([this, ActionIndex]()
-                        {
-                            if (ActionExpandedStates.IsValidIndex(ActionIndex))
-                            {
-                                ActionExpandedStates[ActionIndex] = !ActionExpandedStates[ActionIndex];
-                            }
-                            return FReply::Handled();
-                        })
-                    ]
-                ]
-                + SVerticalBox::Slot()
-                .AutoHeight()
-                .Padding(24.0f, 2.0f, 0.0f, 0.0f)
-                [
-                    SAssignNew(RowDetailText, SMultiLineEditableTextBox)
-                    .IsReadOnly(true)
-                    .AutoWrapText(true)
-                    .Visibility_Lambda([this, ActionIndex]()
-                    {
-                        return ActionExpandedStates.IsValidIndex(ActionIndex) && ActionExpandedStates[ActionIndex]
-                            ? EVisibility::Visible
-                            : EVisibility::Collapsed;
-                    })
-                    .Text(FText::FromString(BuildActionDetailText(ActionIndex)))
-                ]
-            ];
-
-            ActionChecks[ActionIndex] = RowCheckBox;
-            ActionTexts[ActionIndex] = RowText;
-            ActionDetailTexts[ActionIndex] = RowDetailText;
-        }
-    };
-
-    AddSection(EUEAIAgentRiskLevel::High, TEXT(""));
-    AddSection(EUEAIAgentRiskLevel::Medium, TEXT(""));
-    AddSection(EUEAIAgentRiskLevel::Low, TEXT(""));
 }
 
 TArray<FString> SUEAIAgentPanel::CollectSelectedActorNames() const

@@ -22,6 +22,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogUEAIAgentTransport, Log, All);
 
 namespace
 {
+    const FString GlobalChatStateKey = TEXT("__global__");
+
     bool ParseActorNamesField(const TSharedPtr<FJsonObject>& ParamsObj, TArray<FString>& OutActorNames)
     {
         OutActorNames.Empty();
@@ -1655,11 +1657,13 @@ void FUEAIAgentTransportModule::PlanTask(
     const FString& Model,
     const FOnUEAIAgentTaskPlanned& Callback) const
 {
-    PlannedActions.Empty();
-    LastPlanSummary.Empty();
-    ActiveSessionId.Empty();
-    ActiveSessionActionIndex = INDEX_NONE;
-    ActiveSessionSelectedActors.Empty();
+    const FString RequestChatId = ActiveChatId;
+    FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(RequestChatId);
+    ChatState.PlannedActions.Empty();
+    ChatState.LastPlanSummary.Empty();
+    ChatState.ActiveSessionId.Empty();
+    ChatState.ActiveSessionActionIndex = INDEX_NONE;
+    ChatState.ActiveSessionSelectedActors.Empty();
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
@@ -1673,9 +1677,9 @@ void FUEAIAgentTransportModule::PlanTask(
     {
         Root->SetStringField(TEXT("model"), Model);
     }
-    if (!ActiveChatId.IsEmpty())
+    if (!RequestChatId.IsEmpty())
     {
-        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+        Root->SetStringField(TEXT("chatId"), RequestChatId);
     }
 
     FString RequestBody;
@@ -1689,9 +1693,9 @@ void FUEAIAgentTransportModule::PlanTask(
     Request->SetContentAsString(RequestBody);
 
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback, SelectedActors](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, SelectedActors, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -1724,7 +1728,8 @@ void FUEAIAgentTransportModule::PlanTask(
                     return;
                 }
 
-                UpdateContextUsageFromResponse(ResponseJson);
+                UpdateContextUsageFromResponse(ResponseJson, RequestChatId);
+                FUEAIAgentChatExecutionState& RequestState = AccessChatExecutionState(RequestChatId);
 
                 const TSharedPtr<FJsonObject>* PlanObj = nullptr;
                 if (!ResponseJson->TryGetObjectField(TEXT("plan"), PlanObj) || !PlanObj || !PlanObj->IsValid())
@@ -1735,7 +1740,7 @@ void FUEAIAgentTransportModule::PlanTask(
 
                 FString Summary;
                 (*PlanObj)->TryGetStringField(TEXT("summary"), Summary);
-                LastPlanSummary = Summary.TrimStartAndEnd();
+                RequestState.LastPlanSummary = Summary.TrimStartAndEnd();
                 TArray<FString> Steps;
                 const TArray<TSharedPtr<FJsonValue>>* StepValues = nullptr;
                 if ((*PlanObj)->TryGetArrayField(TEXT("steps"), StepValues) && StepValues)
@@ -1795,7 +1800,7 @@ void FUEAIAgentTransportModule::PlanTask(
                             ParsedAction.bApproved = ParsedAction.Risk == EUEAIAgentRiskLevel::Low;
                         }
 
-                        PlannedActions.Add(ParsedAction);
+                        RequestState.PlannedActions.Add(ParsedAction);
                     }
                 }
 
@@ -1807,12 +1812,12 @@ void FUEAIAgentTransportModule::PlanTask(
                 {
                     FinalMessage = AssistantText;
                 }
-                else if (PlannedActions.Num() > 0)
+                else if (RequestState.PlannedActions.Num() > 0)
                 {
-                    FinalMessage = LastPlanSummary;
+                    FinalMessage = RequestState.LastPlanSummary;
                     if (FinalMessage.IsEmpty())
                     {
-                        FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), PlannedActions.Num());
+                        FinalMessage = FString::Printf(TEXT("Needs approval: %d action(s)"), RequestState.PlannedActions.Num());
                     }
                 }
                 else
@@ -1845,6 +1850,7 @@ void FUEAIAgentTransportModule::PlanTask(
 
 bool FUEAIAgentTransportModule::ParseSessionDecision(
     const TSharedPtr<FJsonObject>& ResponseJson,
+    const FString& ChatId,
     const TArray<FString>& SelectedActors,
     FString& OutMessage) const
 {
@@ -1863,7 +1869,7 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
         return false;
     }
 
-    UpdateContextUsageFromResponse(ResponseJson);
+    UpdateContextUsageFromResponse(ResponseJson, ChatId);
 
     const TSharedPtr<FJsonObject>* DecisionObj = nullptr;
     if (!ResponseJson->TryGetObjectField(TEXT("decision"), DecisionObj) || !DecisionObj || !DecisionObj->IsValid())
@@ -1879,9 +1885,11 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
         return false;
     }
 
-    ActiveSessionId = SessionId;
-    ActiveSessionActionIndex = INDEX_NONE;
-    PlannedActions.Empty();
+    FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(ChatId);
+    ChatState.ActiveSessionId = SessionId;
+    ChatState.ActiveSessionActionIndex = INDEX_NONE;
+    ChatState.PlannedActions.Empty();
+    ChatState.ActiveSessionSelectedActors = SelectedActors;
 
     FString Status;
     (*DecisionObj)->TryGetStringField(TEXT("status"), Status);
@@ -1900,7 +1908,7 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
     {
         (*DecisionObj)->TryGetNumberField(TEXT("actionIndex"), ActionIndex);
     }
-    ActiveSessionActionIndex = ActionIndex >= 0.0 ? FMath::TruncToInt(ActionIndex) : INDEX_NONE;
+    ChatState.ActiveSessionActionIndex = ActionIndex >= 0.0 ? FMath::TruncToInt(ActionIndex) : INDEX_NONE;
 
     const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
     bool bHasNextActionObj = (*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid();
@@ -1931,7 +1939,7 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
         Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
     if (!bCanExecute)
     {
-        ActiveSessionActionIndex = INDEX_NONE;
+        ChatState.ActiveSessionActionIndex = INDEX_NONE;
     }
 
     if (bCanExecute)
@@ -1974,7 +1982,7 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
                 {
                     ParsedAction.AttemptCount = FMath::Max(0, FMath::RoundToInt(static_cast<float>(Attempts)));
                 }
-                PlannedActions.Add(ParsedAction);
+                ChatState.PlannedActions.Add(ParsedAction);
             }
         }
     }
@@ -2002,11 +2010,13 @@ void FUEAIAgentTransportModule::StartSession(
     const FString& Model,
     const FOnUEAIAgentSessionUpdated& Callback) const
 {
-    PlannedActions.Empty();
-    LastPlanSummary.Empty();
-    ActiveSessionId.Empty();
-    ActiveSessionActionIndex = INDEX_NONE;
-    ActiveSessionSelectedActors = SelectedActors;
+    const FString RequestChatId = ActiveChatId;
+    FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(RequestChatId);
+    ChatState.PlannedActions.Empty();
+    ChatState.LastPlanSummary.Empty();
+    ChatState.ActiveSessionId.Empty();
+    ChatState.ActiveSessionActionIndex = INDEX_NONE;
+    ChatState.ActiveSessionSelectedActors = SelectedActors;
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
     Root->SetStringField(TEXT("prompt"), Prompt);
@@ -2021,9 +2031,9 @@ void FUEAIAgentTransportModule::StartSession(
     {
         Root->SetStringField(TEXT("model"), Model);
     }
-    if (!ActiveChatId.IsEmpty())
+    if (!RequestChatId.IsEmpty())
     {
-        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+        Root->SetStringField(TEXT("chatId"), RequestChatId);
     }
 
     FString RequestBody;
@@ -2036,9 +2046,9 @@ void FUEAIAgentTransportModule::StartSession(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback, SelectedActors](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, SelectedActors, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, SelectedActors, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2055,7 +2065,7 @@ void FUEAIAgentTransportModule::StartSession(
                 }
 
                 FString ParsedMessage;
-                const bool bParsed = ParseSessionDecision(ResponseJson, SelectedActors, ParsedMessage);
+                const bool bParsed = ParseSessionDecision(ResponseJson, RequestChatId, SelectedActors, ParsedMessage);
                 Callback.ExecuteIfBound(bParsed, ParsedMessage);
             });
         });
@@ -2069,32 +2079,34 @@ void FUEAIAgentTransportModule::NextSession(
     const FString& ResultMessage,
     const FOnUEAIAgentSessionUpdated& Callback) const
 {
-    if (ActiveSessionId.IsEmpty())
+    const FString RequestChatId = ActiveChatId;
+    FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(RequestChatId);
+    if (ChatState.ActiveSessionId.IsEmpty())
     {
         Callback.ExecuteIfBound(false, TEXT("No active session."));
         return;
     }
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
-    if (!ActiveChatId.IsEmpty())
+    Root->SetStringField(TEXT("sessionId"), ChatState.ActiveSessionId);
+    if (!RequestChatId.IsEmpty())
     {
-        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+        Root->SetStringField(TEXT("chatId"), RequestChatId);
     }
 
     if (bHasResult)
     {
-        if (ActiveSessionActionIndex == INDEX_NONE)
+        if (ChatState.ActiveSessionActionIndex == INDEX_NONE)
         {
             Callback.ExecuteIfBound(false, TEXT("No active session action index."));
             return;
         }
 
-        const int32 CurrentAttempts = GetPlannedActionAttemptCount(ActiveSessionActionIndex);
-        UpdateActionResult(ActiveSessionActionIndex, bResultOk, CurrentAttempts + 1);
+        const int32 CurrentAttempts = GetPlannedActionAttemptCount(ChatState.ActiveSessionActionIndex);
+        UpdateActionResult(ChatState.ActiveSessionActionIndex, bResultOk, CurrentAttempts + 1);
 
         TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-        Result->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
+        Result->SetNumberField(TEXT("actionIndex"), ChatState.ActiveSessionActionIndex);
         Result->SetBoolField(TEXT("ok"), bResultOk);
         Result->SetStringField(TEXT("message"), ResultMessage);
         Root->SetObjectField(TEXT("result"), Result);
@@ -2110,9 +2122,9 @@ void FUEAIAgentTransportModule::NextSession(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2129,7 +2141,12 @@ void FUEAIAgentTransportModule::NextSession(
                 }
 
                 FString ParsedMessage;
-                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                const FUEAIAgentChatExecutionState& ResponseState = AccessChatExecutionState(RequestChatId);
+                const bool bParsed = ParseSessionDecision(
+                    ResponseJson,
+                    RequestChatId,
+                    ResponseState.ActiveSessionSelectedActors,
+                    ParsedMessage);
                 Callback.ExecuteIfBound(bParsed, ParsedMessage);
             });
         });
@@ -2141,19 +2158,21 @@ void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
     bool bApproved,
     const FOnUEAIAgentSessionUpdated& Callback) const
 {
-    if (ActiveSessionId.IsEmpty() || ActiveSessionActionIndex == INDEX_NONE)
+    const FString RequestChatId = ActiveChatId;
+    const FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(RequestChatId);
+    if (ChatState.ActiveSessionId.IsEmpty() || ChatState.ActiveSessionActionIndex == INDEX_NONE)
     {
         Callback.ExecuteIfBound(false, TEXT("No active session action to approve."));
         return;
     }
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
-    Root->SetNumberField(TEXT("actionIndex"), ActiveSessionActionIndex);
+    Root->SetStringField(TEXT("sessionId"), ChatState.ActiveSessionId);
+    Root->SetNumberField(TEXT("actionIndex"), ChatState.ActiveSessionActionIndex);
     Root->SetBoolField(TEXT("approved"), bApproved);
-    if (!ActiveChatId.IsEmpty())
+    if (!RequestChatId.IsEmpty())
     {
-        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+        Root->SetStringField(TEXT("chatId"), RequestChatId);
     }
 
     FString RequestBody;
@@ -2166,9 +2185,9 @@ void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2185,7 +2204,12 @@ void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
                 }
 
                 FString ParsedMessage;
-                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                const FUEAIAgentChatExecutionState& ResponseState = AccessChatExecutionState(RequestChatId);
+                const bool bParsed = ParseSessionDecision(
+                    ResponseJson,
+                    RequestChatId,
+                    ResponseState.ActiveSessionSelectedActors,
+                    ParsedMessage);
                 Callback.ExecuteIfBound(bParsed, ParsedMessage);
             });
         });
@@ -2195,17 +2219,19 @@ void FUEAIAgentTransportModule::ApproveCurrentSessionAction(
 
 void FUEAIAgentTransportModule::ResumeSession(const FOnUEAIAgentSessionUpdated& Callback) const
 {
-    if (ActiveSessionId.IsEmpty())
+    const FString RequestChatId = ActiveChatId;
+    const FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(RequestChatId);
+    if (ChatState.ActiveSessionId.IsEmpty())
     {
         Callback.ExecuteIfBound(false, TEXT("No active session."));
         return;
     }
 
     TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-    Root->SetStringField(TEXT("sessionId"), ActiveSessionId);
-    if (!ActiveChatId.IsEmpty())
+    Root->SetStringField(TEXT("sessionId"), ChatState.ActiveSessionId);
+    if (!RequestChatId.IsEmpty())
     {
-        Root->SetStringField(TEXT("chatId"), ActiveChatId);
+        Root->SetStringField(TEXT("chatId"), RequestChatId);
     }
 
     FString RequestBody;
@@ -2218,9 +2244,9 @@ void FUEAIAgentTransportModule::ResumeSession(const FOnUEAIAgentSessionUpdated& 
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetContentAsString(RequestBody);
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -2237,7 +2263,12 @@ void FUEAIAgentTransportModule::ResumeSession(const FOnUEAIAgentSessionUpdated& 
                 }
 
                 FString ParsedMessage;
-                const bool bParsed = ParseSessionDecision(ResponseJson, ActiveSessionSelectedActors, ParsedMessage);
+                const FUEAIAgentChatExecutionState& ResponseState = AccessChatExecutionState(RequestChatId);
+                const bool bParsed = ParseSessionDecision(
+                    ResponseJson,
+                    RequestChatId,
+                    ResponseState.ActiveSessionSelectedActors,
+                    ParsedMessage);
                 Callback.ExecuteIfBound(bParsed, ParsedMessage);
             });
         });
@@ -2721,8 +2752,6 @@ void FUEAIAgentTransportModule::RefreshChats(bool bIncludeArchived, const FOnUEA
                     {
                         ActiveChatId.Empty();
                         ActiveChatHistory.Empty();
-                        LastContextUsageLabel.Reset();
-                        LastContextUsageTooltip.Reset();
                     }
                 }
 
@@ -3124,9 +3153,8 @@ void FUEAIAgentTransportModule::DeleteChat(const FString& ChatId, const FOnUEAIA
                 {
                     ActiveChatId.Empty();
                     ActiveChatHistory.Empty();
-                    LastContextUsageLabel.Reset();
-                    LastContextUsageTooltip.Reset();
                 }
+                RemoveChatExecutionState(ChatId);
                 Chats.RemoveAll([&ChatId](const FUEAIAgentChatSummary& Existing)
                 {
                     return Existing.Id == ChatId;
@@ -3144,19 +3172,18 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
     if (ActiveChatId.IsEmpty())
     {
         ActiveChatHistory.Empty();
-        LastContextUsageLabel.Reset();
-        LastContextUsageTooltip.Reset();
         Callback.ExecuteIfBound(true, TEXT("No active chat selected."));
         return;
     }
 
+    const FString RequestChatId = ActiveChatId;
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
-    Request->SetURL(BuildChatHistoryUrl(ActiveChatId, Limit));
+    Request->SetURL(BuildChatHistoryUrl(RequestChatId, Limit));
     Request->SetVerb(TEXT("GET"));
     Request->OnProcessRequestComplete().BindLambda(
-        [this, Callback](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
+        [this, Callback, RequestChatId](FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bConnectedSuccessfully)
         {
-            AsyncTask(ENamedThreads::GameThread, [this, Callback, HttpResponse, bConnectedSuccessfully]()
+            AsyncTask(ENamedThreads::GameThread, [this, Callback, RequestChatId, HttpResponse, bConnectedSuccessfully]()
             {
                 if (!bConnectedSuccessfully || !HttpResponse.IsValid())
                 {
@@ -3187,7 +3214,12 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                     return;
                 }
 
-                UpdateContextUsageFromResponse(ResponseJson);
+                UpdateContextUsageFromResponse(ResponseJson, RequestChatId);
+                if (ActiveChatId != RequestChatId)
+                {
+                    Callback.ExecuteIfBound(true, TEXT("Ignored inactive chat history response."));
+                    return;
+                }
 
                 ActiveChatHistory.Empty();
                 auto ParseDetails = [this](const TArray<TSharedPtr<FJsonValue>>& SourceItems)
@@ -3382,21 +3414,24 @@ const TArray<FUEAIAgentModelOption>& FUEAIAgentTransportModule::GetPreferredMode
 
 FString FUEAIAgentTransportModule::GetLastContextUsageLabel() const
 {
-    return LastContextUsageLabel;
+    if (const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState())
+    {
+        return ChatState->LastContextUsageLabel;
+    }
+    return TEXT("");
 }
 
 FString FUEAIAgentTransportModule::GetLastContextUsageTooltip() const
 {
-    return LastContextUsageTooltip;
+    if (const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState())
+    {
+        return ChatState->LastContextUsageTooltip;
+    }
+    return TEXT("");
 }
 
 void FUEAIAgentTransportModule::SetActiveChatId(const FString& ChatId) const
 {
-    if (ActiveChatId != ChatId)
-    {
-        LastContextUsageLabel.Reset();
-        LastContextUsageTooltip.Reset();
-    }
     ActiveChatId = ChatId;
 }
 
@@ -3407,22 +3442,31 @@ FString FUEAIAgentTransportModule::GetActiveChatId() const
 
 FString FUEAIAgentTransportModule::GetLastPlanSummary() const
 {
-    return LastPlanSummary;
+    if (const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState())
+    {
+        return ChatState->LastPlanSummary;
+    }
+    return TEXT("");
 }
 
 int32 FUEAIAgentTransportModule::GetPlannedActionCount() const
 {
-    return PlannedActions.Num();
+    if (const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState())
+    {
+        return ChatState->PlannedActions.Num();
+    }
+    return 0;
 }
 
 FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState || !ChatState->PlannedActions.IsValidIndex(ActionIndex))
     {
         return TEXT("Invalid action index.");
     }
 
-    const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
+    const FUEAIAgentPlannedSceneAction& Action = ChatState->PlannedActions[ActionIndex];
     const FString TargetText = FormatActorTargetShort(Action.ActorNames);
     if (Action.Type == EUEAIAgentPlannedActionType::ContextGetSceneSummary)
     {
@@ -3709,38 +3753,42 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
 
 bool FUEAIAgentTransportModule::IsPlannedActionApproved(int32 ActionIndex) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState || !ChatState->PlannedActions.IsValidIndex(ActionIndex))
     {
         return false;
     }
 
-    return PlannedActions[ActionIndex].bApproved;
+    return ChatState->PlannedActions[ActionIndex].bApproved;
 }
 
 int32 FUEAIAgentTransportModule::GetPlannedActionAttemptCount(int32 ActionIndex) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState || !ChatState->PlannedActions.IsValidIndex(ActionIndex))
     {
         return 0;
     }
 
-    return PlannedActions[ActionIndex].AttemptCount;
+    return ChatState->PlannedActions[ActionIndex].AttemptCount;
 }
 
 void FUEAIAgentTransportModule::SetPlannedActionApproved(int32 ActionIndex, bool bApproved) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    FUEAIAgentChatExecutionState& ChatState = AccessActiveChatExecutionState();
+    if (!ChatState.PlannedActions.IsValidIndex(ActionIndex))
     {
         return;
     }
 
-    PlannedActions[ActionIndex].bApproved = bApproved;
+    ChatState.PlannedActions[ActionIndex].bApproved = bApproved;
 }
 
 bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlannedSceneAction>& OutActions) const
 {
+    FUEAIAgentChatExecutionState& ChatState = AccessActiveChatExecutionState();
     OutActions.Empty();
-    for (const FUEAIAgentPlannedSceneAction& Action : PlannedActions)
+    for (const FUEAIAgentPlannedSceneAction& Action : ChatState.PlannedActions)
     {
         if (Action.bApproved)
         {
@@ -3748,34 +3796,36 @@ bool FUEAIAgentTransportModule::PopApprovedPlannedActions(TArray<FUEAIAgentPlann
         }
     }
 
-    PlannedActions.Empty();
+    ChatState.PlannedActions.Empty();
     return OutActions.Num() > 0;
 }
 
 void FUEAIAgentTransportModule::ClearPlannedActions() const
 {
-    PlannedActions.Empty();
+    AccessActiveChatExecutionState().PlannedActions.Empty();
 }
 
 bool FUEAIAgentTransportModule::GetPlannedAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState || !ChatState->PlannedActions.IsValidIndex(ActionIndex))
     {
         return false;
     }
 
-    OutAction = PlannedActions[ActionIndex];
+    OutAction = ChatState->PlannedActions[ActionIndex];
     return true;
 }
 
 bool FUEAIAgentTransportModule::GetPendingAction(int32 ActionIndex, FUEAIAgentPlannedSceneAction& OutAction) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState || !ChatState->PlannedActions.IsValidIndex(ActionIndex))
     {
         return false;
     }
 
-    const FUEAIAgentPlannedSceneAction& Action = PlannedActions[ActionIndex];
+    const FUEAIAgentPlannedSceneAction& Action = ChatState->PlannedActions[ActionIndex];
     if (Action.State != EUEAIAgentActionState::Pending)
     {
         return false;
@@ -3787,20 +3837,27 @@ bool FUEAIAgentTransportModule::GetPendingAction(int32 ActionIndex, FUEAIAgentPl
 
 void FUEAIAgentTransportModule::UpdateActionResult(int32 ActionIndex, bool bSucceeded, int32 AttemptCount) const
 {
-    if (!PlannedActions.IsValidIndex(ActionIndex))
+    FUEAIAgentChatExecutionState& ChatState = AccessActiveChatExecutionState();
+    if (!ChatState.PlannedActions.IsValidIndex(ActionIndex))
     {
         return;
     }
 
-    PlannedActions[ActionIndex].State = bSucceeded ? EUEAIAgentActionState::Succeeded : EUEAIAgentActionState::Failed;
-    PlannedActions[ActionIndex].AttemptCount = FMath::Max(0, AttemptCount);
+    ChatState.PlannedActions[ActionIndex].State = bSucceeded ? EUEAIAgentActionState::Succeeded : EUEAIAgentActionState::Failed;
+    ChatState.PlannedActions[ActionIndex].AttemptCount = FMath::Max(0, AttemptCount);
 }
 
 int32 FUEAIAgentTransportModule::GetNextPendingActionIndex() const
 {
-    for (int32 Index = 0; Index < PlannedActions.Num(); ++Index)
+    const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState();
+    if (!ChatState)
     {
-        if (PlannedActions[Index].State == EUEAIAgentActionState::Pending)
+        return INDEX_NONE;
+    }
+
+    for (int32 Index = 0; Index < ChatState->PlannedActions.Num(); ++Index)
+    {
+        if (ChatState->PlannedActions[Index].State == EUEAIAgentActionState::Pending)
         {
             return Index;
         }
@@ -3810,13 +3867,51 @@ int32 FUEAIAgentTransportModule::GetNextPendingActionIndex() const
 
 bool FUEAIAgentTransportModule::HasActiveSession() const
 {
-    return !ActiveSessionId.IsEmpty();
+    if (const FUEAIAgentChatExecutionState* ChatState = FindActiveChatExecutionState())
+    {
+        return !ChatState->ActiveSessionId.IsEmpty();
+    }
+    return false;
 }
 
-void FUEAIAgentTransportModule::UpdateContextUsageFromResponse(const TSharedPtr<FJsonObject>& ResponseJson) const
+FString FUEAIAgentTransportModule::ResolveChatStateKey(const FString& ChatId) const
 {
-    LastContextUsageLabel.Reset();
-    LastContextUsageTooltip.Reset();
+    const FString Normalized = ChatId.TrimStartAndEnd();
+    return Normalized.IsEmpty() ? GlobalChatStateKey : Normalized;
+}
+
+FUEAIAgentTransportModule::FUEAIAgentChatExecutionState& FUEAIAgentTransportModule::AccessChatExecutionState(const FString& ChatId) const
+{
+    const FString Key = ResolveChatStateKey(ChatId);
+    if (FUEAIAgentChatExecutionState* Existing = ChatExecutionStates.Find(Key))
+    {
+        return *Existing;
+    }
+    return ChatExecutionStates.Add(Key, FUEAIAgentChatExecutionState());
+}
+
+FUEAIAgentTransportModule::FUEAIAgentChatExecutionState& FUEAIAgentTransportModule::AccessActiveChatExecutionState() const
+{
+    return AccessChatExecutionState(ActiveChatId);
+}
+
+const FUEAIAgentTransportModule::FUEAIAgentChatExecutionState* FUEAIAgentTransportModule::FindActiveChatExecutionState() const
+{
+    return ChatExecutionStates.Find(ResolveChatStateKey(ActiveChatId));
+}
+
+void FUEAIAgentTransportModule::RemoveChatExecutionState(const FString& ChatId) const
+{
+    ChatExecutionStates.Remove(ResolveChatStateKey(ChatId));
+}
+
+void FUEAIAgentTransportModule::UpdateContextUsageFromResponse(
+    const TSharedPtr<FJsonObject>& ResponseJson,
+    const FString& ChatId) const
+{
+    FUEAIAgentChatExecutionState& ChatState = AccessChatExecutionState(ChatId);
+    ChatState.LastContextUsageLabel.Reset();
+    ChatState.LastContextUsageTooltip.Reset();
     if (!ResponseJson.IsValid())
     {
         return;
@@ -3829,8 +3924,8 @@ void FUEAIAgentTransportModule::UpdateContextUsageFromResponse(const TSharedPtr<
     }
 
     const FContextUsageDisplay Display = BuildContextUsageDisplay(*ContextUsageObj);
-    LastContextUsageLabel = Display.Label;
-    LastContextUsageTooltip = Display.Tooltip;
+    ChatState.LastContextUsageLabel = Display.Label;
+    ChatState.LastContextUsageTooltip = Display.Tooltip;
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)

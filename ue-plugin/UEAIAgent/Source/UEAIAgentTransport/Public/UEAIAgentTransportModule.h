@@ -241,6 +241,17 @@ public:
     bool HasActiveSession() const;
 
 private:
+    struct FUEAIAgentChatExecutionState
+    {
+        TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
+        FString ActiveSessionId;
+        int32 ActiveSessionActionIndex = INDEX_NONE;
+        TArray<FString> ActiveSessionSelectedActors;
+        FString LastPlanSummary;
+        FString LastContextUsageLabel;
+        FString LastContextUsageTooltip;
+    };
+
     FString BuildBaseUrl() const;
     FString BuildHealthUrl() const;
     FString BuildPlanUrl() const;
@@ -262,20 +273,20 @@ private:
     FString BuildChatHistoryUrl(const FString& ChatId, int32 Limit) const;
     bool ParseSessionDecision(
         const TSharedPtr<FJsonObject>& ResponseJson,
+        const FString& ChatId,
         const TArray<FString>& SelectedActors,
         FString& OutMessage) const;
-    void UpdateContextUsageFromResponse(const TSharedPtr<FJsonObject>& ResponseJson) const;
+    void UpdateContextUsageFromResponse(const TSharedPtr<FJsonObject>& ResponseJson, const FString& ChatId) const;
+    FString ResolveChatStateKey(const FString& ChatId) const;
+    FUEAIAgentChatExecutionState& AccessChatExecutionState(const FString& ChatId) const;
+    FUEAIAgentChatExecutionState& AccessActiveChatExecutionState() const;
+    const FUEAIAgentChatExecutionState* FindActiveChatExecutionState() const;
+    void RemoveChatExecutionState(const FString& ChatId) const;
 
-    mutable TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
-    mutable FString ActiveSessionId;
-    mutable int32 ActiveSessionActionIndex = INDEX_NONE;
-    mutable TArray<FString> ActiveSessionSelectedActors;
+    mutable TMap<FString, FUEAIAgentChatExecutionState> ChatExecutionStates;
     mutable TArray<FUEAIAgentChatSummary> Chats;
     mutable TArray<FUEAIAgentChatHistoryEntry> ActiveChatHistory;
     mutable TArray<FUEAIAgentModelOption> AvailableModels;
     mutable TArray<FUEAIAgentModelOption> PreferredModels;
     mutable FString ActiveChatId;
-    mutable FString LastPlanSummary;
-    mutable FString LastContextUsageLabel;
-    mutable FString LastContextUsageTooltip;
 };
