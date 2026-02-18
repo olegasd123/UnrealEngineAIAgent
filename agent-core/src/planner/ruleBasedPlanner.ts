@@ -935,6 +935,14 @@ function parseLandscapeFeatureSizeRange(
     new RegExp(
       `\\b(?:width|size)\\s*of\\s*${featureRegex}\\s*(?:between|from)\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*(?:and|to)\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
       "i"
+    ).exec(prompt) ??
+    new RegExp(
+      `\\b${featureRegex}\\s*(?:width|size)\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*(?:-|–|—|to)\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
+      "i"
+    ).exec(prompt) ??
+    new RegExp(
+      `\\b(?:width|size)\\s*of\\s*${featureRegex}\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*(?:-|–|—|to)\\s*([+-]?\\d+(?:\\.\\d+)?)\\b`,
+      "i"
     ).exec(prompt);
   if (rangeMatch) {
     const first = Number(rangeMatch[1]);
@@ -1095,6 +1103,7 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
   const explicitMountainCount = Number.isFinite(parsedMountainCount)
     ? Math.max(1, Math.min(8, Math.trunc(parsedMountainCount)))
     : undefined;
+  const singleMountainHint = /\b(?:a|an|one)\s+(?:mountain|mountian|hill)\b/i.test(prompt);
   const inferredMoonDensity =
     detailLevel === "cinematic"
       ? 8
@@ -1103,11 +1112,29 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
       : detailLevel === "medium"
       ? 4
       : 2;
-  const mountainCount = explicitMountainCount ?? (theme === "moon_surface" ? inferredMoonDensity : undefined);
+  const mountainCount =
+    explicitMountainCount ??
+    (theme === "nature_island" && singleMountainHint ? 1 : theme === "moon_surface" ? inferredMoonDensity : undefined);
 
   const mountainWidthRange = parseLandscapeFeatureSizeRange(prompt, "(?:mountains?|mountians?|hills?)", 200000);
-  const mountainWidthMin = mountainWidthRange.min;
-  const mountainWidthMax = mountainWidthRange.max;
+  let mountainWidthMin = mountainWidthRange.min;
+  let mountainWidthMax = mountainWidthRange.max;
+  if (
+    mountainWidthMin === undefined &&
+    mountainWidthMax === undefined &&
+    (hasHillHint || /\b(?:mountains?|mountians?)\b/i.test(prompt))
+  ) {
+    const genericWidthRangeMatch =
+      /\bwidth\s*(?:between|from)?\s*([+-]?\d+(?:\.\d+)?)\s*(?:-|–|—|and|to)\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+    if (genericWidthRangeMatch) {
+      const first = Number(genericWidthRangeMatch[1]);
+      const second = Number(genericWidthRangeMatch[2]);
+      if (Number.isFinite(first) && Number.isFinite(second) && first > 0 && second > 0) {
+        mountainWidthMin = Math.max(1, Math.min(200000, Math.min(first, second)));
+        mountainWidthMax = Math.max(1, Math.min(200000, Math.max(first, second)));
+      }
+    }
+  }
   if (theme === "nature_island" && mountainStyle === "hills" && center && !size) {
     const explicitWidth = mountainWidthMax ?? mountainWidthMin;
     const derivedSpan = Math.max(1000, Math.min(200000, (explicitWidth ?? 2000) * 3));
@@ -1120,7 +1147,26 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
     /\bmax(?:imum)?\s*height(?:\s*of)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt) ??
     /\bheight\s*(?:max(?:imum)?|limit)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
   const parsedMaxHeight = maxHeightMatch ? Number(maxHeightMatch[1]) : Number.NaN;
-  const maxHeight = Number.isFinite(parsedMaxHeight) && parsedMaxHeight > 0 ? parsedMaxHeight : undefined;
+  let maxHeight = Number.isFinite(parsedMaxHeight) && parsedMaxHeight > 0 ? parsedMaxHeight : undefined;
+  if (maxHeight === undefined && theme === "nature_island") {
+    const heightRangeMatch =
+      /\b(?:hills?|mountains?|mountians?)?\s*height\s*(?:between|from)?\s*([+-]?\d+(?:\.\d+)?)\s*(?:-|–|—|and|to)\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(
+        prompt
+      );
+    if (heightRangeMatch) {
+      const first = Number(heightRangeMatch[1]);
+      const second = Number(heightRangeMatch[2]);
+      if (Number.isFinite(first) && Number.isFinite(second) && first > 0 && second > 0) {
+        maxHeight = Math.max(first, second);
+      }
+    } else {
+      const heightExactMatch = /\b(?:hills?|mountains?|mountians?)?\s*height\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)\b/i.exec(prompt);
+      const parsedHeight = heightExactMatch ? Number(heightExactMatch[1]) : Number.NaN;
+      if (Number.isFinite(parsedHeight) && parsedHeight > 0) {
+        maxHeight = parsedHeight;
+      }
+    }
+  }
 
   let craterCountMin: number | undefined;
   let craterCountMax: number | undefined;

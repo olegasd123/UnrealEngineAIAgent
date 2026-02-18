@@ -14,6 +14,47 @@ function hasWriteIntent(prompt: string): boolean {
   );
 }
 
+function enrichLandscapeGenerateFromFallback(providerPlan: PlanOutput, fallbackPlan: PlanOutput): boolean {
+  const fallbackLandscapeAction = fallbackPlan.actions.find((action) => action.command === "landscape.generate");
+  if (!fallbackLandscapeAction || fallbackLandscapeAction.command !== "landscape.generate") {
+    return false;
+  }
+
+  let changed = false;
+  for (const action of providerPlan.actions) {
+    if (action.command !== "landscape.generate") {
+      continue;
+    }
+
+    if (action.params.theme !== "nature_island" || fallbackLandscapeAction.params.theme !== "nature_island") {
+      continue;
+    }
+
+    if (action.params.mountainStyle === undefined && fallbackLandscapeAction.params.mountainStyle !== undefined) {
+      action.params.mountainStyle = fallbackLandscapeAction.params.mountainStyle;
+      changed = true;
+    }
+    if (action.params.mountainCount === undefined && fallbackLandscapeAction.params.mountainCount !== undefined) {
+      action.params.mountainCount = fallbackLandscapeAction.params.mountainCount;
+      changed = true;
+    }
+    if (action.params.mountainWidthMin === undefined && fallbackLandscapeAction.params.mountainWidthMin !== undefined) {
+      action.params.mountainWidthMin = fallbackLandscapeAction.params.mountainWidthMin;
+      changed = true;
+    }
+    if (action.params.mountainWidthMax === undefined && fallbackLandscapeAction.params.mountainWidthMax !== undefined) {
+      action.params.mountainWidthMax = fallbackLandscapeAction.params.mountainWidthMax;
+      changed = true;
+    }
+    if (action.params.maxHeight === undefined && fallbackLandscapeAction.params.maxHeight !== undefined) {
+      action.params.maxHeight = fallbackLandscapeAction.params.maxHeight;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export class PlanningLayer {
   constructor(private readonly worldStateCollector: WorldStateCollector = new WorldStateCollector()) {}
 
@@ -45,6 +86,13 @@ export class PlanningLayer {
       }
 
       if (providerPlan.actions.length > 0) {
+        const enriched = enrichLandscapeGenerateFromFallback(providerPlan, fallback);
+        if (enriched) {
+          return {
+            ...providerPlan,
+            steps: ["Filled missing landscape.generate constraints from prompt parsing.", ...providerPlan.steps]
+          };
+        }
         return providerPlan;
       }
 

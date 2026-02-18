@@ -567,9 +567,11 @@ namespace
         if (Command == TEXT("landscape.generate"))
         {
             FString Target;
-            if (!(*ParamsObj)->TryGetStringField(TEXT("target"), Target))
+            const bool bHasTarget = (*ParamsObj)->TryGetStringField(TEXT("target"), Target);
+            Target = Target.TrimStartAndEnd();
+            if (!bHasTarget || Target.IsEmpty())
             {
-                return false;
+                Target = TEXT("selection");
             }
 
             FString Theme;
@@ -745,6 +747,13 @@ namespace
                 {
                     return false;
                 }
+            }
+            else if (
+                Target.Equals(TEXT("all"), ESearchCase::IgnoreCase) ||
+                Target.Equals(TEXT("full"), ESearchCase::IgnoreCase) ||
+                Target.Equals(TEXT("full_area"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames.Empty();
             }
             else
             {
@@ -1876,14 +1885,47 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
 
     FString Status;
     (*DecisionObj)->TryGetStringField(TEXT("status"), Status);
+    if (Status.IsEmpty())
+    {
+        (*DecisionObj)->TryGetStringField(TEXT("state"), Status);
+    }
     FString Summary;
     (*DecisionObj)->TryGetStringField(TEXT("summary"), Summary);
     FString Message;
     (*DecisionObj)->TryGetStringField(TEXT("message"), Message);
 
     double ActionIndex = -1.0;
-    (*DecisionObj)->TryGetNumberField(TEXT("nextActionIndex"), ActionIndex);
+    const bool bHasNextActionIndex = (*DecisionObj)->TryGetNumberField(TEXT("nextActionIndex"), ActionIndex);
+    if (!bHasNextActionIndex)
+    {
+        (*DecisionObj)->TryGetNumberField(TEXT("actionIndex"), ActionIndex);
+    }
     ActiveSessionActionIndex = ActionIndex >= 0.0 ? FMath::TruncToInt(ActionIndex) : INDEX_NONE;
+
+    const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
+    bool bHasNextActionObj = (*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid();
+    if (!bHasNextActionObj)
+    {
+        bHasNextActionObj = (*DecisionObj)->TryGetObjectField(TEXT("action"), NextActionObj) && NextActionObj && NextActionObj->IsValid();
+    }
+
+    bool bDerivedApproved = false;
+    bool bHasDerivedApproved = false;
+    if ((*DecisionObj)->TryGetBoolField(TEXT("nextActionApproved"), bDerivedApproved))
+    {
+        bHasDerivedApproved = true;
+    }
+    else if ((*DecisionObj)->TryGetBoolField(TEXT("approved"), bDerivedApproved))
+    {
+        bHasDerivedApproved = true;
+    }
+
+    if (Status.IsEmpty() && bHasNextActionObj)
+    {
+        Status = bHasDerivedApproved && !bDerivedApproved
+            ? TEXT("awaiting_approval")
+            : TEXT("ready_to_execute");
+    }
 
     const bool bCanExecute = Status.Equals(TEXT("ready_to_execute"), ESearchCase::IgnoreCase) ||
         Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
@@ -1894,18 +1936,22 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
 
     if (bCanExecute)
     {
-        const TSharedPtr<FJsonObject>* NextActionObj = nullptr;
-        if ((*DecisionObj)->TryGetObjectField(TEXT("nextAction"), NextActionObj) && NextActionObj && NextActionObj->IsValid())
+        if (bHasNextActionObj)
         {
             FUEAIAgentPlannedSceneAction ParsedAction;
             if (ParsePlannedActionFromJson(*NextActionObj, SelectedActors, ParsedAction))
             {
                 bool bApproved = !Status.Equals(TEXT("awaiting_approval"), ESearchCase::IgnoreCase);
-                (*DecisionObj)->TryGetBoolField(TEXT("nextActionApproved"), bApproved);
+                if (!(*DecisionObj)->TryGetBoolField(TEXT("nextActionApproved"), bApproved))
+                {
+                    (*DecisionObj)->TryGetBoolField(TEXT("approved"), bApproved);
+                }
                 ParsedAction.bApproved = bApproved;
 
                 FString ActionStateText;
-                if ((*DecisionObj)->TryGetStringField(TEXT("nextActionState"), ActionStateText))
+                if (
+                    (*DecisionObj)->TryGetStringField(TEXT("nextActionState"), ActionStateText) ||
+                    (*DecisionObj)->TryGetStringField(TEXT("actionState"), ActionStateText))
                 {
                     if (ActionStateText.Equals(TEXT("succeeded"), ESearchCase::IgnoreCase))
                     {
@@ -1922,7 +1968,9 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
                 }
 
                 double Attempts = 0.0;
-                if ((*DecisionObj)->TryGetNumberField(TEXT("nextActionAttempts"), Attempts))
+                if (
+                    (*DecisionObj)->TryGetNumberField(TEXT("nextActionAttempts"), Attempts) ||
+                    (*DecisionObj)->TryGetNumberField(TEXT("attempts"), Attempts))
                 {
                     ParsedAction.AttemptCount = FMath::Max(0, FMath::RoundToInt(static_cast<float>(Attempts)));
                 }
@@ -1933,7 +1981,7 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
 
     OutMessage = FString::Printf(
         TEXT("Session: %s\n%s\n%s"),
-        *Status,
+        Status.IsEmpty() ? TEXT("unknown") : *Status,
         Summary.IsEmpty() ? TEXT("No summary.") : *Summary,
         Message.IsEmpty() ? TEXT("No message.") : *Message);
     FString AssistantText;

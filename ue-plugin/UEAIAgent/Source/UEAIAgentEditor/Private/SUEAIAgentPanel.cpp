@@ -2212,7 +2212,23 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     }
     if (Transport.GetPlannedActionCount() <= 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        if (CurrentSessionStatus == ESessionStatus::AwaitingApproval || CurrentSessionStatus == ESessionStatus::ReadyToExecute)
+        {
+            const FString DecisionMessage = NormalizeSingleLineStatusText(ExtractDecisionMessageBody(Message));
+            if (DecisionMessage.IsEmpty())
+            {
+                PlanText->SetText(FText::FromString(TEXT("Agent: no executable action in session update.")));
+            }
+            else
+            {
+                PlanText->SetText(FText::FromString(
+                    TEXT("Agent: no executable action in session update.\n") + DecisionMessage));
+            }
+        }
+        else
+        {
+            PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        }
         RefreshActiveChatHistory();
         return;
     }

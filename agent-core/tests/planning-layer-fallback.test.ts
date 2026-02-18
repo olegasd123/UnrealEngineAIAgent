@@ -64,6 +64,47 @@ class ContextOnlyProvider implements LlmProvider {
   }
 }
 
+const landscapeGeneratePlanMissingConstraints: PlanOutput = {
+  summary: "Generate nature island.",
+  steps: ["Generate landscape island"],
+  actions: [
+    {
+      command: "landscape.generate",
+      params: {
+        target: "all",
+        theme: "nature_island",
+        detailLevel: "medium",
+        useFullArea: true,
+        mountainStyle: "hills"
+      },
+      risk: "medium"
+    }
+  ],
+  goal: {
+    id: "goal_landscape_island",
+    description: "Generate nature island.",
+    priority: "medium"
+  },
+  subgoals: [],
+  checks: [],
+  stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }]
+};
+
+class LandscapeGenerateMissingConstraintsProvider implements LlmProvider {
+  public readonly name = "local";
+  public readonly model = "test-model";
+  public readonly hasApiKey = true;
+  public readonly adapter = "stub" as const;
+
+  async planTask(_input: PlanInput): Promise<PlanOutput> {
+    return landscapeGeneratePlanMissingConstraints;
+  }
+
+  async respondText(_input: TextReplyInput): Promise<string> {
+    return "ok";
+  }
+}
+
 function makeRequest(prompt: string): TaskRequest {
   return {
     prompt,
@@ -135,4 +176,26 @@ test("PlanningLayer uses local fallback when provider returns context-only plan 
   assert.equal(plan.actions.length, 1);
   assert.equal(plan.actions[0]?.command, "landscape.generate");
   assert.match(plan.steps[0] ?? "", /context-only actions.*local fallback/i);
+});
+
+test("PlanningLayer enriches provider landscape.generate with parsed width and height ranges", async () => {
+  const provider = new LandscapeGenerateMissingConstraintsProvider();
+  const planning = new PlanningLayer();
+  const intent = new IntentLayer().normalize(
+    makeRequest("create a nature island with a hill, width 500-1000, height 100-500")
+  );
+
+  const plan = await planning.buildPlan(intent, provider);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0]?.command, "landscape.generate");
+  if (plan.actions[0]?.command !== "landscape.generate") {
+    return;
+  }
+
+  assert.equal(plan.actions[0].params.mountainStyle, "hills");
+  assert.equal(plan.actions[0].params.mountainCount, 1);
+  assert.equal(plan.actions[0].params.mountainWidthMin, 500);
+  assert.equal(plan.actions[0].params.mountainWidthMax, 1000);
+  assert.equal(plan.actions[0].params.maxHeight, 500);
+  assert.match(plan.steps[0] ?? "", /Filled missing landscape\.generate constraints/i);
 });

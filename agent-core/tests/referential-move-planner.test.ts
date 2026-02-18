@@ -370,6 +370,30 @@ test("Rule planner parses hills style and applies bounded area from hill positio
   assert.deepEqual(action.params.size, { x: 6000, y: 6000 });
 });
 
+test("Rule planner parses singular hill with width and height ranges", () => {
+  const request: TaskRequest = {
+    prompt: "create a nature island with a hill, width 500-1000, height 100-500",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "landscape.generate");
+  if (action.command !== "landscape.generate") {
+    return;
+  }
+
+  assert.equal(action.params.theme, "nature_island");
+  assert.equal(action.params.mountainStyle, "hills");
+  assert.equal(action.params.mountainCount, 1);
+  assert.equal(action.params.mountainWidthMin, 500);
+  assert.equal(action.params.mountainWidthMax, 1000);
+  assert.equal(action.params.maxHeight, 500);
+  assert.equal(action.params.useFullArea, true);
+});
+
 test("Validation normalizes context action risk to low", () => {
   const request: TaskRequest = {
     prompt: "show selection info",
