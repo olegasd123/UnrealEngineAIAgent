@@ -1167,6 +1167,30 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         .OnClicked(this, &SUEAIAgentPanel::OnCancelPlannedActionClicked)
                     ]
                 ]
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                [
+                    SNew(SBox)
+                ]
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .HAlign(HAlign_Right)
+                .VAlign(VAlign_Bottom)
+                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
+                [
+                    SNew(STextBlock)
+                    .Text_Lambda([]()
+                    {
+                        const FString Label = FUEAIAgentTransportModule::Get().GetLastContextUsageLabel();
+                        return FText::FromString(Label.IsEmpty() ? TEXT("-") : Label);
+                    })
+                    .ToolTipText_Lambda([]()
+                    {
+                        const FString Tooltip = FUEAIAgentTransportModule::Get().GetLastContextUsageTooltip();
+                        return FText::FromString(Tooltip.IsEmpty() ? TEXT("Context usage is not available yet.") : Tooltip);
+                    })
+                    .Justification(ETextJustify::Left)
+                ]
             ]
         ]
         + SWidgetSwitcher::Slot()

@@ -222,6 +222,8 @@ public:
     const TArray<FUEAIAgentChatHistoryEntry>& GetActiveChatHistory() const;
     const TArray<FUEAIAgentModelOption>& GetAvailableModels() const;
     const TArray<FUEAIAgentModelOption>& GetPreferredModels() const;
+    FString GetLastContextUsageLabel() const;
+    FString GetLastContextUsageTooltip() const;
     void SetActiveChatId(const FString& ChatId) const;
     FString GetActiveChatId() const;
     FString GetLastPlanSummary() const;
@@ -262,6 +264,7 @@ private:
         const TSharedPtr<FJsonObject>& ResponseJson,
         const TArray<FString>& SelectedActors,
         FString& OutMessage) const;
+    void UpdateContextUsageFromResponse(const TSharedPtr<FJsonObject>& ResponseJson) const;
 
     mutable TArray<FUEAIAgentPlannedSceneAction> PlannedActions;
     mutable FString ActiveSessionId;
@@ -273,4 +276,6 @@ private:
     mutable TArray<FUEAIAgentModelOption> PreferredModels;
     mutable FString ActiveChatId;
     mutable FString LastPlanSummary;
+    mutable FString LastContextUsageLabel;
+    mutable FString LastContextUsageTooltip;
 };

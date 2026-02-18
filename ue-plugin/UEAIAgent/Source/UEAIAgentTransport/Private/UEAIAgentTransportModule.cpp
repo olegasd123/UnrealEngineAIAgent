@@ -79,6 +79,57 @@ namespace
         return TEXT("");
     }
 
+    struct FContextUsageDisplay
+    {
+        FString Label;
+        FString Tooltip;
+    };
+
+    FContextUsageDisplay BuildContextUsageDisplay(const TSharedPtr<FJsonObject>& UsageObj)
+    {
+        FContextUsageDisplay Result;
+        if (!UsageObj.IsValid())
+        {
+            return Result;
+        }
+
+        double UsedPercent = 0.0;
+        const bool bHasPercent = UsageObj->TryGetNumberField(TEXT("usedPercent"), UsedPercent);
+
+        double UsedTokens = 0.0;
+        const bool bHasUsedTokens = UsageObj->TryGetNumberField(TEXT("usedTokens"), UsedTokens);
+
+        double ContextWindowTokens = 0.0;
+        const bool bHasContextWindow = UsageObj->TryGetNumberField(TEXT("contextWindowTokens"), ContextWindowTokens);
+
+        if (!bHasPercent && (!bHasUsedTokens || !bHasContextWindow || ContextWindowTokens <= 0.0))
+        {
+            return Result;
+        }
+
+        if (!bHasPercent && bHasUsedTokens && bHasContextWindow && ContextWindowTokens > 0.0)
+        {
+            UsedPercent = (UsedTokens / ContextWindowTokens) * 100.0;
+        }
+
+        UsedPercent = FMath::Max(0.0, UsedPercent);
+        const int32 RoundedPercent = FMath::Max(0, FMath::RoundToInt(static_cast<float>(UsedPercent)));
+        Result.Label = FString::Printf(TEXT("%d%%"), RoundedPercent);
+
+        if (bHasUsedTokens && bHasContextWindow && ContextWindowTokens > 0.0)
+        {
+            Result.Tooltip = FString::Printf(
+                TEXT("Context: %.0f%% full (%d/%d tokens)"),
+                UsedPercent,
+                FMath::Max(0, FMath::RoundToInt(static_cast<float>(UsedTokens))),
+                FMath::Max(1, FMath::RoundToInt(static_cast<float>(ContextWindowTokens))));
+            return Result;
+        }
+
+        Result.Tooltip = FString::Printf(TEXT("Context: %.0f%%"), UsedPercent);
+        return Result;
+    }
+
     bool IsNearlyZeroValue(float Value)
     {
         return FMath::Abs(Value) <= KINDA_SMALL_NUMBER;
@@ -1664,6 +1715,8 @@ void FUEAIAgentTransportModule::PlanTask(
                     return;
                 }
 
+                UpdateContextUsageFromResponse(ResponseJson);
+
                 const TSharedPtr<FJsonObject>* PlanObj = nullptr;
                 if (!ResponseJson->TryGetObjectField(TEXT("plan"), PlanObj) || !PlanObj || !PlanObj->IsValid())
                 {
@@ -1800,6 +1853,8 @@ bool FUEAIAgentTransportModule::ParseSessionDecision(
         OutMessage = ErrorMessage;
         return false;
     }
+
+    UpdateContextUsageFromResponse(ResponseJson);
 
     const TSharedPtr<FJsonObject>* DecisionObj = nullptr;
     if (!ResponseJson->TryGetObjectField(TEXT("decision"), DecisionObj) || !DecisionObj || !DecisionObj->IsValid())
@@ -2618,6 +2673,8 @@ void FUEAIAgentTransportModule::RefreshChats(bool bIncludeArchived, const FOnUEA
                     {
                         ActiveChatId.Empty();
                         ActiveChatHistory.Empty();
+                        LastContextUsageLabel.Reset();
+                        LastContextUsageTooltip.Reset();
                     }
                 }
 
@@ -3019,6 +3076,8 @@ void FUEAIAgentTransportModule::DeleteChat(const FString& ChatId, const FOnUEAIA
                 {
                     ActiveChatId.Empty();
                     ActiveChatHistory.Empty();
+                    LastContextUsageLabel.Reset();
+                    LastContextUsageTooltip.Reset();
                 }
                 Chats.RemoveAll([&ChatId](const FUEAIAgentChatSummary& Existing)
                 {
@@ -3037,6 +3096,8 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
     if (ActiveChatId.IsEmpty())
     {
         ActiveChatHistory.Empty();
+        LastContextUsageLabel.Reset();
+        LastContextUsageTooltip.Reset();
         Callback.ExecuteIfBound(true, TEXT("No active chat selected."));
         return;
     }
@@ -3077,6 +3138,8 @@ void FUEAIAgentTransportModule::LoadActiveChatHistory(int32 Limit, const FOnUEAI
                     Callback.ExecuteIfBound(false, ErrorMessage);
                     return;
                 }
+
+                UpdateContextUsageFromResponse(ResponseJson);
 
                 ActiveChatHistory.Empty();
                 auto ParseDetails = [this](const TArray<TSharedPtr<FJsonValue>>& SourceItems)
@@ -3269,8 +3332,23 @@ const TArray<FUEAIAgentModelOption>& FUEAIAgentTransportModule::GetPreferredMode
     return PreferredModels;
 }
 
+FString FUEAIAgentTransportModule::GetLastContextUsageLabel() const
+{
+    return LastContextUsageLabel;
+}
+
+FString FUEAIAgentTransportModule::GetLastContextUsageTooltip() const
+{
+    return LastContextUsageTooltip;
+}
+
 void FUEAIAgentTransportModule::SetActiveChatId(const FString& ChatId) const
 {
+    if (ActiveChatId != ChatId)
+    {
+        LastContextUsageLabel.Reset();
+        LastContextUsageTooltip.Reset();
+    }
     ActiveChatId = ChatId;
 }
 
@@ -3685,6 +3763,26 @@ int32 FUEAIAgentTransportModule::GetNextPendingActionIndex() const
 bool FUEAIAgentTransportModule::HasActiveSession() const
 {
     return !ActiveSessionId.IsEmpty();
+}
+
+void FUEAIAgentTransportModule::UpdateContextUsageFromResponse(const TSharedPtr<FJsonObject>& ResponseJson) const
+{
+    LastContextUsageLabel.Reset();
+    LastContextUsageTooltip.Reset();
+    if (!ResponseJson.IsValid())
+    {
+        return;
+    }
+
+    const TSharedPtr<FJsonObject>* ContextUsageObj = nullptr;
+    if (!ResponseJson->TryGetObjectField(TEXT("contextUsage"), ContextUsageObj) || !ContextUsageObj || !ContextUsageObj->IsValid())
+    {
+        return;
+    }
+
+    const FContextUsageDisplay Display = BuildContextUsageDisplay(*ContextUsageObj);
+    LastContextUsageLabel = Display.Label;
+    LastContextUsageTooltip = Display.Tooltip;
 }
 
 IMPLEMENT_MODULE(FUEAIAgentTransportModule, UEAIAgentTransport)

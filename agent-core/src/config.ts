@@ -32,6 +32,16 @@ const MaxTokensSchema = z.preprocess(
   z.number().int().min(1)
 );
 
+const ContextWindowTokensSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+    return Number(value);
+  },
+  z.number().int().min(1).optional()
+);
+
 const PositiveIntSchema = z.preprocess(
   (value) => {
     if (value === undefined || value === null || value === "") {
@@ -63,16 +73,19 @@ const RawEnvSchema = z.object({
   OPENAI_BASE_URL: z.string().trim().optional(),
   OPENAI_TEMPERATURE: TemperatureSchema,
   OPENAI_MAX_TOKENS: MaxTokensSchema,
+  OPENAI_CONTEXT_WINDOW_TOKENS: ContextWindowTokensSchema,
 
   GEMINI_API_KEY: z.string().trim().optional(),
   GEMINI_BASE_URL: z.string().trim().optional(),
   GEMINI_TEMPERATURE: TemperatureSchema,
   GEMINI_MAX_TOKENS: MaxTokensSchema,
+  GEMINI_CONTEXT_WINDOW_TOKENS: ContextWindowTokensSchema,
 
   LOCAL_API_KEY: z.string().trim().optional(),
   LOCAL_BASE_URL: z.string().trim().optional(),
   LOCAL_TEMPERATURE: TemperatureSchema,
   LOCAL_MAX_TOKENS: MaxTokensSchema,
+  LOCAL_CONTEXT_WINDOW_TOKENS: ContextWindowTokensSchema,
 
   AGENT_POLICY_MAX_CREATE_COUNT: PositiveIntSchema.default(50),
   AGENT_POLICY_MAX_DUPLICATE_COUNT: PositiveIntSchema.default(10),
@@ -102,6 +115,7 @@ export interface ProviderRuntimeConfig {
   baseUrl?: string;
   temperature: number;
   maxTokens: number;
+  contextWindowTokens: number;
 }
 
 export interface ProviderBaseRuntimeConfig {
@@ -109,6 +123,7 @@ export interface ProviderBaseRuntimeConfig {
   baseUrl?: string;
   temperature: number;
   maxTokens: number;
+  contextWindowTokens: number;
 }
 
 export interface PolicyRuntimeConfig {
@@ -133,19 +148,22 @@ export const config = {
       apiKey: optionalNonEmpty(env.OPENAI_API_KEY),
       baseUrl: optionalNonEmpty(env.OPENAI_BASE_URL),
       temperature: env.OPENAI_TEMPERATURE,
-      maxTokens: env.OPENAI_MAX_TOKENS
+      maxTokens: env.OPENAI_MAX_TOKENS,
+      contextWindowTokens: env.OPENAI_CONTEXT_WINDOW_TOKENS ?? 128_000
     },
     gemini: {
       apiKey: optionalNonEmpty(env.GEMINI_API_KEY),
       baseUrl: optionalNonEmpty(env.GEMINI_BASE_URL),
       temperature: env.GEMINI_TEMPERATURE,
-      maxTokens: env.GEMINI_MAX_TOKENS
+      maxTokens: env.GEMINI_MAX_TOKENS,
+      contextWindowTokens: env.GEMINI_CONTEXT_WINDOW_TOKENS ?? 1_048_576
     },
     local: {
       apiKey: optionalNonEmpty(env.LOCAL_API_KEY),
       baseUrl: optionalNonEmpty(env.LOCAL_BASE_URL),
       temperature: env.LOCAL_TEMPERATURE,
-      maxTokens: env.LOCAL_MAX_TOKENS
+      maxTokens: env.LOCAL_MAX_TOKENS,
+      contextWindowTokens: env.LOCAL_CONTEXT_WINDOW_TOKENS ?? 8_192
     }
   },
   policy: {

@@ -15,7 +15,8 @@ import {
   SessionStartRequestSchema,
   TaskRequestSchema
 } from "./contracts.js";
-import { ChatStore } from "./chats/chatStore.js";
+import { ChatStore, type ChatDetailEntry } from "./chats/chatStore.js";
+import { estimateContextUsageFromChatDetails, type ContextUsageSnapshot } from "./chats/contextUsage.js";
 import { hasWriteIntent, resolveContextWithChatMemory, resolvePromptWithChatMemory } from "./chats/contextMemory.js";
 import { config } from "./config.js";
 import { CredentialStore } from "./credentials/credentialStore.js";
@@ -479,6 +480,33 @@ function appendAssistantDetail(
   });
 }
 
+function buildContextUsageFromDetails(
+  details: ChatDetailEntry[],
+  provider?: ProviderName,
+  model?: string
+): ContextUsageSnapshot | undefined {
+  return estimateContextUsageFromChatDetails(
+    details,
+    {
+      openai: config.providers.openai.contextWindowTokens,
+      gemini: config.providers.gemini.contextWindowTokens,
+      local: config.providers.local.contextWindowTokens
+    },
+    provider,
+    model
+  );
+}
+
+function buildContextUsageForChat(chatId: string, provider?: ProviderName, model?: string): ContextUsageSnapshot | undefined {
+  let details: ChatDetailEntry[];
+  try {
+    details = chatStore.listDetails(chatId);
+  } catch {
+    return undefined;
+  }
+  return buildContextUsageFromDetails(details, provider, model);
+}
+
 function hasWritePlanActions(plan: PlanOutput): boolean {
   return plan.actions.some((action) => action.command !== "context.getSceneSummary" && action.command !== "context.getSelection");
 }
@@ -629,9 +657,18 @@ const server = http.createServer(async (req, res) => {
         requestedLimit !== undefined && Number.isFinite(requestedLimit) && Math.trunc(requestedLimit) > 0
           ? Math.trunc(requestedLimit)
           : undefined;
+      const providerParam = requestUrl.searchParams.get("provider");
+      const modelParam = requestUrl.searchParams.get("model");
       try {
         const details = chatStore.listDetails(chatRoute.chatId, normalizedLimit);
-        return sendJson(res, 200, { ok: true, count: details.length, details });
+        const detailsForUsage = normalizedLimit ? chatStore.listDetails(chatRoute.chatId) : details;
+        const parsedProvider = providerParam ? ProviderSchema.safeParse(providerParam) : undefined;
+        const contextUsage = buildContextUsageFromDetails(
+          detailsForUsage,
+          parsedProvider?.success ? parsedProvider.data : undefined,
+          modelParam ?? undefined
+        );
+        return sendJson(res, 200, { ok: true, count: details.length, details, contextUsage });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
         return sendJson(res, errorStatusCode(error), { ok: false, error: message });
@@ -845,7 +882,10 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, decision, assistantText: noActionAssistantText });
+      const contextUsage = parsed.chatId
+        ? buildContextUsageForChat(parsed.chatId, selectedProvider, selectedModel)
+        : undefined;
+      return sendJson(res, 200, { ok: true, requestId, decision, assistantText: noActionAssistantText, contextUsage });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
@@ -910,7 +950,8 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, decision });
+      const contextUsage = parsed.chatId ? buildContextUsageForChat(parsed.chatId) : undefined;
+      return sendJson(res, 200, { ok: true, requestId, decision, contextUsage });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
@@ -975,7 +1016,8 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, decision });
+      const contextUsage = parsed.chatId ? buildContextUsageForChat(parsed.chatId) : undefined;
+      return sendJson(res, 200, { ok: true, requestId, decision, contextUsage });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
@@ -1040,7 +1082,8 @@ const server = http.createServer(async (req, res) => {
         console.warn("Session log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, decision });
+      const contextUsage = parsed.chatId ? buildContextUsageForChat(parsed.chatId) : undefined;
+      return sendJson(res, 200, { ok: true, requestId, decision, contextUsage });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
@@ -1144,7 +1187,8 @@ const server = http.createServer(async (req, res) => {
         console.warn("Task log write failed:", logError);
       }
 
-      return sendJson(res, 200, { ok: true, requestId, plan, assistantText: noActionAssistantText });
+      const contextUsage = parsed.chatId ? buildContextUsageForChat(parsed.chatId, selectedProvider, selectedModel) : undefined;
+      return sendJson(res, 200, { ok: true, requestId, plan, assistantText: noActionAssistantText, contextUsage });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       try {
