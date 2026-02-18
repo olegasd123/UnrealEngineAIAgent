@@ -59,64 +59,6 @@ function toByNameIfSelectionTargeted(plan: PlanOutput, actorNames: string[]): nu
   return rewrites;
 }
 
-type NatureIslandPromptHints = {
-  mountainStyle?: "sharp_peaks" | "hills";
-  mountainCount?: number;
-};
-
-function parseNatureIslandPromptHints(prompt: string): NatureIslandPromptHints | null {
-  const lower = prompt.toLowerCase();
-  if (!/(island|nature|natural)/.test(lower)) {
-    return null;
-  }
-
-  const hasHillHint = /\bhills?\b/i.test(prompt);
-  const hasSharpPeakHint = /\b(sharp\s+peaks?|sharp\s+(?:mountains?|mountians?)|spiky\s+(?:mountains?|mountians?)|jagged\s+(?:mountains?|mountians?))\b/i.test(
-    prompt
-  );
-  const mountainStyle = hasHillHint && !hasSharpPeakHint
-    ? "hills"
-    : hasSharpPeakHint
-    ? "sharp_peaks"
-    : undefined;
-
-  const mountainMatch =
-    /\b(\d+)\s+(?:mountains?|mountians?|hills?)\b/i.exec(prompt) ??
-    /\b(?:mountains?|mountians?|hills?)\s*(?:count|num(?:ber)?)?\s*(?:to|=|:)?\s*(\d+)\b/i.exec(prompt);
-  const parsedMountainCount = mountainMatch ? Number(mountainMatch[1]) : Number.NaN;
-  const mountainCount = Number.isFinite(parsedMountainCount)
-    ? Math.max(1, Math.min(8, Math.trunc(parsedMountainCount)))
-    : undefined;
-
-  if (mountainStyle === undefined && mountainCount === undefined) {
-    return null;
-  }
-  return { mountainStyle, mountainCount };
-}
-
-function applyLandscapePromptHints(intent: NormalizedIntent, plan: PlanOutput): number {
-  const hints = parseNatureIslandPromptHints(intent.input.prompt);
-  if (!hints) {
-    return 0;
-  }
-
-  let rewrites = 0;
-  for (const action of plan.actions) {
-    if (action.command !== "landscape.generate" || action.params.theme !== "nature_island") {
-      continue;
-    }
-    if (hints.mountainStyle && action.params.mountainStyle !== hints.mountainStyle) {
-      action.params.mountainStyle = hints.mountainStyle;
-      rewrites += 1;
-    }
-    if (hints.mountainCount !== undefined && action.params.mountainCount !== hints.mountainCount) {
-      action.params.mountainCount = hints.mountainCount;
-      rewrites += 1;
-    }
-  }
-  return rewrites;
-}
-
 function normalizeRisk(action: PlanOutput["actions"][number]): boolean {
   if (
     action.command === "context.getSceneSummary" ||
@@ -292,7 +234,6 @@ export class ValidationLayer {
     const notes: string[] = [];
     const rememberedSelectionNames = readContextSelectionNames(intent);
     const rewrittenActions = toByNameIfSelectionTargeted(plan, rememberedSelectionNames);
-    const rewrittenLandscapeHints = applyLandscapePromptHints(intent, plan);
     let normalizedRiskActions = 0;
     for (const action of plan.actions) {
       if (normalizeRisk(action)) {
@@ -307,9 +248,6 @@ export class ValidationLayer {
     }
     if (rewrittenActions > 0) {
       notes.push(`Rewrote ${rewrittenActions} selection-targeted action(s) to byName using context selection.`);
-    }
-    if (rewrittenLandscapeHints > 0) {
-      notes.push(`Applied ${rewrittenLandscapeHints} landscape hint value(s) from prompt.`);
     }
     if (normalizedRiskActions > 0) {
       notes.push(`Normalized risk to low for ${normalizedRiskActions} safe action(s).`);

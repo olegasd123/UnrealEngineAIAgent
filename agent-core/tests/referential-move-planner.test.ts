@@ -393,49 +393,6 @@ test("Validation normalizes context action risk to low", () => {
   assert.equal(validated.plan.actions[0]?.risk, "low");
 });
 
-test("Validation applies explicit nature island hill hints from prompt", () => {
-  const request: TaskRequest = {
-    prompt: "create a nature island with 3 hills",
-    mode: "chat",
-    context: {}
-  };
-  const intent = new IntentLayer().normalize(request);
-  const validator = new ValidationLayer();
-
-  const candidate = {
-    summary: "generate island",
-    steps: ["step"],
-    actions: [
-      {
-        command: "landscape.generate",
-        params: {
-          target: "selection",
-          theme: "nature_island",
-          useFullArea: true,
-          mountainStyle: "sharp_peaks",
-          mountainCount: 1
-        },
-        risk: "medium"
-      }
-    ],
-    goal: { id: "g1", description: "d", priority: "medium" },
-    subgoals: [],
-    checks: [],
-    stopConditions: [{ type: "all_checks_passed" }]
-  };
-
-  const validated = validator.validatePlan(intent, candidate);
-  const action = validated.plan.actions[0];
-  assert.equal(action.command, "landscape.generate");
-  if (action.command !== "landscape.generate") {
-    return;
-  }
-
-  assert.equal(action.params.theme, "nature_island");
-  assert.equal(action.params.mountainStyle, "hills");
-  assert.equal(action.params.mountainCount, 3);
-});
-
 test("Validation normalizes context-only summary text", () => {
   const request: TaskRequest = {
     prompt: "what is selected right now?",

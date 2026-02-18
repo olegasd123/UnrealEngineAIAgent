@@ -2787,13 +2787,15 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
             MountainRadiusMax = FMath::Clamp(MountainRadiusMax, MountainRadiusMin, 0.48f);
 
             NatureMountains.Reserve(MountainCount);
-            const float PlacementRadiusMin = bHillsProfile ? 0.05f : 0.0f;
-            const float PlacementRadiusMax = bHillsProfile ? 0.34f : 0.22f;
-            const float MinSpacingScale = bHillsProfile ? 0.72f : 0.55f;
-            const int32 PlacementAttempts = bHillsProfile ? 16 : 10;
             for (int32 MountainIndex = 0; MountainIndex < MountainCount; ++MountainIndex)
             {
+                const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
+                const float RadiusOffset = Stream.FRandRange(0.0f, 0.22f);
+                const FVector2D Center(0.5f + RadiusOffset * FMath::Cos(Angle), 0.5f + RadiusOffset * FMath::Sin(Angle));
                 FNatureMountainFeature Mountain;
+                Mountain.Center = FVector2D(
+                    FMath::Clamp(Center.X, 0.08f, 0.92f),
+                    FMath::Clamp(Center.Y, 0.08f, 0.92f));
                 Mountain.Radius = Stream.FRandRange(MountainRadiusMin, MountainRadiusMax);
                 Mountain.Amplitude = bHillsProfile
                     ? Stream.FRandRange(0.45f, 0.95f)
@@ -2801,56 +2803,6 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
                 Mountain.Sharpness = bHillsProfile
                     ? Stream.FRandRange(0.80f, 1.40f)
                     : Stream.FRandRange(3.00f, 5.00f);
-
-                FVector2D BestCenter = FVector2D(0.5f, 0.5f);
-                float BestGapScore = TNumericLimits<float>::Lowest();
-
-                for (int32 Attempt = 0; Attempt < PlacementAttempts; ++Attempt)
-                {
-                    const float Angle = Stream.FRandRange(0.0f, 2.0f * PI);
-                    const float RadiusOffset = Stream.FRandRange(PlacementRadiusMin, PlacementRadiusMax);
-                    const FVector2D UnclampedCenter(
-                        0.5f + RadiusOffset * FMath::Cos(Angle),
-                        0.5f + RadiusOffset * FMath::Sin(Angle));
-                    const FVector2D CandidateCenter(
-                        FMath::Clamp(UnclampedCenter.X, 0.08f, 0.92f),
-                        FMath::Clamp(UnclampedCenter.Y, 0.08f, 0.92f));
-
-                    if (NatureMountains.IsEmpty())
-                    {
-                        BestCenter = CandidateCenter;
-                        break;
-                    }
-
-                    bool bTooClose = false;
-                    float NearestGap = TNumericLimits<float>::Max();
-                    for (const FNatureMountainFeature& ExistingMountain : NatureMountains)
-                    {
-                        const float RequiredSpacing = (ExistingMountain.Radius + Mountain.Radius) * MinSpacingScale;
-                        const float Distance = FVector2D::Distance(CandidateCenter, ExistingMountain.Center);
-                        const float Gap = Distance - RequiredSpacing;
-                        NearestGap = FMath::Min(NearestGap, Gap);
-                        if (Gap < 0.0f)
-                        {
-                            bTooClose = true;
-                        }
-                    }
-
-                    if (!bTooClose)
-                    {
-                        BestCenter = CandidateCenter;
-                        break;
-                    }
-
-                    if (NearestGap > BestGapScore)
-                    {
-                        BestGapScore = NearestGap;
-                        BestCenter = CandidateCenter;
-                    }
-                }
-
-                // Fallback uses the least-overlapping sampled position.
-                Mountain.Center = BestCenter;
                 NatureMountains.Add(Mountain);
             }
         }
