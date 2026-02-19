@@ -127,6 +127,7 @@ private:
         const FString& Mode,
         const FString& Provider,
         const FString& Model);
+    void AppendPanelStatusToHistory(const FString& StatusText, bool bPersistToChat = false);
     bool TryRestoreLatestChatFromTransport();
     void RebuildModelUi();
     FString BuildModelOptionKey(const FUEAIAgentModelOption& Option) const;
@@ -182,7 +183,6 @@ private:
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<SButton> RunButton;
     TSharedPtr<SButton> ResumeButton;
-    TSharedPtr<SEditableText> PlanText;
     int32 PromptVisibleLineCount = 1;
     FString CachedSelectionSummary;
     TArray<FString> LastNonEmptySelection;

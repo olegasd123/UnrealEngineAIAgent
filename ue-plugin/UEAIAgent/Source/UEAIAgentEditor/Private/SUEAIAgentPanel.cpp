@@ -912,19 +912,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 4.0f, 8.0f, 8.0f)
-            [
-                SNew(SBox)
-                .MinDesiredHeight(0.0f)
-                [
-                    SAssignNew(PlanText, SEditableText)
-                    .IsReadOnly(true)
-                    .Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-                    .Text(FText::FromString(TEXT("Ready to start")))
-                ]
-            ]
-            + SVerticalBox::Slot()
-            .AutoHeight()
             .Padding(8.0f, 0.0f, 8.0f, 8.0f)
             [
                 SNew(SBox)
@@ -1361,7 +1348,7 @@ FReply SUEAIAgentPanel::OnBackToMainClicked()
 
 FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
 {
-    if (!PromptInput.IsValid() || !PlanText.IsValid())
+    if (!PromptInput.IsValid())
     {
         return FReply::Handled();
     }
@@ -1374,7 +1361,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     const FString Prompt = PromptInput->GetText().ToString().TrimStartAndEnd();
     if (Prompt.IsEmpty())
     {
-        PlanText->SetText(FText::FromString(TEXT("Plan: please enter a prompt first.")));
+        AppendPanelStatusToHistory(TEXT("Please enter a prompt first."));
         return FReply::Handled();
     }
 
@@ -1393,7 +1380,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     const FString Model = GetSelectedModelName();
     if (Provider.IsEmpty() || Model.IsEmpty())
     {
-        PlanText->SetText(FText::FromString(TEXT("Plan: please select a model in Settings first.")));
+        AppendPanelStatusToHistory(TEXT("Please select a model in Settings first."));
         return FReply::Handled();
     }
 
@@ -1420,11 +1407,7 @@ void SUEAIAgentPanel::EnsureActiveChatAndRun(
         RunWithActiveChat(Prompt, Mode, RequestActors, Provider, Model);
         return;
     }
-
-    if (PlanText.IsValid())
-    {
-        PlanText->SetText(FText::FromString(TEXT("Chat: loading...")));
-    }
+    AppendPanelStatusToHistory(TEXT("Loading..."));
 
     bIsRefreshingChats = true;
     ChatListErrorMessage.Reset();
@@ -1437,10 +1420,7 @@ void SUEAIAgentPanel::EnsureActiveChatAndRun(
             if (!bOk)
             {
                 bIsRunInFlight = false;
-                if (PlanText.IsValid())
-                {
-                    PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
-                }
+                AppendPanelStatusToHistory(TEXT("Error\n") + Message, true);
                 return;
             }
 
@@ -1450,10 +1430,7 @@ void SUEAIAgentPanel::EnsureActiveChatAndRun(
                 return;
             }
 
-            if (PlanText.IsValid())
-            {
-                PlanText->SetText(FText::FromString(TEXT("Chat: creating...")));
-            }
+            AppendPanelStatusToHistory(TEXT("Creating..."));
 
             bIsRefreshingChats = true;
             ChatListErrorMessage.Reset();
@@ -1466,10 +1443,7 @@ void SUEAIAgentPanel::EnsureActiveChatAndRun(
                     if (!bCreateOk)
                     {
                         bIsRunInFlight = false;
-                        if (PlanText.IsValid())
-                        {
-                            PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + CreateMessage));
-                        }
+                        AppendPanelStatusToHistory(TEXT("Error\n") + CreateMessage, true);
                         return;
                     }
 
@@ -1490,10 +1464,7 @@ void SUEAIAgentPanel::RunWithActiveChat(
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Mode == TEXT("agent"))
     {
-        if (PlanText.IsValid())
-        {
-            PlanText->SetText(FText::FromString(TEXT("Agent: starting session...")));
-        }
+        AppendPanelStatusToHistory(TEXT("Starting session..."));
         Transport.StartSession(
             Prompt,
             TEXT("agent"),
@@ -1504,10 +1475,7 @@ void SUEAIAgentPanel::RunWithActiveChat(
         return;
     }
 
-    if (PlanText.IsValid())
-    {
-        PlanText->SetText(FText::FromString(TEXT("Plan: requesting...")));
-    }
+    AppendPanelStatusToHistory(TEXT("Requesting..."));
     Transport.PlanTask(
         Prompt,
         TEXT("chat"),
@@ -1558,6 +1526,79 @@ void SUEAIAgentPanel::AppendPromptToVisibleHistory(
         RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
     }
     UpdateHistoryStateText();
+}
+
+void SUEAIAgentPanel::AppendPanelStatusToHistory(const FString& StatusText, bool bPersistToChat)
+{
+    const FString MessageText = StatusText.TrimStartAndEnd();
+    if (MessageText.IsEmpty())
+    {
+        return;
+    }
+
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    if (Transport.GetActiveChatId().IsEmpty())
+    {
+        TryRestoreLatestChatFromTransport();
+    }
+
+    if (ChatHistoryItems.Num() > 0)
+    {
+        const TSharedPtr<FUEAIAgentChatHistoryEntry>& LastItem = ChatHistoryItems.Last();
+        if (LastItem.IsValid() &&
+            LastItem->DisplayRole.Equals(TEXT("assistant"), ESearchCase::IgnoreCase) &&
+            LastItem->DisplayText.Equals(MessageText, ESearchCase::CaseSensitive))
+        {
+            return;
+        }
+    }
+
+    FUEAIAgentChatHistoryEntry Entry;
+    Entry.Kind = TEXT("done");
+    Entry.Route = TEXT("/v1/ui/status");
+    Entry.Summary = NormalizeSingleLineStatusText(MessageText);
+    Entry.Provider = GetSelectedModelProvider();
+    Entry.Model = GetSelectedModelName();
+    Entry.ChatType = GetSelectedModeCode();
+    Entry.DisplayRole = TEXT("assistant");
+    Entry.DisplayText = MessageText;
+    Entry.CreatedAt = FDateTime::UtcNow().ToIso8601();
+
+    ChatHistoryItems.Add(MakeShared<FUEAIAgentChatHistoryEntry>(Entry));
+    if (MainChatHistoryListView.IsValid())
+    {
+        MainChatHistoryListView->RequestListRefresh();
+    }
+    ScrollHistoryViewsToBottom();
+    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
+    {
+        bHistoryAutoScrollPending = true;
+        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
+    }
+    UpdateHistoryStateText();
+
+    if (!bPersistToChat || Transport.GetActiveChatId().IsEmpty())
+    {
+        return;
+    }
+
+    const FString PersistSummary = Entry.Summary.IsEmpty() ? MessageText : Entry.Summary;
+    Transport.AppendActiveChatAssistantMessage(
+        Entry.Route,
+        PersistSummary,
+        MessageText,
+        Entry.Provider,
+        Entry.Model,
+        Entry.ChatType,
+        FOnUEAIAgentChatOpFinished::CreateLambda([this](bool bOk, const FString& Message)
+        {
+            (void)Message;
+            if (!bOk)
+            {
+                return;
+            }
+            RefreshActiveChatHistory();
+        }));
 }
 
 bool SUEAIAgentPanel::TryRestoreLatestChatFromTransport()
@@ -1800,15 +1841,10 @@ void SUEAIAgentPanel::PersistPreferredModels()
 
 FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
 {
-    if (!PlanText.IsValid())
-    {
-        return FReply::Handled();
-    }
-
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (Transport.GetPlannedActionCount() == 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Execute: error\nNo planned actions. Use 'Run' first.")));
+        AppendPanelStatusToHistory(TEXT("Execute: error\nNo planned actions. Use 'Run' first."), true);
         return FReply::Handled();
     }
 
@@ -1818,7 +1854,6 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         Transport.ClearPlannedActions();
         UpdateActionApprovalUi();
         const FString StatusMessage = TEXT("Canceled.");
-        PlanText->SetText(FText::FromString(StatusMessage));
         AppendChatOutcomeToHistory(StatusMessage);
         return FReply::Handled();
     }
@@ -1858,7 +1893,6 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         const FString StatusMessage = (ApprovedActions.Num() == 1 && !LastSuccessMessage.IsEmpty())
             ? LastSuccessMessage
             : TEXT("Completed.");
-        PlanText->SetText(FText::FromString(StatusMessage));
         AppendChatOutcomeToHistory(StatusMessage);
     }
     else
@@ -1872,7 +1906,6 @@ FReply SUEAIAgentPanel::OnApplyPlannedActionClicked()
         {
             StatusMessage = FString::Printf(TEXT("Failed: %s"), *FirstFailureReason);
         }
-        PlanText->SetText(FText::FromString(StatusMessage));
         AppendChatOutcomeToHistory(StatusMessage);
     }
 
@@ -1905,12 +1938,8 @@ FReply SUEAIAgentPanel::OnRejectAllClicked()
     {
         Transport.ClearPlannedActions();
         UpdateActionApprovalUi();
-        if (PlanText.IsValid())
-        {
-            const FString StatusMessage = TEXT("Canceled.");
-            PlanText->SetText(FText::FromString(StatusMessage));
-            AppendChatOutcomeToHistory(StatusMessage);
-        }
+        const FString StatusMessage = TEXT("Canceled.");
+        AppendChatOutcomeToHistory(StatusMessage);
         return FReply::Handled();
     }
 
@@ -1925,15 +1954,10 @@ FReply SUEAIAgentPanel::OnRejectAllClicked()
 
 FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
 {
-    if (!PlanText.IsValid())
-    {
-        return FReply::Handled();
-    }
-
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (!Transport.HasActiveSession())
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run first.")));
+        AppendPanelStatusToHistory(TEXT("No active session. Click Run first."), true);
         return FReply::Handled();
     }
     if (bIsResumeInFlight)
@@ -1946,7 +1970,7 @@ FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
     if (PendingActionIndex != INDEX_NONE && !Transport.IsPlannedActionApproved(PendingActionIndex))
     {
         bIsResumeInFlight = false;
-        PlanText->SetText(FText::FromString(TEXT("Agent: pending action is not approved. Check it or click Reject.")));
+        AppendPanelStatusToHistory(TEXT("Pending action is not approved. Check it or click Reject."), true);
         return FReply::Handled();
     }
 
@@ -1970,15 +1994,10 @@ FReply SUEAIAgentPanel::OnResumeAgentLoopClicked()
 
 FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
 {
-    if (!PlanText.IsValid())
-    {
-        return FReply::Handled();
-    }
-
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
     if (!Transport.HasActiveSession())
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: no active session. Click Run first.")));
+        AppendPanelStatusToHistory(TEXT("No active session. Click Run first."), true);
         return FReply::Handled();
     }
 
@@ -1990,7 +2009,7 @@ FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
         return FReply::Handled();
     }
 
-    PlanText->SetText(FText::FromString(TEXT("Agent: rejecting action...")));
+    AppendPanelStatusToHistory(TEXT("Rejecting action..."));
     TryRollbackInternalTransaction();
     Transport.ApproveCurrentSessionAction(
         false,
@@ -2001,11 +2020,6 @@ FReply SUEAIAgentPanel::OnRejectCurrentActionClicked()
 
 void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
 {
-    if (!PlanText.IsValid())
-    {
-        return;
-    }
-
     FString DisplayMessage = Message;
     const FString ProviderPrefix = TEXT("Provider:");
     int32 ProviderIndex = INDEX_NONE;
@@ -2021,22 +2035,17 @@ void SUEAIAgentPanel::HandleHealthResult(bool bOk, const FString& Message)
 
     if (!bOk)
     {
-        PlanText->SetText(FText::FromString(DisplayMessage));
+        AppendPanelStatusToHistory(DisplayMessage);
     }
 }
 
 void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 {
-    if (!PlanText.IsValid())
-    {
-        return;
-    }
-
     bIsRunInFlight = false;
     CurrentSessionStatus = ESessionStatus::Unknown;
     if (!bOk)
     {
-        PlanText->SetText(FText::FromString(TEXT("Plan: error\n") + Message));
+        AppendPanelStatusToHistory(TEXT("Error\n") + Message, true);
         RefreshActiveChatHistory();
         return;
     }
@@ -2056,11 +2065,11 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 
     if (ActionCount <= 0)
     {
-        PlanText->SetText(FText::FromString(TEXT("Done")));
+        AppendPanelStatusToHistory(TEXT("Done"), true);
     }
     else
     {
-        PlanText->SetText(FText::FromString(Message));
+        AppendPanelStatusToHistory(Message, true);
     }
     RefreshActiveChatHistory();
     if (!bIsRefreshingChats && ShouldRefreshChatsForAutoTitle(Transport))
@@ -2071,11 +2080,6 @@ void SUEAIAgentPanel::HandlePlanResult(bool bOk, const FString& Message)
 
 void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
 {
-    if (!PlanText.IsValid())
-    {
-        return;
-    }
-
     bIsRunInFlight = false;
     bIsResumeInFlight = false;
     FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
@@ -2090,11 +2094,11 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         const FString Reason = NormalizeSingleLineStatusText(Message);
         if (Reason.IsEmpty())
         {
-            PlanText->SetText(FText::FromString(TEXT("Failed")));
+            AppendPanelStatusToHistory(TEXT("Failed"), true);
         }
         else
         {
-            PlanText->SetText(FText::FromString(FString::Printf(TEXT("Failed: %s"), *Reason)));
+            AppendPanelStatusToHistory(FString::Printf(TEXT("Failed: %s"), *Reason), true);
         }
         RefreshActiveChatHistory();
         return;
@@ -2118,18 +2122,18 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         const FString DecisionMessage = ExtractDecisionMessageBody(Message);
         if (IsUserCanceledSessionMessage(DecisionMessage))
         {
-            PlanText->SetText(FText::FromString(TEXT("Canceled")));
+            AppendPanelStatusToHistory(TEXT("Canceled"), true);
         }
         else
         {
             const FString Reason = ExtractFailedReasonFromSessionMessage(Message);
             if (Reason.IsEmpty())
             {
-                PlanText->SetText(FText::FromString(TEXT("Failed")));
+                AppendPanelStatusToHistory(TEXT("Failed"), true);
             }
             else
             {
-                PlanText->SetText(FText::FromString(FString::Printf(TEXT("Failed: %s"), *Reason)));
+                AppendPanelStatusToHistory(FString::Printf(TEXT("Failed: %s"), *Reason), true);
             }
         }
         RefreshActiveChatHistory();
@@ -2138,7 +2142,6 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     if (CurrentSessionStatus == ESessionStatus::Completed)
     {
         TryRollbackInternalTransaction();
-        PlanText->SetText(FText::FromString(TEXT("Completed")));
         RefreshActiveChatHistory();
         return;
     }
@@ -2149,17 +2152,16 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
             const FString DecisionMessage = NormalizeSingleLineStatusText(ExtractDecisionMessageBody(Message));
             if (DecisionMessage.IsEmpty())
             {
-                PlanText->SetText(FText::FromString(TEXT("Agent: no executable action in session update.")));
+                AppendPanelStatusToHistory(TEXT("No executable action in session update."));
             }
             else
             {
-                PlanText->SetText(FText::FromString(
-                    TEXT("Agent: no executable action in session update.\n") + DecisionMessage));
+                AppendPanelStatusToHistory(TEXT("No executable action in session update.\n") + DecisionMessage);
             }
         }
         else
         {
-            PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+            AppendPanelStatusToHistory(TEXT("Update received."));
         }
         RefreshActiveChatHistory();
         return;
@@ -2168,7 +2170,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     const int32 PendingActionIndex = Transport.GetNextPendingActionIndex();
     if (PendingActionIndex == INDEX_NONE)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        AppendPanelStatusToHistory(TEXT("Update received."));
         RefreshActiveChatHistory();
         return;
     }
@@ -2176,28 +2178,26 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     FUEAIAgentPlannedSceneAction NextAction;
     if (!Transport.GetPendingAction(PendingActionIndex, NextAction))
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        AppendPanelStatusToHistory(TEXT("Update received."));
         RefreshActiveChatHistory();
         return;
     }
 
     if (CurrentSessionStatus == ESessionStatus::AwaitingApproval)
     {
-        PlanText->SetText(FText::FromString(TEXT("Pending actions are shown in chat history.")));
         RefreshActiveChatHistory();
         return;
     }
 
     if (CurrentSessionStatus != ESessionStatus::ReadyToExecute)
     {
-        PlanText->SetText(FText::FromString(TEXT("Agent: update received.")));
+        AppendPanelStatusToHistory(TEXT("Update received."));
         RefreshActiveChatHistory();
         return;
     }
 
     if (!NextAction.bApproved)
     {
-        PlanText->SetText(FText::FromString(TEXT("Pending actions are shown in chat history.")));
         RefreshActiveChatHistory();
         return;
     }
@@ -2209,11 +2209,11 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
         TryRollbackInternalTransaction();
         CurrentSessionStatus = ESessionStatus::AwaitingApproval;
         UpdateActionApprovalUi();
-        PlanText->SetText(FText::FromString(TEXT("Agent: local execute failed\n") + ExecuteMessage + TEXT("\nFix selection/target and click Resume.")));
+        AppendPanelStatusToHistory(TEXT("Local execute failed\n") + ExecuteMessage + TEXT("\nFix selection/target and click Resume."), true);
         return;
     }
 
-    PlanText->SetText(FText::FromString(TEXT("Agent: action executed, syncing...")));
+    AppendPanelStatusToHistory(TEXT("Action executed, syncing..."));
     Transport.NextSession(
         true,
         true,
@@ -3106,6 +3106,17 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
     auto BuildApprovalUi = [this]() -> TSharedRef<SWidget>
     {
         TSharedRef<SVerticalBox> ApprovalBody = SNew(SVerticalBox);
+        ApprovalBody->AddSlot()
+        .AutoHeight()
+        .Padding(0.0f, 0.0f, 0.0f, 6.0f)
+        [
+            SNew(SMultiLineEditableText)
+            .IsReadOnly(true)
+            .ClearTextSelectionOnFocusLoss(false)
+            .AutoWrapText(true)
+            .Text(FText::FromString(TEXT("Pending actions are shown in this chat. Review and confirm below.")))
+        ];
+
         ApprovalBody->AddSlot()
         .AutoHeight()
         .Padding(0.0f, 0.0f, 0.0f, 6.0f)
