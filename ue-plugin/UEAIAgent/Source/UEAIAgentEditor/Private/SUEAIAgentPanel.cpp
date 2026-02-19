@@ -995,7 +995,10 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                         SAssignNew(RunButton, SButton)
                         .IsEnabled_Lambda([this]()
                         {
-                            return !bIsRunInFlight;
+                            FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+                            const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+                                Transport.GetNextPendingActionIndex() != INDEX_NONE;
+                            return !bIsRunInFlight && !bHasPendingSessionAction;
                         })
                         .Text_Lambda([this]()
                         {
@@ -1275,7 +1278,15 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
         return FReply::Handled();
     }
 
-    CurrentSessionStatus = ESessionStatus::Unknown;
+    FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
+    const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
+        Transport.GetNextPendingActionIndex() != INDEX_NONE;
+    if (bHasPendingSessionAction)
+    {
+        AppendPanelStatusToHistory(TEXT("Confirm or reject the pending action before starting a new run."));
+        return FReply::Handled();
+    }
+
     const FString Prompt = PromptInput->GetText().ToString().TrimStartAndEnd();
     if (Prompt.IsEmpty())
     {
@@ -1303,6 +1314,7 @@ FReply SUEAIAgentPanel::OnRunWithSelectionClicked()
     }
 
     PromptInput->SetText(FText::GetEmpty());
+    CurrentSessionStatus = ESessionStatus::Unknown;
     bIsRunInFlight = true;
     EnsureActiveChatAndRun(
         Prompt,
@@ -1438,11 +1450,7 @@ void SUEAIAgentPanel::AppendPromptToVisibleHistory(
         MainChatHistoryListView->RequestListRefresh();
     }
     ScrollHistoryViewsToBottom();
-    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
-    {
-        bHistoryAutoScrollPending = true;
-        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
-    }
+    ScheduleHistoryAutoScroll(2);
     UpdateHistoryStateText();
 }
 
@@ -1488,11 +1496,7 @@ void SUEAIAgentPanel::AppendPanelStatusToHistory(const FString& StatusText, bool
         MainChatHistoryListView->RequestListRefresh();
     }
     ScrollHistoryViewsToBottom();
-    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
-    {
-        bHistoryAutoScrollPending = true;
-        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
-    }
+    ScheduleHistoryAutoScroll(2);
     UpdateHistoryStateText();
 
     if (!bPersistToChat || Transport.GetActiveChatId().IsEmpty())
@@ -2038,11 +2042,7 @@ void SUEAIAgentPanel::HandleSessionUpdate(bool bOk, const FString& Message)
     {
         TryRollbackInternalTransaction();
         const FString DecisionMessage = ExtractDecisionMessageBody(Message);
-        if (IsUserCanceledSessionMessage(DecisionMessage))
-        {
-            AppendPanelStatusToHistory(TEXT("Canceled"), true);
-        }
-        else
+        if (!IsUserCanceledSessionMessage(DecisionMessage))
         {
             const FString Reason = ExtractFailedReasonFromSessionMessage(Message);
             if (Reason.IsEmpty())
@@ -2658,11 +2658,25 @@ void SUEAIAgentPanel::RebuildHistoryItems()
     }
 
     ScrollHistoryViewsToBottom();
-    if (!bHistoryAutoScrollPending && ChatHistoryItems.Num() > 0)
+    ScheduleHistoryAutoScroll(2);
+}
+
+void SUEAIAgentPanel::ScheduleHistoryAutoScroll(int32 MinimumPasses)
+{
+    if (ChatHistoryItems.Num() <= 0)
     {
-        bHistoryAutoScrollPending = true;
-        RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
+        return;
     }
+
+    const int32 RequestedPasses = FMath::Max(1, MinimumPasses);
+    PendingHistoryScrollPasses = FMath::Max(PendingHistoryScrollPasses, RequestedPasses);
+    if (bHistoryAutoScrollPending)
+    {
+        return;
+    }
+
+    bHistoryAutoScrollPending = true;
+    RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SUEAIAgentPanel::HandleDeferredHistoryScroll));
 }
 
 void SUEAIAgentPanel::ScrollHistoryViewsToBottom()
@@ -2672,11 +2686,9 @@ void SUEAIAgentPanel::ScrollHistoryViewsToBottom()
         return;
     }
 
-    const TSharedPtr<FUEAIAgentChatHistoryEntry> LastItem = ChatHistoryItems.Last();
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->ScrollToBottom();
-        MainChatHistoryListView->RequestScrollIntoView(LastItem);
     }
 }
 
@@ -2688,6 +2700,7 @@ void SUEAIAgentPanel::RefreshActiveChatHistory()
     {
         bIsLoadingHistory = false;
         bHistoryAutoScrollPending = false;
+        PendingHistoryScrollPasses = 0;
         HistoryErrorMessage.Reset();
         ChatHistoryItems.Empty();
         if (MainChatHistoryListView.IsValid())
@@ -2709,8 +2722,14 @@ EActiveTimerReturnType SUEAIAgentPanel::HandleDeferredHistoryScroll(double InCur
     (void)InCurrentTime;
     (void)InDeltaTime;
 
-    bHistoryAutoScrollPending = false;
     ScrollHistoryViewsToBottom();
+    PendingHistoryScrollPasses = FMath::Max(0, PendingHistoryScrollPasses - 1);
+    if (PendingHistoryScrollPasses > 0)
+    {
+        return EActiveTimerReturnType::Continue;
+    }
+
+    bHistoryAutoScrollPending = false;
     return EActiveTimerReturnType::Stop;
 }
 
@@ -3117,7 +3136,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
                     FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
                     const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
                         InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
-                    return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                    return bHasPendingSessionAction
                         ? EVisibility::Visible
                         : EVisibility::Collapsed;
                 })
@@ -3134,7 +3153,7 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
                     FUEAIAgentTransportModule& InnerTransport = FUEAIAgentTransportModule::Get();
                     const bool bHasPendingSessionAction = InnerTransport.HasActiveSession() &&
                         InnerTransport.GetNextPendingActionIndex() != INDEX_NONE;
-                    return bHasPendingSessionAction && CurrentSessionStatus == ESessionStatus::AwaitingApproval
+                    return bHasPendingSessionAction
                         ? EVisibility::Visible
                         : EVisibility::Collapsed;
                 })
@@ -3555,8 +3574,7 @@ bool SUEAIAgentPanel::ShouldShowApprovalUi() const
     if (Transport.HasActiveSession())
     {
         const bool bHasPendingSessionAction = Transport.GetNextPendingActionIndex() != INDEX_NONE;
-        return bHasPendingSessionAction &&
-            CurrentSessionStatus == ESessionStatus::AwaitingApproval;
+        return bHasPendingSessionAction;
     }
 
     return true;
@@ -3572,6 +3590,8 @@ void SUEAIAgentPanel::UpdateActionApprovalUi()
     if (MainChatHistoryListView.IsValid())
     {
         MainChatHistoryListView->RequestListRefresh();
+        ScrollHistoryViewsToBottom();
+        ScheduleHistoryAutoScroll(6);
     }
 }
 

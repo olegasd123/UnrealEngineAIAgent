@@ -136,6 +136,7 @@ private:
     void RefreshChatUiFromTransport(bool bKeepCurrentSelection);
     void RebuildChatListItems();
     void RebuildHistoryItems();
+    void ScheduleHistoryAutoScroll(int32 MinimumPasses);
     void ScrollHistoryViewsToBottom();
     void RefreshActiveChatHistory();
     void UpdateSelectionSummaryText();
@@ -193,6 +194,7 @@ private:
     bool bIsRunInFlight = false;
     bool bIsResumeInFlight = false;
     bool bHistoryAutoScrollPending = false;
+    int32 PendingHistoryScrollPasses = 0;
     bool bSelectNewestChatOnNextRefresh = false;
     bool bPendingRunSelectionRestore = true;
     FString ChatListErrorMessage;

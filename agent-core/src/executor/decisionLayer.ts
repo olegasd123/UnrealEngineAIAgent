@@ -153,6 +153,7 @@ function buildStoppedDecision(
   const totalCount = session.actions.length;
 
   if (stopCondition.type === "all_checks_passed") {
+    const lastSucceeded = [...session.actions].reverse().find((action) => action.state === "succeeded");
     return {
       sessionId: session.id,
       status: "completed",
@@ -161,7 +162,13 @@ function buildStoppedDecision(
       iteration: iterationView(session),
       checks,
       matchedStopCondition: stopCondition,
-      message: `Stopped by stopCondition=all_checks_passed. Progress: ${completedCount}/${totalCount} actions completed.`
+      message: [
+        "Stopped by stopCondition=all_checks_passed.",
+        lastSucceeded?.lastMessage ? `Last result: ${lastSucceeded.lastMessage}` : null,
+        `Progress: ${completedCount}/${totalCount} actions completed.`
+      ]
+        .filter(Boolean)
+        .join(" ")
     };
   }
 
