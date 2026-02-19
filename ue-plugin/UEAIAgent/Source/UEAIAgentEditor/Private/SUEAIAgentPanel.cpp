@@ -912,12 +912,12 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
             ]
             + SVerticalBox::Slot()
             .AutoHeight()
-            .Padding(8.0f, 0.0f, 8.0f, 8.0f)
+            .Padding(8.0f, 4.0f, 8.0f, 8.0f)
             [
                 SNew(SBox)
                 .Visibility_Lambda([this]()
                 {
-                    return (bIsRunInFlight || ShouldShowApprovalUi())
+                    return bIsRunInFlight
                         ? EVisibility::Collapsed
                         : EVisibility::Visible;
                 })
@@ -945,14 +945,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(280.0f)
-                    .Visibility_Lambda([this]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
-                        return (bHasPendingSessionAction || bHasPlannedActions) ? EVisibility::Collapsed : EVisibility::Visible;
-                    })
                     [
                         SAssignNew(ModelCombo, SComboBox<TSharedPtr<FString>>)
                         .OptionsSource(&ModelItems)
@@ -978,14 +970,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(120.0f)
-                    .Visibility_Lambda([this]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
-                        return (bHasPendingSessionAction || bHasPlannedActions) ? EVisibility::Collapsed : EVisibility::Visible;
-                    })
                     [
                         SAssignNew(ModeCombo, SComboBox<TSharedPtr<FString>>)
                         .OptionsSource(&ModeItems)
@@ -1007,14 +991,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                 [
                     SNew(SBox)
                     .WidthOverride(200.0f)
-                    .Visibility_Lambda([this]()
-                    {
-                        FUEAIAgentTransportModule& Transport = FUEAIAgentTransportModule::Get();
-                        const bool bHasPendingSessionAction = Transport.HasActiveSession() &&
-                            Transport.GetNextPendingActionIndex() != INDEX_NONE;
-                        const bool bHasPlannedActions = Transport.GetPlannedActionCount() > 0;
-                        return (bHasPendingSessionAction || bHasPlannedActions) ? EVisibility::Collapsed : EVisibility::Visible;
-                    })
                     [
                         SAssignNew(RunButton, SButton)
                         .IsEnabled_Lambda([this]()
@@ -1026,64 +1002,6 @@ void SUEAIAgentPanel::Construct(const FArguments& InArgs)
                             return FText::FromString(bIsRunInFlight ? TEXT("Run (loading...)") : TEXT("Run"));
                         })
                         .OnClicked(this, &SUEAIAgentPanel::OnRunWithSelectionClicked)
-                    ]
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SBox)
-                    .WidthOverride(220.0f)
-                    .Visibility(EVisibility::Collapsed)
-                    [
-                        SAssignNew(ResumeButton, SButton)
-                        .IsEnabled_Lambda([this]()
-                        {
-                            return !bIsResumeInFlight;
-                        })
-                        .Text_Lambda([this]()
-                        {
-                            return FText::FromString(bIsResumeInFlight ? TEXT("Resume (loading...)") : TEXT("Resume"));
-                        })
-                        .OnClicked(this, &SUEAIAgentPanel::OnResumeAgentLoopClicked)
-                    ]
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(0.0f, 0.0f, 8.0f, 0.0f)
-                [
-                    SNew(SBox)
-                    .WidthOverride(220.0f)
-                    .Visibility(EVisibility::Collapsed)
-                    [
-                        SNew(SButton)
-                        .Text(FText::FromString(TEXT("Reject")))
-                        .OnClicked(this, &SUEAIAgentPanel::OnRejectCurrentActionClicked)
-                    ]
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                [
-                    SNew(SBox)
-                    .WidthOverride(240.0f)
-                    .Visibility(EVisibility::Collapsed)
-                    [
-                        SNew(SButton)
-                        .Text(FText::FromString(TEXT("Apply")))
-                        .OnClicked(this, &SUEAIAgentPanel::OnApplyPlannedActionClicked)
-                    ]
-                ]
-                + SHorizontalBox::Slot()
-                .AutoWidth()
-                .Padding(8.0f, 0.0f, 0.0f, 0.0f)
-                [
-                    SNew(SBox)
-                    .WidthOverride(200.0f)
-                    .Visibility(EVisibility::Collapsed)
-                    [
-                        SNew(SButton)
-                        .Text(FText::FromString(TEXT("Cancel")))
-                        .OnClicked(this, &SUEAIAgentPanel::OnCancelPlannedActionClicked)
                     ]
                 ]
                 + SHorizontalBox::Slot()
@@ -3166,10 +3084,11 @@ TSharedRef<ITableRow> SUEAIAgentPanel::HandleGenerateChatHistoryRow(
                 ]
                 + SHorizontalBox::Slot()
                 .FillWidth(1.0f)
-                .VAlign(VAlign_Center)
+                .VAlign(VAlign_Fill)
                 .Padding(6.0f, 0.0f, 0.0f, 0.0f)
                 [
-                    SNew(STextBlock)
+                    SNew(SMultiLineEditableTextBox)
+                    .IsReadOnly(true)
                     .AutoWrapText(true)
                     .Text_Lambda([ActionIndex]()
                     {

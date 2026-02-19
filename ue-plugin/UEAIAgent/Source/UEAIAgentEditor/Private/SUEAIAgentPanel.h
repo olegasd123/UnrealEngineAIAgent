@@ -182,7 +182,6 @@ private:
     TSharedPtr<SEditableTextBox> ChatSearchInput;
     TSharedPtr<SMultiLineEditableTextBox> PromptInput;
     TSharedPtr<SButton> RunButton;
-    TSharedPtr<SButton> ResumeButton;
     int32 PromptVisibleLineCount = 1;
     FString CachedSelectionSummary;
     TArray<FString> LastNonEmptySelection;
