@@ -858,67 +858,6 @@ function parseLandscapePaintFromPrompt(prompt: string): {
   return { center, size, layerName, strength, falloff, mode };
 }
 
-function clampLandscapeCount(value: number, minValue: number, maxValue: number): number {
-  return Math.max(minValue, Math.min(maxValue, Math.trunc(value)));
-}
-
-function parseLandscapeFeatureCountRange(
-  prompt: string,
-  featureRegex: string,
-  maxValue: number
-): { min?: number; max?: number } {
-  let minValue: number | undefined;
-  let maxValueParsed: number | undefined;
-
-  const rangeMatch =
-    new RegExp(`\\b(?:between|from)\\s*(\\d+)\\s*(?:and|to)\\s*(\\d+)\\s*${featureRegex}\\b`, "i").exec(prompt) ??
-    new RegExp(`\\b${featureRegex}\\s*(?:count)?\\s*(?:between|from)\\s*(\\d+)\\s*(?:and|to)\\s*(\\d+)\\b`, "i").exec(prompt);
-  if (rangeMatch) {
-    const first = Number(rangeMatch[1]);
-    const second = Number(rangeMatch[2]);
-    if (Number.isFinite(first) && Number.isFinite(second)) {
-      minValue = clampLandscapeCount(Math.min(first, second), 0, maxValue);
-      maxValueParsed = clampLandscapeCount(Math.max(first, second), 0, maxValue);
-    }
-  } else {
-    const minMatch =
-      new RegExp(`\\b(?:min(?:imum)?|at least)\\s*(?:${featureRegex}\\s*)?(?:count\\s*)?(?:of\\s*)?(\\d+)\\b`, "i").exec(prompt) ??
-      new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?min(?:imum)?\\s*(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt);
-    const maxMatch =
-      new RegExp(
-        `\\b(?:max(?:imum)?|at most|up to|no more than)\\s*(?:${featureRegex}\\s*)?(?:count\\s*)?(?:of\\s*)?(\\d+)\\b`,
-        "i"
-      ).exec(prompt) ??
-      new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?max(?:imum)?\\s*(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt);
-
-    const parsedMin = minMatch ? Number(minMatch[1]) : Number.NaN;
-    const parsedMax = maxMatch ? Number(maxMatch[1]) : Number.NaN;
-    if (Number.isFinite(parsedMin)) {
-      minValue = clampLandscapeCount(parsedMin, 0, maxValue);
-    }
-    if (Number.isFinite(parsedMax)) {
-      maxValueParsed = clampLandscapeCount(parsedMax, 0, maxValue);
-    }
-
-    if (minValue === undefined && maxValueParsed === undefined) {
-      const exactMatch =
-        new RegExp(`\\b${featureRegex}\\s*(?:count\\s*)?(?:to|=|:)?\\s*(\\d+)\\b`, "i").exec(prompt) ??
-        new RegExp(`\\b(\\d+)\\s*${featureRegex}\\b`, "i").exec(prompt);
-      const parsedExact = exactMatch ? Number(exactMatch[1]) : Number.NaN;
-      if (Number.isFinite(parsedExact)) {
-        const clamped = clampLandscapeCount(parsedExact, 0, maxValue);
-        minValue = clamped;
-        maxValueParsed = clamped;
-      }
-    }
-  }
-
-  if (minValue !== undefined && maxValueParsed !== undefined && minValue > maxValueParsed) {
-    return { min: maxValueParsed, max: minValue };
-  }
-  return { min: minValue, max: maxValueParsed };
-}
-
 function parseLandscapeFeatureSizeRange(
   prompt: string,
   featureRegex: string,

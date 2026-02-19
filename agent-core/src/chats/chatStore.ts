@@ -161,7 +161,7 @@ function makeAutoTitleFromSummary(summary: string): string {
 export class ChatStore {
   private readonly db: DatabaseSync;
 
-  constructor(private readonly dbPath: string) {
+  constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA foreign_keys = ON;");
