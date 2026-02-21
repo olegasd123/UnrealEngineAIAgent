@@ -8,7 +8,7 @@
 
 namespace UEAIAgentToolCommands
 {
-    static constexpr int32 CommandCount = 23;
+    static constexpr int32 CommandCount = 27;
     static const TCHAR* const Commands[CommandCount] = {
         TEXT("context.getSceneSummary"),
         TEXT("context.getSelection"),
@@ -28,6 +28,10 @@ namespace UEAIAgentToolCommands
         TEXT("landscape.sculpt"),
         TEXT("landscape.paintLayer"),
         TEXT("landscape.generate"),
+        TEXT("pcg.createGraph"),
+        TEXT("pcg.placeOnLandscape"),
+        TEXT("pcg.addConnectCommonNodes"),
+        TEXT("pcg.setKeyParameters"),
         TEXT("editor.undo"),
         TEXT("editor.redo"),
         TEXT("session.beginTransaction"),

@@ -1227,6 +1227,250 @@ function parseLandscapeGenerateFromPrompt(prompt: string): {
   };
 }
 
+function sanitizeGraphAssetName(input: string): string {
+  const sanitized = input
+    .trim()
+    .replace(/[^a-zA-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized.length > 0 ? sanitized : "PCG_Graph";
+}
+
+function parsePcgGraphPathFromPrompt(prompt: string): string | null {
+  const objectPathMatch = /((?:\/Game\/)[0-9A-Za-z_\/]+)\.([0-9A-Za-z_]+)/.exec(prompt);
+  if (objectPathMatch?.[1]) {
+    return objectPathMatch[1];
+  }
+
+  const packagePathMatch = /(\/Game\/[0-9A-Za-z_\/]+)/.exec(prompt);
+  if (packagePathMatch?.[1]) {
+    return packagePathMatch[1];
+  }
+
+  const namedMatch =
+    /\b(?:named|name)\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\b(?:named|name)\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\b(?:named|name)\s+([0-9A-Za-z_]+)/i.exec(prompt);
+  if (namedMatch?.[1]) {
+    return `/Game/PCG/${sanitizeGraphAssetName(namedMatch[1])}`;
+  }
+
+  return null;
+}
+
+function parsePcgCreateGraphFromPrompt(prompt: string): { assetPath: string; templatePath?: string; overwrite: boolean } | null {
+  const lower = prompt.toLowerCase();
+  if (!/(pcg|procedural content generation)/.test(lower)) {
+    return null;
+  }
+
+  const hasTemplateHint = /\b(template|built[\s-]*in)\b/.test(lower);
+  const hasGrassHint = /\bgrass\b/.test(lower);
+  const isRuntimeGrassGpuIntent =
+    /(runtime\s+grass\s+gpu|runtime\s+gpu\s+grass)/.test(lower) ||
+    /tpl_showcase_runtimegrassgpu/.test(lower) ||
+    (hasGrassHint && hasTemplateHint);
+
+  if (!/(create|make|new|build|generate)/.test(lower)) {
+    return null;
+  }
+
+  if (!/(graph|pcg graph)/.test(lower) && !isRuntimeGrassGpuIntent) {
+    return null;
+  }
+
+  const templateMatch =
+    /\b(?:from|using)\s+template\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\b(?:from|using)\s+template\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\b(?:from|using)\s+template\s+([^\s,]+)/i.exec(prompt) ??
+    /\b(?:form)\s+template\s+\"([^\"]+)\"/i.exec(prompt) ??
+    /\b(?:form)\s+template\s+\'([^\']+)\'/i.exec(prompt) ??
+    /\b(?:form)\s+template\s+([^\s,]+)/i.exec(prompt);
+  const templatePath = templateMatch?.[1]?.trim();
+  const promptWithoutTemplate = prompt.replace(
+    /\b(?:from|form|using)\s+(?:built[\s-]*in\s+)?template\s+(?:\"[^\"]+\"|\'[^\']+\'|[^\s,]+)/i,
+    " "
+  );
+
+  const namedDestinationMatch =
+    /\b(?:named|name)\s+\"([^\"]+)\"/i.exec(promptWithoutTemplate) ??
+    /\b(?:named|name)\s+\'([^\']+)\'/i.exec(promptWithoutTemplate) ??
+    /\b(?:named|name)\s+([0-9A-Za-z_]+)/i.exec(promptWithoutTemplate);
+  const destinationPathFromName = namedDestinationMatch?.[1]
+    ? `/Game/PCG/${sanitizeGraphAssetName(namedDestinationMatch[1])}`
+    : null;
+  const runtimeGrassTemplateObjectPath = "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU";
+  const inferredTemplatePath = templatePath ?? (isRuntimeGrassGpuIntent ? runtimeGrassTemplateObjectPath : undefined);
+  const defaultDestinationPath = isRuntimeGrassGpuIntent ? "/Game/PCG/RuntimeGrassGPU" : "/Game/PCG/PCG_Graph";
+
+  return {
+    assetPath: destinationPathFromName ?? parsePcgGraphPathFromPrompt(promptWithoutTemplate) ?? defaultDestinationPath,
+    templatePath: inferredTemplatePath && inferredTemplatePath.length > 0 ? inferredTemplatePath : undefined,
+    overwrite: /(overwrite|replace|recreate|reset)\b/.test(lower)
+  };
+}
+
+function parsePcgPlaceOnLandscapeFromPrompt(prompt: string): {
+  graphSource: "path" | "last" | "selected";
+  graphPath?: string;
+  placementMode: "center" | "full";
+  size?: { x: number; y: number };
+  targetAllLandscapes: boolean;
+} | null {
+  const lower = prompt.toLowerCase();
+  const hasPcgHint = /(pcg|procedural content generation|runtime\s+grass\s+gpu|runtime\s+gpu\s+grass)/.test(lower);
+  const hasReferentialObject = /\b(it|them|that|those)\b/.test(lower);
+  if (!/(landscape|terrain)/.test(lower)) {
+    return null;
+  }
+
+  if (!/(place|put|apply|attach|add|spawn|drop)/.test(lower)) {
+    return null;
+  }
+  if (!hasPcgHint && !hasReferentialObject) {
+    return null;
+  }
+
+  const graphPath = parsePcgGraphPathFromPrompt(prompt) ?? undefined;
+  const useSelectedGraph =
+    /(selected\s+(?:pcg|graph)|selected\s+one|use\s+selected\s+(?:pcg|graph))/i.test(prompt);
+  const useLastGraph =
+    /(last\s+(?:pcg|graph|one)|latest\s+(?:pcg|graph)|previous\s+(?:pcg|graph)|recent\s+(?:pcg|graph)|newly\s+created|new\s+created)/i.test(
+      prompt
+    );
+  const graphSource: "path" | "last" | "selected" = useSelectedGraph
+    ? "selected"
+    : useLastGraph
+    ? "last"
+    : graphPath
+    ? "path"
+    : "last";
+
+  const placementMode: "center" | "full" = /(full\s+landscape|whole\s+landscape|entire\s+landscape|full\s+size)/.test(lower)
+    ? "full"
+    : "center";
+  const parsedSize = parseLandscapeSizeFromPrompt(prompt);
+  const targetAllLandscapes = /(all\s+landscapes|every\s+landscape|each\s+landscape|across\s+all\s+landscapes)/.test(lower);
+
+  return {
+    graphSource,
+    graphPath,
+    placementMode,
+    size: placementMode === "center" && parsedSize ? parsedSize : undefined,
+    targetAllLandscapes
+  };
+}
+
+function parsePcgAddConnectCommonNodesFromPrompt(prompt: string): {
+  graphPath: string;
+  nodeTypes?: ("surfaceSampler" | "transformPoints")[];
+  connectFromInput: boolean;
+  connectToOutput: boolean;
+} | null {
+  const lower = prompt.toLowerCase();
+  if (!/(pcg|procedural content generation)/.test(lower) || !/(graph|pcg graph)/.test(lower)) {
+    return null;
+  }
+
+  const hasAddConnectIntent = /(add|insert|connect|wire|setup|set up)/.test(lower);
+  const hasCommonNodeHint = /(common nodes|starter nodes|basic pipeline|typical nodes)/.test(lower);
+  if (!hasAddConnectIntent && !hasCommonNodeHint) {
+    return null;
+  }
+
+  const nodeTypes = new Set<"surfaceSampler" | "transformPoints">();
+  if (/(surface sampler|sample surface|surface points)/.test(lower)) {
+    nodeTypes.add("surfaceSampler");
+  }
+  if (/(transform points|offset points|jitter points|transform node)/.test(lower)) {
+    nodeTypes.add("transformPoints");
+  }
+
+  if (nodeTypes.size === 0 && hasCommonNodeHint) {
+    nodeTypes.add("surfaceSampler");
+    nodeTypes.add("transformPoints");
+  }
+  if (nodeTypes.size === 0) {
+    return null;
+  }
+
+  return {
+    graphPath: parsePcgGraphPathFromPrompt(prompt) ?? "/Game/PCG/PCG_Graph",
+    nodeTypes: Array.from(nodeTypes),
+    connectFromInput: !/(without input|do not connect input|skip input connection)/.test(lower),
+    connectToOutput: !/(without output|do not connect output|skip output connection)/.test(lower)
+  };
+}
+
+function parseVectorAfterLabel(prompt: string, labelPattern: RegExp): { x: number; y: number; z: number } | null {
+  const match = labelPattern.exec(prompt);
+  if (!match || match.index < 0) {
+    return null;
+  }
+
+  const tail = prompt.slice(match.index).toLowerCase();
+  const values = parseAxisValues(tail, ["x", "y", "z"]);
+  if (typeof values.x !== "number" || typeof values.y !== "number" || typeof values.z !== "number") {
+    return null;
+  }
+
+  return {
+    x: values.x,
+    y: values.y,
+    z: values.z
+  };
+}
+
+function parsePcgSetKeyParametersFromPrompt(prompt: string): {
+  graphPath: string;
+  surfacePointsPerSquaredMeter?: number;
+  surfaceLooseness?: number;
+  surfacePointExtents?: { x: number; y: number; z: number };
+  transformOffsetMin?: { x: number; y: number; z: number };
+  transformOffsetMax?: { x: number; y: number; z: number };
+} | null {
+  const lower = prompt.toLowerCase();
+  if (!/(pcg|procedural content generation)/.test(lower) || !/(graph|pcg graph)/.test(lower)) {
+    return null;
+  }
+  if (!/(set|update|tune|change|adjust)/.test(lower)) {
+    return null;
+  }
+
+  const pointsMatch = /\bpoints?\s*per\s*(?:square\s*)?(?:meter|metre|m2)\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  const loosenessMatch = /\blooseness\s*(?:to|=|:)?\s*([+-]?\d+(?:\.\d+)?)/i.exec(prompt);
+  const pointExtents = parseVectorAfterLabel(prompt, /\bpoint\s+extents?\b/i);
+  const transformOffsetMin = parseVectorAfterLabel(prompt, /\boffset\s*min\b/i);
+  const transformOffsetMax = parseVectorAfterLabel(prompt, /\boffset\s*max\b/i);
+  const transformOffsetExact = parseVectorAfterLabel(prompt, /\boffset\b/i);
+
+  const parsedPointsPerMeter = pointsMatch ? Number(pointsMatch[1]) : Number.NaN;
+  const parsedLooseness = loosenessMatch ? Number(loosenessMatch[1]) : Number.NaN;
+  const surfacePointsPerSquaredMeter = Number.isFinite(parsedPointsPerMeter) ? parsedPointsPerMeter : undefined;
+  const surfaceLooseness = Number.isFinite(parsedLooseness) ? parsedLooseness : undefined;
+
+  const resolvedOffsetMin = transformOffsetMin ?? (transformOffsetExact && !transformOffsetMax ? transformOffsetExact : undefined);
+  const resolvedOffsetMax = transformOffsetMax ?? (transformOffsetExact && !transformOffsetMin ? transformOffsetExact : undefined);
+
+  if (
+    surfacePointsPerSquaredMeter === undefined &&
+    surfaceLooseness === undefined &&
+    !pointExtents &&
+    !resolvedOffsetMin &&
+    !resolvedOffsetMax
+  ) {
+    return null;
+  }
+
+  return {
+    graphPath: parsePcgGraphPathFromPrompt(prompt) ?? "/Game/PCG/PCG_Graph",
+    surfacePointsPerSquaredMeter,
+    surfaceLooseness,
+    surfacePointExtents: pointExtents ?? undefined,
+    transformOffsetMin: resolvedOffsetMin,
+    transformOffsetMax: resolvedOffsetMax
+  };
+}
+
 function parseUndoFromPrompt(prompt: string): boolean {
   return /\b(undo|revert|roll\s*back|rollback|go\s+back|ctrl\+?z|control\+?z)\b/i.test(prompt);
 }
@@ -1236,7 +1480,7 @@ function parseRedoFromPrompt(prompt: string): boolean {
 }
 
 function hasWriteIntent(prompt: string): boolean {
-  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)/i.test(
+  return /(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|place|put|attach|drop|undo|revert|rollback|roll back|redo|do again|reapply)/i.test(
     prompt
   );
 }
@@ -1513,6 +1757,26 @@ function buildActionSummary(input: TaskRequest, actions: PlanAction[]): string {
     return first.params.useFullArea ? baseSummary : `${baseSummary} Use requested bounded area.`;
   }
 
+  if (first.command === "pcg.createGraph") {
+    if (first.params.templatePath) {
+      return `Create PCG graph asset at ${first.params.assetPath} from template ${first.params.templatePath}.`;
+    }
+    return `Create PCG graph asset at ${first.params.assetPath}.`;
+  }
+
+  if (first.command === "pcg.placeOnLandscape") {
+    const areaText = first.params.placementMode === "full" ? "full landscape area" : "landscape center";
+    return `Place PCG graph on ${areaText}.`;
+  }
+
+  if (first.command === "pcg.addConnectCommonNodes") {
+    return `Add and connect common PCG nodes in ${first.params.graphPath}.`;
+  }
+
+  if (first.command === "pcg.setKeyParameters") {
+    return `Set key PCG parameters in ${first.params.graphPath}.`;
+  }
+
   if (first.command === "editor.undo") {
     return "Undo last editor action.";
   }
@@ -1568,6 +1832,11 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
   const landscapeGenerate = parseLandscapeGenerateFromPrompt(input.prompt);
   const landscapeSculpt = parseLandscapeSculptFromPrompt(input.prompt);
   const landscapePaint = parseLandscapePaintFromPrompt(input.prompt);
+  const pcgCreateGraph = parsePcgCreateGraphFromPrompt(input.prompt);
+  const pcgPlaceOnLandscape = parsePcgPlaceOnLandscapeFromPrompt(input.prompt);
+  const pcgAddConnectCommonNodes = parsePcgAddConnectCommonNodesFromPrompt(input.prompt);
+  const pcgSetKeyParameters = parsePcgSetKeyParametersFromPrompt(input.prompt);
+  const hasPcgActionIntent = Boolean(pcgCreateGraph || pcgPlaceOnLandscape || pcgAddConnectCommonNodes || pcgSetKeyParameters);
   const undoLastAction = parseUndoFromPrompt(input.prompt);
   const redoLastAction = parseRedoFromPrompt(input.prompt);
 
@@ -1580,7 +1849,7 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
     });
   }
 
-  if (moveDelta || rotateDelta || scale?.delta || scale?.absolute) {
+  if (!hasPcgActionIntent && (moveDelta || rotateDelta || scale?.delta || scale?.absolute)) {
     const params: {
       target: "selection" | "byName";
       actorNames?: string[];
@@ -1824,6 +2093,50 @@ export function buildRuleBasedPlan(input: TaskRequest, metadata: FallbackPlanMet
         falloff: landscapePaint.falloff,
         mode: landscapePaint.mode
       },
+      risk: "medium"
+    });
+  }
+
+  if (pcgCreateGraph) {
+    actions.push({
+      command: "pcg.createGraph",
+      params: pcgCreateGraph,
+      risk: "medium"
+    });
+  }
+
+  if (pcgPlaceOnLandscape) {
+    const target = pcgPlaceOnLandscape.targetAllLandscapes
+      ? "all"
+      : resolvedActorNames && resolvedActorNames.length > 0
+      ? "byName"
+      : "selection";
+    actions.push({
+      command: "pcg.placeOnLandscape",
+      params: {
+        target,
+        actorNames: target === "byName" ? resolvedActorNames ?? undefined : undefined,
+        graphSource: pcgPlaceOnLandscape.graphSource,
+        graphPath: pcgPlaceOnLandscape.graphPath,
+        placementMode: pcgPlaceOnLandscape.placementMode,
+        size: pcgPlaceOnLandscape.size
+      },
+      risk: "medium"
+    });
+  }
+
+  if (pcgAddConnectCommonNodes) {
+    actions.push({
+      command: "pcg.addConnectCommonNodes",
+      params: pcgAddConnectCommonNodes,
+      risk: "medium"
+    });
+  }
+
+  if (pcgSetKeyParameters) {
+    actions.push({
+      command: "pcg.setKeyParameters",
+      params: pcgSetKeyParameters,
       risk: "medium"
     });
   }

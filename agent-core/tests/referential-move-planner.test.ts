@@ -641,3 +641,201 @@ test("Rule planner parses mixed sculpt+paint prompt with separate values", () =>
   assert.equal(paint.params.size.y, 900);
   assert.equal(paint.params.strength, 0.6);
 });
+
+test("Rule planner builds pcg.createGraph for PCG graph creation prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create a pcg graph named ForestScatter",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(action.params.assetPath, "/Game/PCG/ForestScatter");
+  assert.equal(action.params.overwrite, false);
+});
+
+test("Rule planner builds pcg.createGraph with template path", () => {
+  const request: TaskRequest = {
+    prompt: "create a pcg graph named GrassRuntime from template TPL_Showcase_RuntimeGrassGPU",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(action.params.assetPath, "/Game/PCG/GrassRuntime");
+  assert.equal(action.params.templatePath, "TPL_Showcase_RuntimeGrassGPU");
+  assert.equal(action.params.overwrite, false);
+});
+
+test("Rule planner keeps destination graph when template has full /Game path", () => {
+  const request: TaskRequest = {
+    prompt:
+      "create a pcg graph named GrassRuntime from template /Game/PCG/Templates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(action.params.assetPath, "/Game/PCG/GrassRuntime");
+  assert.equal(
+    action.params.templatePath,
+    "/Game/PCG/Templates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+});
+
+test("Rule planner infers runtime grass gpu template from short prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create a new pcg runtime grass gpu",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(action.params.assetPath, "/Game/PCG/RuntimeGrassGPU");
+  assert.equal(
+    action.params.templatePath,
+    "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+});
+
+test("Rule planner infers runtime grass template from 'grass form template' prompt", () => {
+  const request: TaskRequest = {
+    prompt: "create a new pcg grass form template",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(
+    action.params.templatePath,
+    "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+});
+
+test("Rule planner infers runtime grass template from built-in template phrasing", () => {
+  const request: TaskRequest = {
+    prompt: "create a new pcg grass using built-in template",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.createGraph");
+  if (action.command !== "pcg.createGraph") {
+    return;
+  }
+  assert.equal(
+    action.params.templatePath,
+    "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+});
+
+test("Rule planner builds pcg.setKeyParameters for PCG parameter prompt", () => {
+  const request: TaskRequest = {
+    prompt:
+      "set pcg graph /Game/PCG/ForestScatter key parameters: points per square meter 0.35 looseness 0.4 offset min x -80 y -80 z 0 offset max x 80 y 80 z 20",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.setKeyParameters");
+  if (action.command !== "pcg.setKeyParameters") {
+    return;
+  }
+  assert.equal(action.params.graphPath, "/Game/PCG/ForestScatter");
+  assert.equal(action.params.surfacePointsPerSquaredMeter, 0.35);
+  assert.equal(action.params.surfaceLooseness, 0.4);
+  assert.deepEqual(action.params.transformOffsetMin, { x: -80, y: -80, z: 0 });
+  assert.deepEqual(action.params.transformOffsetMax, { x: 80, y: 80, z: 20 });
+});
+
+test("Rule planner builds pcg.placeOnLandscape for selected graph with full landscape", () => {
+  const request: TaskRequest = {
+    prompt: "put selected pcg on full landscape size",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.placeOnLandscape");
+  if (action.command !== "pcg.placeOnLandscape") {
+    return;
+  }
+  assert.equal(action.params.graphSource, "selected");
+  assert.equal(action.params.placementMode, "full");
+  assert.equal(action.params.target, "selection");
+});
+
+test("Rule planner builds pcg.placeOnLandscape for last graph in landscape center", () => {
+  const request: TaskRequest = {
+    prompt: "put the newly created pcg on the landscape center with size 3000",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.placeOnLandscape");
+  if (action.command !== "pcg.placeOnLandscape") {
+    return;
+  }
+  assert.equal(action.params.graphSource, "last");
+  assert.equal(action.params.placementMode, "center");
+  assert.deepEqual(action.params.size, { x: 3000, y: 3000 });
+});
+
+test("Rule planner treats 'put it on the landscape' as referential PCG placement", () => {
+  const request: TaskRequest = {
+    prompt: "put it on the landscape",
+    mode: "chat",
+    context: {}
+  };
+
+  const plan = buildRuleBasedPlan(request);
+  assert.equal(plan.actions.length, 1);
+  const action = plan.actions[0];
+  assert.equal(action.command, "pcg.placeOnLandscape");
+  if (action.command !== "pcg.placeOnLandscape") {
+    return;
+  }
+  assert.equal(action.params.graphSource, "last");
+  assert.equal(action.params.placementMode, "center");
+});

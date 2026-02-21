@@ -153,6 +153,56 @@ struct FUEAIAgentLandscapeGenerateParams
     bool bUseSelectionIfActorNamesEmpty = true;
 };
 
+struct FUEAIAgentPcgCreateGraphParams
+{
+    FString AssetPath;
+    FString TemplatePath;
+    bool bOverwrite = false;
+};
+
+struct FUEAIAgentPcgPlaceOnLandscapeParams
+{
+    TArray<FString> ActorNames;
+    FString GraphSource = TEXT("last");
+    FString GraphPath;
+    bool bUseFullArea = false;
+    FVector2D Size = FVector2D(3000.0f, 3000.0f);
+    bool bHasSize = false;
+    bool bTargetAll = false;
+    bool bUseSelectionIfActorNamesEmpty = true;
+};
+
+struct FUEAIAgentPcgAddConnectCommonNodesParams
+{
+    FString GraphPath;
+    TArray<FString> NodeTypes;
+    bool bConnectFromInput = true;
+    bool bConnectToOutput = true;
+};
+
+struct FUEAIAgentPcgSetKeyParametersParams
+{
+    FString GraphPath;
+    bool bHasSurfacePointsPerSquaredMeter = false;
+    float SurfacePointsPerSquaredMeter = 0.0f;
+    bool bHasSurfaceLooseness = false;
+    float SurfaceLooseness = 0.0f;
+    bool bHasSurfacePointExtents = false;
+    FVector SurfacePointExtents = FVector(50.0f, 50.0f, 50.0f);
+    bool bHasTransformOffsetMin = false;
+    FVector TransformOffsetMin = FVector::ZeroVector;
+    bool bHasTransformOffsetMax = false;
+    FVector TransformOffsetMax = FVector::ZeroVector;
+    bool bHasTransformRotationMin = false;
+    FRotator TransformRotationMin = FRotator::ZeroRotator;
+    bool bHasTransformRotationMax = false;
+    FRotator TransformRotationMax = FRotator::ZeroRotator;
+    bool bHasTransformScaleMin = false;
+    FVector TransformScaleMin = FVector::OneVector;
+    bool bHasTransformScaleMax = false;
+    FVector TransformScaleMax = FVector::OneVector;
+};
+
 class UEAIAGENTTOOLS_API FUEAIAgentSceneTools
 {
 public:
@@ -176,6 +226,10 @@ public:
     static bool LandscapeSculpt(const FUEAIAgentLandscapeSculptParams& Params, FString& OutMessage);
     static bool LandscapePaintLayer(const FUEAIAgentLandscapePaintLayerParams& Params, FString& OutMessage);
     static bool LandscapeGenerate(const FUEAIAgentLandscapeGenerateParams& Params, FString& OutMessage);
+    static bool PcgCreateGraph(const FUEAIAgentPcgCreateGraphParams& Params, FString& OutMessage);
+    static bool PcgPlaceOnLandscape(const FUEAIAgentPcgPlaceOnLandscapeParams& Params, FString& OutMessage);
+    static bool PcgAddConnectCommonNodes(const FUEAIAgentPcgAddConnectCommonNodesParams& Params, FString& OutMessage);
+    static bool PcgSetKeyParameters(const FUEAIAgentPcgSetKeyParametersParams& Params, FString& OutMessage);
     static bool EditorUndo(FString& OutMessage);
     static bool EditorRedo(FString& OutMessage);
     static bool SessionBeginTransaction(const FString& Description, FString& OutMessage);

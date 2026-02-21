@@ -32,6 +32,10 @@ enum class EUEAIAgentPlannedActionType : uint8
     LandscapeSculpt,
     LandscapePaintLayer,
     LandscapeGenerate,
+    PcgCreateGraph,
+    PcgPlaceOnLandscape,
+    PcgAddConnectCommonNodes,
+    PcgSetKeyParameters,
     SessionBeginTransaction,
     SessionCommitTransaction,
     SessionRollbackTransaction
@@ -125,6 +129,37 @@ struct FUEAIAgentPlannedSceneAction
     int32 LandscapeCraterCountMax = 0;
     float LandscapeCraterWidthMin = 0.0f;
     float LandscapeCraterWidthMax = 0.0f;
+
+    // pcg.createGraph / pcg.placeOnLandscape / pcg.addConnectCommonNodes / pcg.setKeyParameters
+    FString PcgGraphPath;
+    FString PcgTemplatePath;
+    FString PcgGraphSource = TEXT("last");
+    bool bPcgPlaceUseFullArea = false;
+    bool bPcgPlaceHasSize = false;
+    FVector2D PcgPlaceSize = FVector2D(3000.0f, 3000.0f);
+    bool bPcgPlaceTargetAll = false;
+    bool bPcgOverwrite = false;
+    TArray<FString> PcgNodeTypes;
+    bool bPcgConnectFromInput = true;
+    bool bPcgConnectToOutput = true;
+    float PcgSurfacePointsPerSquaredMeter = 0.0f;
+    bool bPcgHasSurfacePointsPerSquaredMeter = false;
+    float PcgSurfaceLooseness = 0.0f;
+    bool bPcgHasSurfaceLooseness = false;
+    FVector PcgSurfacePointExtents = FVector(50.0f, 50.0f, 50.0f);
+    bool bPcgHasSurfacePointExtents = false;
+    FVector PcgTransformOffsetMin = FVector::ZeroVector;
+    bool bPcgHasTransformOffsetMin = false;
+    FVector PcgTransformOffsetMax = FVector::ZeroVector;
+    bool bPcgHasTransformOffsetMax = false;
+    FRotator PcgTransformRotationMin = FRotator::ZeroRotator;
+    bool bPcgHasTransformRotationMin = false;
+    FRotator PcgTransformRotationMax = FRotator::ZeroRotator;
+    bool bPcgHasTransformRotationMax = false;
+    FVector PcgTransformScaleMin = FVector::OneVector;
+    bool bPcgHasTransformScaleMin = false;
+    FVector PcgTransformScaleMax = FVector::OneVector;
+    bool bPcgHasTransformScaleMax = false;
 
     // session.beginTransaction
     FString TransactionDescription;

@@ -30,6 +30,12 @@
       "Type": "Editor",
       "LoadingPhase": "Default"
     }
+  ],
+  "Plugins": [
+    {
+      "Name": "PCG",
+      "Enabled": false,
+      "Optional": true
+    }
   ]
 }
-

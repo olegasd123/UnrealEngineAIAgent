@@ -235,6 +235,14 @@ namespace
             return TEXT("Landscape Paint Layer");
         case EUEAIAgentPlannedActionType::LandscapeGenerate:
             return TEXT("Landscape Generate");
+        case EUEAIAgentPlannedActionType::PcgCreateGraph:
+            return TEXT("PCG Create Graph");
+        case EUEAIAgentPlannedActionType::PcgPlaceOnLandscape:
+            return TEXT("PCG Place On Landscape");
+        case EUEAIAgentPlannedActionType::PcgAddConnectCommonNodes:
+            return TEXT("PCG Add/Connect Nodes");
+        case EUEAIAgentPlannedActionType::PcgSetKeyParameters:
+            return TEXT("PCG Set Parameters");
         case EUEAIAgentPlannedActionType::SessionBeginTransaction:
             return TEXT("Begin Internal Transaction");
         case EUEAIAgentPlannedActionType::SessionCommitTransaction:
@@ -2434,6 +2442,64 @@ bool SUEAIAgentPanel::ExecutePlannedAction(const FUEAIAgentPlannedSceneAction& P
         Params.CraterWidthMax = PlannedAction.LandscapeCraterWidthMax;
         Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty();
         return FUEAIAgentSceneTools::LandscapeGenerate(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::PcgCreateGraph)
+    {
+        FUEAIAgentPcgCreateGraphParams Params;
+        Params.AssetPath = PlannedAction.PcgGraphPath;
+        Params.TemplatePath = PlannedAction.PcgTemplatePath;
+        Params.bOverwrite = PlannedAction.bPcgOverwrite;
+        return FUEAIAgentSceneTools::PcgCreateGraph(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::PcgPlaceOnLandscape)
+    {
+        FUEAIAgentPcgPlaceOnLandscapeParams Params;
+        Params.ActorNames = PlannedAction.ActorNames;
+        Params.GraphSource = PlannedAction.PcgGraphSource;
+        Params.GraphPath = PlannedAction.PcgGraphPath;
+        Params.bUseFullArea = PlannedAction.bPcgPlaceUseFullArea;
+        Params.bHasSize = PlannedAction.bPcgPlaceHasSize;
+        Params.Size = PlannedAction.PcgPlaceSize;
+        Params.bTargetAll = PlannedAction.bPcgPlaceTargetAll;
+        Params.bUseSelectionIfActorNamesEmpty = Params.ActorNames.IsEmpty() && !Params.bTargetAll;
+        return FUEAIAgentSceneTools::PcgPlaceOnLandscape(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::PcgAddConnectCommonNodes)
+    {
+        FUEAIAgentPcgAddConnectCommonNodesParams Params;
+        Params.GraphPath = PlannedAction.PcgGraphPath;
+        Params.NodeTypes = PlannedAction.PcgNodeTypes;
+        Params.bConnectFromInput = PlannedAction.bPcgConnectFromInput;
+        Params.bConnectToOutput = PlannedAction.bPcgConnectToOutput;
+        return FUEAIAgentSceneTools::PcgAddConnectCommonNodes(Params, OutMessage);
+    }
+
+    if (PlannedAction.Type == EUEAIAgentPlannedActionType::PcgSetKeyParameters)
+    {
+        FUEAIAgentPcgSetKeyParametersParams Params;
+        Params.GraphPath = PlannedAction.PcgGraphPath;
+        Params.bHasSurfacePointsPerSquaredMeter = PlannedAction.bPcgHasSurfacePointsPerSquaredMeter;
+        Params.SurfacePointsPerSquaredMeter = PlannedAction.PcgSurfacePointsPerSquaredMeter;
+        Params.bHasSurfaceLooseness = PlannedAction.bPcgHasSurfaceLooseness;
+        Params.SurfaceLooseness = PlannedAction.PcgSurfaceLooseness;
+        Params.bHasSurfacePointExtents = PlannedAction.bPcgHasSurfacePointExtents;
+        Params.SurfacePointExtents = PlannedAction.PcgSurfacePointExtents;
+        Params.bHasTransformOffsetMin = PlannedAction.bPcgHasTransformOffsetMin;
+        Params.TransformOffsetMin = PlannedAction.PcgTransformOffsetMin;
+        Params.bHasTransformOffsetMax = PlannedAction.bPcgHasTransformOffsetMax;
+        Params.TransformOffsetMax = PlannedAction.PcgTransformOffsetMax;
+        Params.bHasTransformRotationMin = PlannedAction.bPcgHasTransformRotationMin;
+        Params.TransformRotationMin = PlannedAction.PcgTransformRotationMin;
+        Params.bHasTransformRotationMax = PlannedAction.bPcgHasTransformRotationMax;
+        Params.TransformRotationMax = PlannedAction.PcgTransformRotationMax;
+        Params.bHasTransformScaleMin = PlannedAction.bPcgHasTransformScaleMin;
+        Params.TransformScaleMin = PlannedAction.PcgTransformScaleMin;
+        Params.bHasTransformScaleMax = PlannedAction.bPcgHasTransformScaleMax;
+        Params.TransformScaleMax = PlannedAction.PcgTransformScaleMax;
+        return FUEAIAgentSceneTools::PcgSetKeyParameters(Params, OutMessage);
     }
 
     FUEAIAgentModifyActorParams Params;

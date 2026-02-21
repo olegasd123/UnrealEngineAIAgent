@@ -105,6 +105,44 @@ class LandscapeGenerateMissingConstraintsProvider implements LlmProvider {
   }
 }
 
+const pcgCreateGraphMissingTemplatePlan: PlanOutput = {
+  summary: "Create runtime grass PCG graph.",
+  steps: ["Create PCG graph"],
+  actions: [
+    {
+      command: "pcg.createGraph",
+      params: {
+        assetPath: "/Game/PCG/RuntimeGrassGPU",
+        overwrite: false
+      },
+      risk: "medium"
+    }
+  ],
+  goal: {
+    id: "goal_pcg_runtime_grass",
+    description: "Create runtime grass PCG graph.",
+    priority: "medium"
+  },
+  subgoals: [],
+  checks: [],
+  stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }]
+};
+
+class PcgCreateGraphMissingTemplateProvider implements LlmProvider {
+  public readonly name = "local";
+  public readonly model = "test-model";
+  public readonly hasApiKey = true;
+  public readonly adapter = "stub" as const;
+
+  async planTask(_input: PlanInput): Promise<PlanOutput> {
+    return pcgCreateGraphMissingTemplatePlan;
+  }
+
+  async respondText(_input: TextReplyInput): Promise<string> {
+    return "ok";
+  }
+}
+
 function makeRequest(prompt: string): TaskRequest {
   return {
     prompt,
@@ -198,4 +236,79 @@ test("PlanningLayer enriches provider landscape.generate with parsed width and h
   assert.equal(plan.actions[0].params.mountainWidthMax, 1000);
   assert.equal(plan.actions[0].params.maxHeight, 500);
   assert.match(plan.steps[0] ?? "", /Filled missing landscape\.generate constraints/i);
+});
+
+test("PlanningLayer enriches provider pcg.createGraph with inferred runtime grass template", async () => {
+  const provider = new PcgCreateGraphMissingTemplateProvider();
+  const planning = new PlanningLayer();
+  const intent = new IntentLayer().normalize(
+    makeRequest("create a new pcg runtime grass gpu form template")
+  );
+
+  const plan = await planning.buildPlan(intent, provider);
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0]?.command, "pcg.createGraph");
+  if (plan.actions[0]?.command !== "pcg.createGraph") {
+    return;
+  }
+
+  assert.equal(plan.actions[0].params.assetPath, "/Game/PCG/RuntimeGrassGPU");
+  assert.equal(
+    plan.actions[0].params.templatePath,
+    "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+  assert.match(plan.steps[0] ?? "", /Filled missing pcg\.createGraph template/i);
+});
+
+test("PlanningLayer enriches provider pcg.createGraph for 'grass form template' wording", async () => {
+  const provider: LlmProvider = {
+    name: "local",
+    model: "test-model",
+    hasApiKey: true,
+    adapter: "stub",
+    async planTask(): Promise<PlanOutput> {
+      return {
+        summary: "Create a new PCG grass form template.",
+        steps: ["Prepare PCG graph creation", "Execute create graph action"],
+        actions: [
+          {
+            command: "pcg.createGraph",
+            params: {
+              assetPath: "/Game/PCG/GrassFormTemplate",
+              overwrite: false
+            },
+            risk: "medium"
+          }
+        ],
+        goal: {
+          id: "goal_pcg_grass_template",
+          description: "Create grass template graph.",
+          priority: "medium"
+        },
+        subgoals: [],
+        checks: [],
+        stopConditions: [{ type: "all_checks_passed" }, { type: "max_iterations", value: 1 }, { type: "user_denied" }]
+      };
+    },
+    async respondText(): Promise<string> {
+      return "ok";
+    }
+  };
+
+  const planning = new PlanningLayer();
+  const intent = new IntentLayer().normalize(makeRequest("create a new pcg grass form template"));
+  const plan = await planning.buildPlan(intent, provider);
+
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0]?.command, "pcg.createGraph");
+  if (plan.actions[0]?.command !== "pcg.createGraph") {
+    return;
+  }
+
+  assert.equal(plan.actions[0].params.assetPath, "/Game/PCG/GrassFormTemplate");
+  assert.equal(
+    plan.actions[0].params.templatePath,
+    "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU"
+  );
+  assert.match(plan.steps[0] ?? "", /Filled missing pcg\.createGraph template/i);
 });

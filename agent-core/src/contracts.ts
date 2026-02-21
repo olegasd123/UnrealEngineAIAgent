@@ -414,6 +414,75 @@ const LandscapeGenerateParamsSchema = z
     }
   });
 
+const PcgNodeTypeSchema = z.enum(["surfaceSampler", "transformPoints"]);
+
+const PositiveVectorSchema = z.object({
+  x: z.number().finite().positive(),
+  y: z.number().finite().positive(),
+  z: z.number().finite().positive()
+});
+
+const PcgCreateGraphParamsSchema = z.object({
+  assetPath: z.string().trim().min(1),
+  templatePath: z.string().trim().min(1).optional(),
+  overwrite: z.boolean().default(false)
+});
+
+const PcgPlaceGraphSourceSchema = z.enum(["path", "last", "selected"]);
+const PcgPlacePlacementModeSchema = z.enum(["center", "full"]);
+
+const PcgPlaceOnLandscapeParamsSchema = z
+  .object({
+    target: z.enum(["selection", "byName", "all"]).default("selection"),
+    actorNames: z.array(z.string().min(1)).optional(),
+    graphSource: PcgPlaceGraphSourceSchema.default("last"),
+    graphPath: z.string().trim().min(1).optional(),
+    placementMode: PcgPlacePlacementModeSchema.default("center"),
+    size: LandscapeSize2Schema.optional()
+  })
+  .refine((value) => (value.target === "byName" ? (value.actorNames ?? []).length > 0 : true), {
+    message: "pcg.placeOnLandscape target=byName needs actorNames"
+  })
+  .refine((value) => (value.graphSource === "path" ? Boolean(value.graphPath) : true), {
+    message: "pcg.placeOnLandscape graphSource=path needs graphPath"
+  });
+
+const PcgAddConnectCommonNodesParamsSchema = z.object({
+  graphPath: z.string().trim().min(1),
+  nodeTypes: z.array(PcgNodeTypeSchema).min(1).max(8).optional(),
+  connectFromInput: z.boolean().default(true),
+  connectToOutput: z.boolean().default(true)
+});
+
+const PcgSetKeyParametersParamsSchema = z
+  .object({
+    graphPath: z.string().trim().min(1),
+    surfacePointsPerSquaredMeter: z.number().finite().positive().max(1000).optional(),
+    surfaceLooseness: z.number().finite().min(0).max(1).optional(),
+    surfacePointExtents: PositiveVectorSchema.optional(),
+    transformOffsetMin: DeltaLocationSchema.optional(),
+    transformOffsetMax: DeltaLocationSchema.optional(),
+    transformRotationMin: DeltaRotationSchema.optional(),
+    transformRotationMax: DeltaRotationSchema.optional(),
+    transformScaleMin: ScaleSchema.optional(),
+    transformScaleMax: ScaleSchema.optional()
+  })
+  .refine(
+    (value) =>
+      value.surfacePointsPerSquaredMeter !== undefined ||
+      value.surfaceLooseness !== undefined ||
+      value.surfacePointExtents !== undefined ||
+      value.transformOffsetMin !== undefined ||
+      value.transformOffsetMax !== undefined ||
+      value.transformRotationMin !== undefined ||
+      value.transformRotationMax !== undefined ||
+      value.transformScaleMin !== undefined ||
+      value.transformScaleMax !== undefined,
+    {
+      message: "pcg.setKeyParameters needs at least one parameter to update"
+    }
+  );
+
 const ContextGetSceneSummaryParamsSchema = z.object({}).passthrough();
 
 const ContextGetSelectionParamsSchema = z.object({}).passthrough();
@@ -565,6 +634,30 @@ export const LandscapeGenerateActionSchema = z.object({
   risk: z.enum(["low", "medium", "high"])
 });
 
+export const PcgCreateGraphActionSchema = z.object({
+  command: z.literal("pcg.createGraph"),
+  params: PcgCreateGraphParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const PcgPlaceOnLandscapeActionSchema = z.object({
+  command: z.literal("pcg.placeOnLandscape"),
+  params: PcgPlaceOnLandscapeParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const PcgAddConnectCommonNodesActionSchema = z.object({
+  command: z.literal("pcg.addConnectCommonNodes"),
+  params: PcgAddConnectCommonNodesParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
+export const PcgSetKeyParametersActionSchema = z.object({
+  command: z.literal("pcg.setKeyParameters"),
+  params: PcgSetKeyParametersParamsSchema,
+  risk: z.enum(["low", "medium", "high"])
+});
+
 export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   ContextGetSceneSummaryActionSchema,
   ContextGetSelectionActionSchema,
@@ -588,7 +681,11 @@ export const PlanActionUnionSchema = z.discriminatedUnion("command", [
   SceneSetPostProcessExposureCompensationActionSchema,
   LandscapeSculptActionSchema,
   LandscapePaintLayerActionSchema,
-  LandscapeGenerateActionSchema
+  LandscapeGenerateActionSchema,
+  PcgCreateGraphActionSchema,
+  PcgPlaceOnLandscapeActionSchema,
+  PcgAddConnectCommonNodesActionSchema,
+  PcgSetKeyParametersActionSchema
 ]);
 
 const PlanPrioritySchema = z.enum(["low", "medium", "high"]).default("medium");

@@ -241,6 +241,50 @@ namespace
         }
     }
 
+    bool ParseJsonVectorField(const TSharedPtr<FJsonObject>& Obj, const TCHAR* FieldName, FVector& OutVector)
+    {
+        const TSharedPtr<FJsonObject>* VectorObj = nullptr;
+        if (!Obj.IsValid() || !Obj->TryGetObjectField(FieldName, VectorObj) || !VectorObj || !VectorObj->IsValid())
+        {
+            return false;
+        }
+
+        double X = 0.0;
+        double Y = 0.0;
+        double Z = 0.0;
+        if (!(*VectorObj)->TryGetNumberField(TEXT("x"), X) ||
+            !(*VectorObj)->TryGetNumberField(TEXT("y"), Y) ||
+            !(*VectorObj)->TryGetNumberField(TEXT("z"), Z))
+        {
+            return false;
+        }
+
+        OutVector = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+        return true;
+    }
+
+    bool ParseJsonRotatorField(const TSharedPtr<FJsonObject>& Obj, const TCHAR* FieldName, FRotator& OutRotator)
+    {
+        const TSharedPtr<FJsonObject>* RotatorObj = nullptr;
+        if (!Obj.IsValid() || !Obj->TryGetObjectField(FieldName, RotatorObj) || !RotatorObj || !RotatorObj->IsValid())
+        {
+            return false;
+        }
+
+        double Pitch = 0.0;
+        double Yaw = 0.0;
+        double Roll = 0.0;
+        if (!(*RotatorObj)->TryGetNumberField(TEXT("pitch"), Pitch) ||
+            !(*RotatorObj)->TryGetNumberField(TEXT("yaw"), Yaw) ||
+            !(*RotatorObj)->TryGetNumberField(TEXT("roll"), Roll))
+        {
+            return false;
+        }
+
+        OutRotator = FRotator(static_cast<float>(Pitch), static_cast<float>(Yaw), static_cast<float>(Roll));
+        return true;
+    }
+
     bool ParsePlannedActionFromJson(
         const TSharedPtr<FJsonObject>& ActionObj,
         const TArray<FString>& SelectedActors,
@@ -758,6 +802,261 @@ namespace
                 ParsedAction.ActorNames.Empty();
             }
             else
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("pcg.createGraph"))
+        {
+            FString AssetPath;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("assetPath"), AssetPath) || AssetPath.IsEmpty())
+            {
+                return false;
+            }
+
+            bool bOverwrite = false;
+            (*ParamsObj)->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::PcgCreateGraph;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.PcgGraphPath = AssetPath;
+            (*ParamsObj)->TryGetStringField(TEXT("templatePath"), ParsedAction.PcgTemplatePath);
+            ParsedAction.PcgTemplatePath = ParsedAction.PcgTemplatePath.TrimStartAndEnd();
+            ParsedAction.bPcgOverwrite = bOverwrite;
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("pcg.placeOnLandscape"))
+        {
+            FString Target;
+            const bool bHasTarget = (*ParamsObj)->TryGetStringField(TEXT("target"), Target);
+            Target = Target.TrimStartAndEnd();
+            if (!bHasTarget || Target.IsEmpty())
+            {
+                Target = TEXT("selection");
+            }
+
+            FString GraphSource;
+            (*ParamsObj)->TryGetStringField(TEXT("graphSource"), GraphSource);
+            GraphSource = GraphSource.TrimStartAndEnd().ToLower();
+            if (GraphSource.IsEmpty())
+            {
+                GraphSource = TEXT("last");
+            }
+            if (
+                !GraphSource.Equals(TEXT("path"), ESearchCase::IgnoreCase) &&
+                !GraphSource.Equals(TEXT("last"), ESearchCase::IgnoreCase) &&
+                !GraphSource.Equals(TEXT("selected"), ESearchCase::IgnoreCase))
+            {
+                return false;
+            }
+
+            FString GraphPath;
+            (*ParamsObj)->TryGetStringField(TEXT("graphPath"), GraphPath);
+            GraphPath = GraphPath.TrimStartAndEnd();
+            if (GraphSource.Equals(TEXT("path"), ESearchCase::IgnoreCase) && GraphPath.IsEmpty())
+            {
+                return false;
+            }
+
+            FString PlacementMode;
+            (*ParamsObj)->TryGetStringField(TEXT("placementMode"), PlacementMode);
+            PlacementMode = PlacementMode.TrimStartAndEnd().ToLower();
+            if (PlacementMode.IsEmpty())
+            {
+                PlacementMode = TEXT("center");
+            }
+            if (!PlacementMode.Equals(TEXT("center"), ESearchCase::IgnoreCase) && !PlacementMode.Equals(TEXT("full"), ESearchCase::IgnoreCase))
+            {
+                return false;
+            }
+
+            FVector2D ParsedSize = FVector2D(3000.0f, 3000.0f);
+            bool bHasSize = false;
+            const TSharedPtr<FJsonObject>* SizeObj = nullptr;
+            if ((*ParamsObj)->TryGetObjectField(TEXT("size"), SizeObj) && SizeObj && SizeObj->IsValid())
+            {
+                double SizeX = 0.0;
+                double SizeY = 0.0;
+                if (!(*SizeObj)->TryGetNumberField(TEXT("x"), SizeX) || !(*SizeObj)->TryGetNumberField(TEXT("y"), SizeY))
+                {
+                    return false;
+                }
+
+                ParsedSize = FVector2D(
+                    FMath::Max(1.0f, FMath::Abs(static_cast<float>(SizeX))),
+                    FMath::Max(1.0f, FMath::Abs(static_cast<float>(SizeY))));
+                bHasSize = true;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::PcgPlaceOnLandscape;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.PcgGraphSource = GraphSource;
+            ParsedAction.PcgGraphPath = GraphPath;
+            ParsedAction.bPcgPlaceUseFullArea = PlacementMode.Equals(TEXT("full"), ESearchCase::IgnoreCase);
+            ParsedAction.bPcgPlaceHasSize = bHasSize;
+            ParsedAction.PcgPlaceSize = ParsedSize;
+            ParsedAction.bPcgPlaceTargetAll =
+                Target.Equals(TEXT("all"), ESearchCase::IgnoreCase) ||
+                Target.Equals(TEXT("full"), ESearchCase::IgnoreCase) ||
+                Target.Equals(TEXT("full_area"), ESearchCase::IgnoreCase);
+
+            if (Target.Equals(TEXT("selection"), ESearchCase::IgnoreCase))
+            {
+                ParsedAction.ActorNames = SelectedActors;
+            }
+            else if (Target.Equals(TEXT("byName"), ESearchCase::IgnoreCase))
+            {
+                if (!ParseActorNamesField(*ParamsObj, ParsedAction.ActorNames))
+                {
+                    return false;
+                }
+            }
+            else if (!ParsedAction.bPcgPlaceTargetAll)
+            {
+                return false;
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("pcg.addConnectCommonNodes"))
+        {
+            FString GraphPath;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("graphPath"), GraphPath) || GraphPath.IsEmpty())
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::PcgAddConnectCommonNodes;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.PcgGraphPath = GraphPath;
+            ParsedAction.bPcgConnectFromInput = true;
+            ParsedAction.bPcgConnectToOutput = true;
+            (*ParamsObj)->TryGetBoolField(TEXT("connectFromInput"), ParsedAction.bPcgConnectFromInput);
+            (*ParamsObj)->TryGetBoolField(TEXT("connectToOutput"), ParsedAction.bPcgConnectToOutput);
+
+            const TArray<TSharedPtr<FJsonValue>>* NodeTypesArray = nullptr;
+            if ((*ParamsObj)->TryGetArrayField(TEXT("nodeTypes"), NodeTypesArray) && NodeTypesArray)
+            {
+                for (const TSharedPtr<FJsonValue>& NodeTypeValue : *NodeTypesArray)
+                {
+                    FString NodeType;
+                    if (NodeTypeValue.IsValid() && NodeTypeValue->TryGetString(NodeType))
+                    {
+                        NodeType = NodeType.TrimStartAndEnd().ToLower();
+                        if (!NodeType.IsEmpty())
+                        {
+                            ParsedAction.PcgNodeTypes.AddUnique(NodeType);
+                        }
+                    }
+                }
+            }
+
+            OutAction = ParsedAction;
+            return true;
+        }
+
+        if (Command == TEXT("pcg.setKeyParameters"))
+        {
+            FString GraphPath;
+            if (!(*ParamsObj)->TryGetStringField(TEXT("graphPath"), GraphPath) || GraphPath.IsEmpty())
+            {
+                return false;
+            }
+
+            FUEAIAgentPlannedSceneAction ParsedAction;
+            ParsedAction.Type = EUEAIAgentPlannedActionType::PcgSetKeyParameters;
+            ParsedAction.Risk = ParseRiskLevel(ActionObj);
+            ParsedAction.PcgGraphPath = GraphPath;
+
+            bool bHasAnyParameter = false;
+            double NumberValue = 0.0;
+            if ((*ParamsObj)->TryGetNumberField(TEXT("surfacePointsPerSquaredMeter"), NumberValue))
+            {
+                ParsedAction.PcgSurfacePointsPerSquaredMeter =
+                    FMath::Clamp(static_cast<float>(NumberValue), 0.0001f, 1000.0f);
+                ParsedAction.bPcgHasSurfacePointsPerSquaredMeter = true;
+                bHasAnyParameter = true;
+            }
+
+            if ((*ParamsObj)->TryGetNumberField(TEXT("surfaceLooseness"), NumberValue))
+            {
+                ParsedAction.PcgSurfaceLooseness = FMath::Clamp(static_cast<float>(NumberValue), 0.0f, 1.0f);
+                ParsedAction.bPcgHasSurfaceLooseness = true;
+                bHasAnyParameter = true;
+            }
+
+            FVector ParsedVector = FVector::ZeroVector;
+            if (ParseJsonVectorField(*ParamsObj, TEXT("surfacePointExtents"), ParsedVector))
+            {
+                ParsedAction.PcgSurfacePointExtents = FVector(
+                    FMath::Max(0.001f, FMath::Abs(ParsedVector.X)),
+                    FMath::Max(0.001f, FMath::Abs(ParsedVector.Y)),
+                    FMath::Max(0.001f, FMath::Abs(ParsedVector.Z)));
+                ParsedAction.bPcgHasSurfacePointExtents = true;
+                bHasAnyParameter = true;
+            }
+
+            if (ParseJsonVectorField(*ParamsObj, TEXT("transformOffsetMin"), ParsedVector))
+            {
+                ParsedAction.PcgTransformOffsetMin = ParsedVector;
+                ParsedAction.bPcgHasTransformOffsetMin = true;
+                bHasAnyParameter = true;
+            }
+
+            if (ParseJsonVectorField(*ParamsObj, TEXT("transformOffsetMax"), ParsedVector))
+            {
+                ParsedAction.PcgTransformOffsetMax = ParsedVector;
+                ParsedAction.bPcgHasTransformOffsetMax = true;
+                bHasAnyParameter = true;
+            }
+
+            FRotator ParsedRotator = FRotator::ZeroRotator;
+            if (ParseJsonRotatorField(*ParamsObj, TEXT("transformRotationMin"), ParsedRotator))
+            {
+                ParsedAction.PcgTransformRotationMin = ParsedRotator;
+                ParsedAction.bPcgHasTransformRotationMin = true;
+                bHasAnyParameter = true;
+            }
+
+            if (ParseJsonRotatorField(*ParamsObj, TEXT("transformRotationMax"), ParsedRotator))
+            {
+                ParsedAction.PcgTransformRotationMax = ParsedRotator;
+                ParsedAction.bPcgHasTransformRotationMax = true;
+                bHasAnyParameter = true;
+            }
+
+            if (ParseJsonVectorField(*ParamsObj, TEXT("transformScaleMin"), ParsedVector))
+            {
+                ParsedAction.PcgTransformScaleMin = FVector(
+                    FMath::Max(0.001f, ParsedVector.X),
+                    FMath::Max(0.001f, ParsedVector.Y),
+                    FMath::Max(0.001f, ParsedVector.Z));
+                ParsedAction.bPcgHasTransformScaleMin = true;
+                bHasAnyParameter = true;
+            }
+
+            if (ParseJsonVectorField(*ParamsObj, TEXT("transformScaleMax"), ParsedVector))
+            {
+                ParsedAction.PcgTransformScaleMax = FVector(
+                    FMath::Max(0.001f, ParsedVector.X),
+                    FMath::Max(0.001f, ParsedVector.Y),
+                    FMath::Max(0.001f, ParsedVector.Z));
+                ParsedAction.bPcgHasTransformScaleMax = true;
+                bHasAnyParameter = true;
+            }
+
+            if (!bHasAnyParameter)
             {
                 return false;
             }
@@ -3716,6 +4015,94 @@ FString FUEAIAgentTransportModule::GetPlannedActionPreviewText(int32 ActionIndex
             *MountainStyleText,
             *MountainWidthText,
             *SeedText);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::PcgCreateGraph)
+    {
+        const FString TemplateSuffix = Action.PcgTemplatePath.IsEmpty()
+            ? TEXT("")
+            : FString::Printf(TEXT(" from template \"%s\""), *Action.PcgTemplatePath);
+        return FString::Printf(
+            TEXT("Action %d: Create PCG graph \"%s\"%s%s"),
+            ActionIndex + 1,
+            *Action.PcgGraphPath,
+            *TemplateSuffix,
+            Action.bPcgOverwrite ? TEXT(" (overwrite)") : TEXT(""));
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::PcgPlaceOnLandscape)
+    {
+        const FString SourceText = Action.PcgGraphSource.Equals(TEXT("path"), ESearchCase::IgnoreCase)
+            ? FString::Printf(TEXT("path \"%s\""), *Action.PcgGraphPath)
+            : Action.PcgGraphSource.Equals(TEXT("selected"), ESearchCase::IgnoreCase)
+            ? TEXT("selected graph")
+            : TEXT("last graph");
+        const FString AreaText = Action.bPcgPlaceUseFullArea
+            ? TEXT("full landscape area")
+            : Action.bPcgPlaceHasSize
+            ? FString::Printf(TEXT("landscape center, size=(%.0f, %.0f)"), Action.PcgPlaceSize.X, Action.PcgPlaceSize.Y)
+            : TEXT("landscape center");
+        const FString LandscapeTargetText = Action.bPcgPlaceTargetAll
+            ? TEXT("all landscapes")
+            : FormatActorTargetShort(Action.ActorNames);
+        return FString::Printf(
+            TEXT("Action %d: Place PCG from %s on %s for %s"),
+            ActionIndex + 1,
+            *SourceText,
+            *AreaText,
+            *LandscapeTargetText);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::PcgAddConnectCommonNodes)
+    {
+        const FString NodeList = Action.PcgNodeTypes.Num() > 0
+            ? FString::Join(Action.PcgNodeTypes, TEXT(", "))
+            : TEXT("surfaceSampler, transformPoints");
+        return FString::Printf(
+            TEXT("Action %d: Add/connect PCG nodes (%s) in \"%s\""),
+            ActionIndex + 1,
+            *NodeList,
+            *Action.PcgGraphPath);
+    }
+
+    if (Action.Type == EUEAIAgentPlannedActionType::PcgSetKeyParameters)
+    {
+        TArray<FString> Parts;
+        if (Action.bPcgHasSurfacePointsPerSquaredMeter)
+        {
+            Parts.Add(FString::Printf(TEXT("pointsPerSqM=%.3f"), Action.PcgSurfacePointsPerSquaredMeter));
+        }
+        if (Action.bPcgHasSurfaceLooseness)
+        {
+            Parts.Add(FString::Printf(TEXT("looseness=%.3f"), Action.PcgSurfaceLooseness));
+        }
+        if (Action.bPcgHasSurfacePointExtents)
+        {
+            Parts.Add(FString::Printf(
+                TEXT("pointExtents=(%.1f, %.1f, %.1f)"),
+                Action.PcgSurfacePointExtents.X,
+                Action.PcgSurfacePointExtents.Y,
+                Action.PcgSurfacePointExtents.Z));
+        }
+        if (Action.bPcgHasTransformOffsetMin || Action.bPcgHasTransformOffsetMax)
+        {
+            Parts.Add(TEXT("offset range"));
+        }
+        if (Action.bPcgHasTransformRotationMin || Action.bPcgHasTransformRotationMax)
+        {
+            Parts.Add(TEXT("rotation range"));
+        }
+        if (Action.bPcgHasTransformScaleMin || Action.bPcgHasTransformScaleMax)
+        {
+            Parts.Add(TEXT("scale range"));
+        }
+
+        const FString ChangeText = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : TEXT("key params");
+        return FString::Printf(
+            TEXT("Action %d: Set PCG parameters in \"%s\" (%s)"),
+            ActionIndex + 1,
+            *Action.PcgGraphPath,
+            *ChangeText);
     }
 
     if (Action.Type == EUEAIAgentPlannedActionType::SessionBeginTransaction)

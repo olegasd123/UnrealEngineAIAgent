@@ -356,6 +356,46 @@ export function buildPlanPrompt(input: PlanInput): string {
               mode: "add"
             },
             risk: "medium"
+          },
+          {
+            command: "pcg.createGraph",
+            params: {
+              assetPath: "/Game/PCG/PCG_Graph",
+              overwrite: false
+            },
+            risk: "medium"
+          },
+          {
+            command: "pcg.placeOnLandscape",
+            params: {
+              target: "selection",
+              actorNames: ["landscape_name_if_target_byName"],
+              graphSource: "last",
+              placementMode: "center",
+              size: { x: 3000, y: 3000 }
+            },
+            risk: "medium"
+          },
+          {
+            command: "pcg.addConnectCommonNodes",
+            params: {
+              graphPath: "/Game/PCG/PCG_Graph",
+              nodeTypes: ["surfaceSampler", "transformPoints"],
+              connectFromInput: true,
+              connectToOutput: true
+            },
+            risk: "medium"
+          },
+          {
+            command: "pcg.setKeyParameters",
+            params: {
+              graphPath: "/Game/PCG/PCG_Graph",
+              surfacePointsPerSquaredMeter: 0.2,
+              surfaceLooseness: 0.5,
+              transformOffsetMin: { x: -100, y: -100, z: 0 },
+              transformOffsetMax: { x: 100, y: 100, z: 0 }
+            },
+            risk: "medium"
           }
         ]
       },
@@ -388,6 +428,10 @@ export function buildPlanPrompt(input: PlanInput): string {
     "- landscape.sculpt: include target + center{x,y} + size{x,y} + strength(0-1). Optional falloff(0-1), mode(raise|lower).",
     "- landscape.paintLayer: include target + center{x,y} + size{x,y} + layerName + strength(0-1). Optional falloff(0-1), mode(add|remove).",
     "- landscape.generate: include target + theme(moon_surface|nature_island). Optional detailLevel(low|medium|high|cinematic), moonProfile(moon_surface), mountainStyle(sharp_peaks|hills), useFullArea(bool), center/size when bounded, mountainCount(1-8), mountainWidthMin/mountainWidthMax, maxHeight, seed, craterCountMin/craterCountMax, craterWidthMin/craterWidthMax.",
+    "- pcg.createGraph: include assetPath under /Game/. Optional overwrite(bool).",
+    "- pcg.placeOnLandscape: include target(selection|byName|all), graphSource(path|last|selected), placementMode(center|full), optional graphPath (required when graphSource=path), optional size{x,y} for center mode.",
+    "- pcg.addConnectCommonNodes: include graphPath and optional nodeTypes(surfaceSampler|transformPoints). Optional connectFromInput/connectToOutput (both default true).",
+    "- pcg.setKeyParameters: include graphPath and at least one parameter among surfacePointsPerSquaredMeter, surfaceLooseness, surfacePointExtents{x,y,z}, transformOffsetMin/Max, transformRotationMin/Max, transformScaleMin/Max.",
     "- editor.undo: use params: {} for explicit undo requests like 'undo', 'revert', or 'roll back'.",
     "- editor.redo: use params: {} for explicit redo requests like 'redo', 'do again', or 'reapply'.",
     "- session transaction begin/commit/rollback are internal. Do not include any session.* action.",

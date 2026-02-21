@@ -15,6 +15,11 @@ const ALLOWED_CREATE_ACTOR_CLASSES = new Set([
   "CameraActor"
 ]);
 
+const ALLOWED_PCG_NODE_TYPES = new Set([
+  "surfaceSampler",
+  "transformPoints"
+]);
+
 function shouldAutoApprove(mode: "chat" | "agent", risk: PlanAction["risk"]): boolean {
   return mode === "agent" && risk === "low";
 }
@@ -26,6 +31,10 @@ function normalizeAssetPath(path: string): string {
 function isAllowedAssetPath(path: string): boolean {
   const normalized = normalizeAssetPath(path);
   return normalized.startsWith("/Game/") || normalized.startsWith("/Engine/");
+}
+
+function isAllowedGraphPath(path: string): boolean {
+  return path.trim().startsWith("/Game/");
 }
 
 function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): number {
@@ -44,7 +53,8 @@ function estimateTargetCount(action: PlanAction, policy: PolicyRuntimeConfig): n
     action.command === "scene.setPostProcessExposureCompensation" ||
     action.command === "landscape.sculpt" ||
     action.command === "landscape.paintLayer" ||
-    action.command === "landscape.generate"
+    action.command === "landscape.generate" ||
+    action.command === "pcg.placeOnLandscape"
   ) {
     if (action.params.target === "byName") {
       return Math.max(1, action.params.actorNames?.length ?? 0);
@@ -89,6 +99,25 @@ function estimateActionChanges(action: PlanAction, policy: PolicyRuntimeConfig):
       return Math.max(1, Math.round(area / 200000));
     }
     return 200;
+  }
+  if (action.command === "pcg.createGraph") {
+    return 20;
+  }
+  if (action.command === "pcg.placeOnLandscape") {
+    if (action.params.placementMode === "full") {
+      return 60;
+    }
+    if (action.params.size) {
+      const area = Math.abs(action.params.size.x * action.params.size.y);
+      return Math.max(8, Math.round(area / 250000));
+    }
+    return 20;
+  }
+  if (action.command === "pcg.addConnectCommonNodes") {
+    return Math.max(1, (action.params.nodeTypes?.length ?? 2) * 8);
+  }
+  if (action.command === "pcg.setKeyParameters") {
+    return 12;
   }
   return 0;
 }
@@ -339,6 +368,96 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     message = decision.message;
   }
 
+  if (action.command === "pcg.createGraph") {
+    if (!isAllowedGraphPath(action.params.assetPath)) {
+      return hardDeny(action, "Policy hard-deny: pcg.createGraph assetPath must start with /Game/.", policy);
+    }
+    if (typeof action.params.templatePath === "string") {
+      const trimmedTemplatePath = action.params.templatePath.trim();
+      action.params.templatePath = trimmedTemplatePath.length > 0 ? trimmedTemplatePath : undefined;
+    }
+
+    const decision = requireApproval(action, "Policy: PCG graph creation requires approval.", policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
+  if (action.command === "pcg.placeOnLandscape") {
+    if (action.params.graphSource === "path") {
+      if (!action.params.graphPath || !isAllowedGraphPath(action.params.graphPath)) {
+        return hardDeny(action, "Policy hard-deny: pcg.placeOnLandscape graphPath must start with /Game/ when graphSource=path.", policy);
+      }
+    } else if (typeof action.params.graphPath === "string") {
+      const trimmedGraphPath = action.params.graphPath.trim();
+      action.params.graphPath = trimmedGraphPath.length > 0 ? trimmedGraphPath : undefined;
+    }
+
+    if (action.params.size) {
+      const maxBrushSize = Math.max(1, policy.maxLandscapeBrushSize);
+      action.params.size.x = Math.max(1, Math.min(maxBrushSize, Math.abs(action.params.size.x)));
+      action.params.size.y = Math.max(1, Math.min(maxBrushSize, Math.abs(action.params.size.y)));
+    }
+
+    const decision = requireApproval(action, "Policy: placing PCG on landscape requires approval.", policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
+  if (action.command === "pcg.addConnectCommonNodes") {
+    if (!isAllowedGraphPath(action.params.graphPath)) {
+      return hardDeny(action, "Policy hard-deny: pcg.addConnectCommonNodes graphPath must start with /Game/.", policy);
+    }
+
+    if (action.params.nodeTypes && action.params.nodeTypes.length > 0) {
+      const filtered = action.params.nodeTypes.filter((nodeType) => ALLOWED_PCG_NODE_TYPES.has(nodeType));
+      if (filtered.length === 0) {
+        action.params.nodeTypes = ["surfaceSampler", "transformPoints"];
+      } else {
+        action.params.nodeTypes = filtered;
+      }
+    }
+
+    const decision = requireApproval(action, "Policy: PCG graph node edits require approval.", policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
+  if (action.command === "pcg.setKeyParameters") {
+    if (!isAllowedGraphPath(action.params.graphPath)) {
+      return hardDeny(action, "Policy hard-deny: pcg.setKeyParameters graphPath must start with /Game/.", policy);
+    }
+
+    if (typeof action.params.surfacePointsPerSquaredMeter === "number") {
+      action.params.surfacePointsPerSquaredMeter = Math.max(0.0001, Math.min(1000, action.params.surfacePointsPerSquaredMeter));
+    }
+    if (typeof action.params.surfaceLooseness === "number") {
+      action.params.surfaceLooseness = Math.max(0, Math.min(1, action.params.surfaceLooseness));
+    }
+    if (action.params.surfacePointExtents) {
+      action.params.surfacePointExtents.x = Math.max(0.001, Math.abs(action.params.surfacePointExtents.x));
+      action.params.surfacePointExtents.y = Math.max(0.001, Math.abs(action.params.surfacePointExtents.y));
+      action.params.surfacePointExtents.z = Math.max(0.001, Math.abs(action.params.surfacePointExtents.z));
+    }
+    if (action.params.transformScaleMin) {
+      action.params.transformScaleMin.x = Math.max(0.001, action.params.transformScaleMin.x);
+      action.params.transformScaleMin.y = Math.max(0.001, action.params.transformScaleMin.y);
+      action.params.transformScaleMin.z = Math.max(0.001, action.params.transformScaleMin.z);
+    }
+    if (action.params.transformScaleMax) {
+      action.params.transformScaleMax.x = Math.max(0.001, action.params.transformScaleMax.x);
+      action.params.transformScaleMax.y = Math.max(0.001, action.params.transformScaleMax.y);
+      action.params.transformScaleMax.z = Math.max(0.001, action.params.transformScaleMax.z);
+    }
+
+    const decision = requireApproval(action, "Policy: PCG parameter edits require approval.", policy, "medium");
+    approved = decision.approved;
+    risk = decision.risk;
+    message = decision.message;
+  }
+
   if (action.command === "scene.deleteActor") {
     if (action.params.target === "selection") {
       return hardDeny(
@@ -375,7 +494,8 @@ function applyLocalPolicy(action: PlanAction, policy: PolicyRuntimeConfig, mode:
     action.command === "scene.setPostProcessExposureCompensation" ||
     action.command === "landscape.sculpt" ||
     action.command === "landscape.paintLayer" ||
-    action.command === "landscape.generate"
+    action.command === "landscape.generate" ||
+    action.command === "pcg.placeOnLandscape"
   ) {
     if (action.params.target === "byName" && action.params.actorNames) {
       if (action.params.actorNames.length > policy.maxTargetNames) {

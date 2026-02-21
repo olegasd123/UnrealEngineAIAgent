@@ -4,6 +4,7 @@ export type GoalType =
   | "scene_transform"
   | "scene_create"
   | "scene_delete"
+  | "pcg_graph"
   | "material_style"
   | "lighting_tune"
   | "unknown";
@@ -44,6 +45,9 @@ function readSelectionCount(context: TaskRequest["context"]): number {
 
 function detectGoalType(prompt: string): GoalType {
   const lower = prompt.toLowerCase();
+  if (/(pcg|procedural content generation|pcg graph|graph node|surface sampler|transform points)/.test(lower)) {
+    return "pcg_graph";
+  }
   if (/(set|assign|apply|replace).*(material|shader)|(material|shader).*(style|look)/.test(lower)) {
     return "material_style";
   }

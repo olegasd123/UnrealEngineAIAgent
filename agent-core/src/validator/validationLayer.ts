@@ -130,6 +130,10 @@ function isSceneWriteAction(action: PlanOutput["actions"][number]): boolean {
     action.command === "landscape.sculpt" ||
     action.command === "landscape.paintLayer" ||
     action.command === "landscape.generate" ||
+    action.command === "pcg.createGraph" ||
+    action.command === "pcg.placeOnLandscape" ||
+    action.command === "pcg.addConnectCommonNodes" ||
+    action.command === "pcg.setKeyParameters" ||
     action.command === "editor.undo" ||
     action.command === "editor.redo"
   );

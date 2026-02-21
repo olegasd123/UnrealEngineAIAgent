@@ -7,6 +7,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "ScopedTransaction.h"
+#include "Components/BrushComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -25,6 +26,26 @@
 #include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
 #include "Subsystems/EditorActorSubsystem.h"
+
+#ifndef UE_AI_AGENT_WITH_PCG
+#define UE_AI_AGENT_WITH_PCG 0
+#endif
+
+#if UE_AI_AGENT_WITH_PCG
+#include "AssetToolsModule.h"
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/PackageName.h"
+#include "PCGCommon.h"
+#include "PCGComponent.h"
+#include "PCGGraph.h"
+#include "PCGNode.h"
+#include "PCGVolume.h"
+#include "Elements/PCGSurfaceSampler.h"
+#include "Elements/PCGTransformPoints.h"
+#include "UObject/Package.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "UEAIAgentSceneTools"
 
@@ -83,6 +104,354 @@ namespace
             }
         }
     }
+
+#if UE_AI_AGENT_WITH_PCG
+    FString GUEAIAgentLastPcgGraphObjectPath;
+    constexpr TCHAR GUEAIAgentRuntimeGrassTemplateObjectPath[] =
+        TEXT("/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU");
+
+    bool ResolvePcgGraphPaths(
+        const FString& RawPath,
+        FString& OutPackagePath,
+        FString& OutAssetName,
+        FString& OutObjectPath,
+        FString& OutError)
+    {
+        FString NormalizedPath = RawPath.TrimStartAndEnd();
+        if (NormalizedPath.IsEmpty())
+        {
+            OutError = TEXT("PCG graph path is empty.");
+            return false;
+        }
+
+        int32 FirstQuoteIndex = INDEX_NONE;
+        int32 LastQuoteIndex = INDEX_NONE;
+        if (NormalizedPath.FindChar(TEXT('\''), FirstQuoteIndex) && NormalizedPath.FindLastChar(TEXT('\''), LastQuoteIndex) &&
+            LastQuoteIndex > FirstQuoteIndex)
+        {
+            NormalizedPath = NormalizedPath.Mid(FirstQuoteIndex + 1, LastQuoteIndex - FirstQuoteIndex - 1).TrimStartAndEnd();
+        }
+
+        if (NormalizedPath.EndsWith(TEXT(".uasset"), ESearchCase::IgnoreCase))
+        {
+            NormalizedPath = NormalizedPath.LeftChop(7);
+        }
+
+        if (!NormalizedPath.StartsWith(TEXT("/Game/")))
+        {
+            OutError = TEXT("PCG graph path must start with /Game/.");
+            return false;
+        }
+
+        FString PackagePath = NormalizedPath;
+        FString AssetName;
+        int32 DotIndex = INDEX_NONE;
+        if (NormalizedPath.FindLastChar(TEXT('.'), DotIndex))
+        {
+            PackagePath = NormalizedPath.Left(DotIndex);
+            AssetName = NormalizedPath.Mid(DotIndex + 1);
+        }
+        else
+        {
+            AssetName = FPackageName::GetLongPackageAssetName(PackagePath);
+        }
+
+        PackagePath = PackagePath.TrimStartAndEnd();
+        AssetName = AssetName.TrimStartAndEnd();
+        if (PackagePath.IsEmpty() || AssetName.IsEmpty())
+        {
+            OutError = TEXT("PCG graph path is invalid.");
+            return false;
+        }
+
+        if (!FPackageName::IsValidLongPackageName(PackagePath))
+        {
+            OutError = FString::Printf(TEXT("Invalid package path: %s"), *PackagePath);
+            return false;
+        }
+
+        OutPackagePath = PackagePath;
+        OutAssetName = AssetName;
+        OutObjectPath = FString::Printf(TEXT("%s.%s"), *PackagePath, *AssetName);
+        return true;
+    }
+
+    UPCGGraph* LoadPcgGraphByPath(const FString& GraphPath, FString& OutObjectPath, FString& OutError)
+    {
+        FString PackagePath;
+        FString AssetName;
+        if (!ResolvePcgGraphPaths(GraphPath, PackagePath, AssetName, OutObjectPath, OutError))
+        {
+            return nullptr;
+        }
+
+        UPCGGraph* Graph = FindObject<UPCGGraph>(nullptr, *OutObjectPath);
+        if (!Graph)
+        {
+            Graph = LoadObject<UPCGGraph>(nullptr, *OutObjectPath);
+        }
+
+        if (!Graph)
+        {
+            OutError = FString::Printf(TEXT("PCG graph not found: %s"), *OutObjectPath);
+            return nullptr;
+        }
+
+        return Graph;
+    }
+
+    UPCGGraph* ResolvePcgTemplateGraph(
+        const FString& TemplatePathOrName,
+        FString& OutResolvedTemplatePath,
+        FString& OutError)
+    {
+        FString TemplateRef = TemplatePathOrName.TrimStartAndEnd();
+        if (TemplateRef.IsEmpty())
+        {
+            OutError = TEXT("PCG template path/name is empty.");
+            return nullptr;
+        }
+
+        const FString RuntimeGrassTemplateShortName = TEXT("tpl_showcase_runtimegrassgpu");
+        const FString RuntimeGrassTemplatePackagePath = TEXT("/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU");
+        const FString RuntimeGrassTemplateObjectPath = GUEAIAgentRuntimeGrassTemplateObjectPath;
+        const FString TemplateRefLower = TemplateRef.ToLower();
+        if (
+            TemplateRefLower.Equals(RuntimeGrassTemplateShortName, ESearchCase::CaseSensitive) ||
+            TemplateRefLower.Equals(RuntimeGrassTemplatePackagePath.ToLower(), ESearchCase::CaseSensitive) ||
+            TemplateRefLower.Equals(RuntimeGrassTemplateObjectPath.ToLower(), ESearchCase::CaseSensitive))
+        {
+            TemplateRef = RuntimeGrassTemplateObjectPath;
+        }
+
+        if (TemplateRef.StartsWith(TEXT("/")))
+        {
+            FString ObjectPath = TemplateRef;
+            int32 DotIndex = INDEX_NONE;
+            if (!ObjectPath.FindLastChar(TEXT('.'), DotIndex))
+            {
+                const FString AssetName = FPackageName::GetLongPackageAssetName(ObjectPath);
+                ObjectPath = FString::Printf(TEXT("%s.%s"), *ObjectPath, *AssetName);
+            }
+
+            UPCGGraph* TemplateGraph = LoadObject<UPCGGraph>(nullptr, *ObjectPath);
+            if (!TemplateGraph)
+            {
+                OutError = FString::Printf(TEXT("PCG template graph not found: %s"), *ObjectPath);
+                return nullptr;
+            }
+
+            OutResolvedTemplatePath = ObjectPath;
+            return TemplateGraph;
+        }
+
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        TArray<FAssetData> GraphAssets;
+        AssetRegistryModule.Get().GetAssetsByClass(UPCGGraph::StaticClass()->GetClassPathName(), GraphAssets, true);
+
+        FAssetData FirstMatch;
+        bool bFoundMatch = false;
+        bool bFoundAmbiguous = false;
+        for (const FAssetData& Asset : GraphAssets)
+        {
+            if (!Asset.AssetName.ToString().Equals(TemplateRef, ESearchCase::IgnoreCase))
+            {
+                continue;
+            }
+
+            if (!bFoundMatch)
+            {
+                FirstMatch = Asset;
+                bFoundMatch = true;
+            }
+            else
+            {
+                bFoundAmbiguous = true;
+                break;
+            }
+        }
+
+        if (!bFoundMatch)
+        {
+            OutError = FString::Printf(TEXT("PCG template graph not found: %s"), *TemplateRef);
+            return nullptr;
+        }
+
+        if (bFoundAmbiguous)
+        {
+            OutError = FString::Printf(
+                TEXT("Multiple PCG template graphs match \"%s\". Use full object path (for example /Game/Path/Asset.Asset)."),
+                *TemplateRef);
+            return nullptr;
+        }
+
+        UPCGGraph* TemplateGraph = Cast<UPCGGraph>(FirstMatch.GetAsset());
+        if (!TemplateGraph)
+        {
+            const FString ObjectPath = FirstMatch.GetObjectPathString();
+            TemplateGraph = LoadObject<UPCGGraph>(nullptr, *ObjectPath);
+        }
+
+        if (!TemplateGraph)
+        {
+            OutError = FString::Printf(TEXT("Failed to load PCG template graph: %s"), *FirstMatch.GetObjectPathString());
+            return nullptr;
+        }
+
+        OutResolvedTemplatePath = FirstMatch.GetObjectPathString();
+        return TemplateGraph;
+    }
+
+    bool ShouldInferRuntimeGrassTemplateFromAssetPath(const FString& AssetPath)
+    {
+        const FString LowerPath = AssetPath.ToLower();
+        if (LowerPath.Contains(TEXT("runtimegrassgpu")))
+        {
+            return true;
+        }
+
+        return LowerPath.Contains(TEXT("grass")) && LowerPath.Contains(TEXT("template"));
+    }
+
+    UPCGNode* FindFirstNodeBySettingsClass(UPCGGraph* Graph, TSubclassOf<UPCGSettingsInterface> SettingsClass)
+    {
+        if (!Graph || !SettingsClass)
+        {
+            return nullptr;
+        }
+
+        const TArray<UPCGNode*> MatchingNodes = Graph->FindNodesWithSettings(SettingsClass);
+        return MatchingNodes.Num() > 0 ? MatchingNodes[0] : nullptr;
+    }
+
+    bool HasRequestedPcgNodeType(const TSet<FString>& RequestedTypes, const TCHAR* NodeType)
+    {
+        return RequestedTypes.Contains(FString(NodeType).ToLower());
+    }
+
+    void RememberPcgGraphObjectPath(const FString& ObjectPath)
+    {
+        const FString TrimmedObjectPath = ObjectPath.TrimStartAndEnd();
+        if (!TrimmedObjectPath.IsEmpty())
+        {
+            GUEAIAgentLastPcgGraphObjectPath = TrimmedObjectPath;
+        }
+    }
+
+    void RememberPcgGraph(UPCGGraph* Graph)
+    {
+        if (!Graph)
+        {
+            return;
+        }
+
+        RememberPcgGraphObjectPath(Graph->GetPathName());
+    }
+
+    UPCGGraph* LoadPcgGraphByObjectPath(const FString& ObjectPath, FString& OutResolvedPath, FString& OutError)
+    {
+        OutResolvedPath = ObjectPath.TrimStartAndEnd();
+        if (OutResolvedPath.IsEmpty())
+        {
+            OutError = TEXT("PCG graph path is empty.");
+            return nullptr;
+        }
+
+        UPCGGraph* Graph = FindObject<UPCGGraph>(nullptr, *OutResolvedPath);
+        if (!Graph)
+        {
+            Graph = LoadObject<UPCGGraph>(nullptr, *OutResolvedPath);
+        }
+
+        if (!Graph)
+        {
+            OutError = FString::Printf(TEXT("PCG graph not found: %s"), *OutResolvedPath);
+            return nullptr;
+        }
+
+        return Graph;
+    }
+
+    UPCGGraph* ResolveSelectedPcgGraph(FString& OutResolvedPath, FString& OutError)
+    {
+        UPCGGraph* FoundGraph = nullptr;
+        bool bFoundAmbiguous = false;
+
+        if (GEditor)
+        {
+            if (USelection* SelectedObjects = GEditor->GetSelectedObjects())
+            {
+                for (FSelectionIterator It(*SelectedObjects); It; ++It)
+                {
+                    UPCGGraph* CandidateGraph = Cast<UPCGGraph>(*It);
+                    if (!CandidateGraph)
+                    {
+                        continue;
+                    }
+
+                    if (!FoundGraph)
+                    {
+                        FoundGraph = CandidateGraph;
+                        continue;
+                    }
+
+                    if (FoundGraph != CandidateGraph)
+                    {
+                        bFoundAmbiguous = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!FoundGraph && !bFoundAmbiguous)
+            {
+                TArray<AActor*> SelectedActors;
+                CollectActorsFromSelection(SelectedActors);
+                for (AActor* Actor : SelectedActors)
+                {
+                    if (!Actor)
+                    {
+                        continue;
+                    }
+
+                    const UPCGComponent* PcgComponent = Actor->FindComponentByClass<UPCGComponent>();
+                    UPCGGraph* CandidateGraph = PcgComponent ? PcgComponent->GetGraph() : nullptr;
+                    if (!CandidateGraph)
+                    {
+                        continue;
+                    }
+
+                    if (!FoundGraph)
+                    {
+                        FoundGraph = CandidateGraph;
+                        continue;
+                    }
+
+                    if (FoundGraph != CandidateGraph)
+                    {
+                        bFoundAmbiguous = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (bFoundAmbiguous)
+        {
+            OutError = TEXT("Multiple PCG graphs are selected. Select one PCG graph or one actor with a PCG component.");
+            return nullptr;
+        }
+
+        if (!FoundGraph)
+        {
+            OutError = TEXT("No selected PCG graph found. Select a PCG graph asset or an actor with a PCG component.");
+            return nullptr;
+        }
+
+        OutResolvedPath = FoundGraph->GetPathName();
+        return FoundGraph;
+    }
+#endif
 
     template <typename TComponentClass>
     bool ResolveUniqueActorWithComponent(UWorld* World, TArray<AActor*>& InOutActors)
@@ -409,6 +778,47 @@ namespace
         }
 
         return LandscapeInfo->GetLandscapeExtent(OutMinX, OutMinY, OutMaxX, OutMaxY);
+    }
+
+    bool ComputeLandscapeWorldBoundsFromRect(
+        ALandscapeProxy* Landscape,
+        int32 MinX,
+        int32 MinY,
+        int32 MaxX,
+        int32 MaxY,
+        FBox& OutBounds)
+    {
+        if (!Landscape)
+        {
+            return false;
+        }
+
+        const FVector LandscapeLocation = Landscape->GetActorLocation();
+        const FVector LandscapeScale = Landscape->GetActorScale3D();
+        const float ScaleX = FMath::Max(KINDA_SMALL_NUMBER, FMath::Abs(LandscapeScale.X));
+        const float ScaleY = FMath::Max(KINDA_SMALL_NUMBER, FMath::Abs(LandscapeScale.Y));
+
+        float WorldMinX = LandscapeLocation.X + static_cast<float>(MinX) * ScaleX;
+        float WorldMaxX = LandscapeLocation.X + static_cast<float>(MaxX) * ScaleX;
+        float WorldMinY = LandscapeLocation.Y + static_cast<float>(MinY) * ScaleY;
+        float WorldMaxY = LandscapeLocation.Y + static_cast<float>(MaxY) * ScaleY;
+        if (WorldMinX > WorldMaxX)
+        {
+            Swap(WorldMinX, WorldMaxX);
+        }
+        if (WorldMinY > WorldMaxY)
+        {
+            Swap(WorldMinY, WorldMaxY);
+        }
+
+        FVector BoundsOrigin = LandscapeLocation;
+        FVector BoundsExtent = FVector(0.0f, 0.0f, 1000.0f);
+        Landscape->GetActorBounds(false, BoundsOrigin, BoundsExtent);
+        const float MinZ = BoundsOrigin.Z - BoundsExtent.Z - 100.0f;
+        const float MaxZ = BoundsOrigin.Z + FMath::Max(BoundsExtent.Z, 1000.0f) + 100.0f;
+
+        OutBounds = FBox(FVector(WorldMinX, WorldMinY, MinZ), FVector(WorldMaxX, WorldMaxY, MaxZ));
+        return OutBounds.IsValid;
     }
 
     FGuid ResolveLandscapeEditLayerGuid(ALandscapeProxy* Landscape)
@@ -2958,6 +3368,707 @@ bool FUEAIAgentSceneTools::LandscapeGenerate(const FUEAIAgentLandscapeGeneratePa
         OutMessage += FString::Printf(TEXT(" Skipped %d oversized landscape area(s)."), SkippedTooLarge);
     }
     return true;
+}
+
+bool FUEAIAgentSceneTools::PcgCreateGraph(const FUEAIAgentPcgCreateGraphParams& Params, FString& OutMessage)
+{
+#if UE_AI_AGENT_WITH_PCG
+    FString PackagePath;
+    FString AssetName;
+    FString ObjectPath;
+    FString RequestedObjectPath;
+    FString ErrorMessage;
+    if (!ResolvePcgGraphPaths(Params.AssetPath, PackagePath, AssetName, ObjectPath, ErrorMessage))
+    {
+        OutMessage = ErrorMessage;
+        return false;
+    }
+    RequestedObjectPath = ObjectPath;
+
+    bool bUsedUniqueAssetPath = false;
+
+    UPCGGraph* TemplateGraph = nullptr;
+    FString ResolvedTemplatePath;
+    FString RequestedTemplatePath = Params.TemplatePath.TrimStartAndEnd();
+    if (RequestedTemplatePath.IsEmpty() && ShouldInferRuntimeGrassTemplateFromAssetPath(Params.AssetPath))
+    {
+        RequestedTemplatePath = GUEAIAgentRuntimeGrassTemplateObjectPath;
+    }
+    if (!RequestedTemplatePath.IsEmpty())
+    {
+        TemplateGraph = ResolvePcgTemplateGraph(RequestedTemplatePath, ResolvedTemplatePath, ErrorMessage);
+        if (!TemplateGraph)
+        {
+            OutMessage = ErrorMessage;
+            return false;
+        }
+    }
+
+    UPCGGraph* ExistingGraph = FindObject<UPCGGraph>(nullptr, *ObjectPath);
+    if (!ExistingGraph)
+    {
+        ExistingGraph = LoadObject<UPCGGraph>(nullptr, *ObjectPath);
+    }
+
+    if (ExistingGraph)
+    {
+        if (!Params.bOverwrite)
+        {
+            FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+            FString UniquePackagePath;
+            FString UniqueAssetName;
+            AssetToolsModule.Get().CreateUniqueAssetName(PackagePath, TEXT(""), UniquePackagePath, UniqueAssetName);
+            UniquePackagePath = UniquePackagePath.TrimStartAndEnd();
+            UniqueAssetName = UniqueAssetName.TrimStartAndEnd();
+            if (UniquePackagePath.IsEmpty() || UniqueAssetName.IsEmpty())
+            {
+                OutMessage = FString::Printf(TEXT("PCG graph already exists and unique asset name could not be generated: %s"), *ObjectPath);
+                return false;
+            }
+
+            if (UniquePackagePath.Equals(PackagePath, ESearchCase::CaseSensitive) &&
+                UniqueAssetName.Equals(AssetName, ESearchCase::CaseSensitive))
+            {
+                OutMessage = FString::Printf(TEXT("PCG graph already exists and unique asset name is the same: %s"), *ObjectPath);
+                return false;
+            }
+
+            PackagePath = UniquePackagePath;
+            AssetName = UniqueAssetName;
+            ObjectPath = FString::Printf(TEXT("%s.%s"), *PackagePath, *AssetName);
+            bUsedUniqueAssetPath = true;
+            ExistingGraph = FindObject<UPCGGraph>(nullptr, *ObjectPath);
+            if (!ExistingGraph)
+            {
+                ExistingGraph = LoadObject<UPCGGraph>(nullptr, *ObjectPath);
+            }
+            if (ExistingGraph)
+            {
+                OutMessage = FString::Printf(TEXT("PCG graph already exists and unique path is also occupied: %s"), *ObjectPath);
+                return false;
+            }
+        }
+    }
+
+    if (ExistingGraph)
+    {
+        if (TemplateGraph)
+        {
+            OutMessage = FString::Printf(
+                TEXT("PCG graph already exists: %s. Overwrite from template is not supported yet; use a new asset path."),
+                *ObjectPath);
+            return false;
+        }
+
+        ExistingGraph->Modify();
+        TArray<UPCGNode*> NodesToRemove = ExistingGraph->GetNodes();
+        if (NodesToRemove.Num() > 0)
+        {
+            ExistingGraph->RemoveNodes(NodesToRemove);
+        }
+
+        ExistingGraph->MarkPackageDirty();
+        if (UPackage* ExistingPackage = ExistingGraph->GetPackage())
+        {
+            ExistingPackage->MarkPackageDirty();
+        }
+
+        RememberPcgGraph(ExistingGraph);
+        OutMessage = FString::Printf(TEXT("Recreated PCG graph: %s"), *ObjectPath);
+        return true;
+    }
+
+    UPCGGraph* NewGraph = nullptr;
+    UPackage* Package = nullptr;
+    if (TemplateGraph)
+    {
+        FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+        const FString DestinationFolderPath = FPackageName::GetLongPackagePath(PackagePath);
+        UObject* DuplicatedAsset = AssetToolsModule.Get().DuplicateAsset(AssetName, DestinationFolderPath, TemplateGraph);
+        NewGraph = Cast<UPCGGraph>(DuplicatedAsset);
+        if (!NewGraph)
+        {
+            OutMessage = FString::Printf(
+                TEXT("Could not duplicate PCG template graph %s to %s."),
+                *ResolvedTemplatePath,
+                *ObjectPath);
+            return false;
+        }
+        Package = NewGraph->GetPackage();
+    }
+    else
+    {
+        Package = CreatePackage(*PackagePath);
+        if (!Package)
+        {
+            OutMessage = FString::Printf(TEXT("Could not create package for PCG graph: %s"), *PackagePath);
+            return false;
+        }
+
+        NewGraph = NewObject<UPCGGraph>(Package, *AssetName, RF_Public | RF_Standalone | RF_Transactional);
+    }
+
+    if (!NewGraph)
+    {
+        OutMessage = FString::Printf(TEXT("Could not create PCG graph asset: %s"), *ObjectPath);
+        return false;
+    }
+
+    NewGraph->SetFlags(RF_Public | RF_Standalone | RF_Transactional);
+    if (!TemplateGraph)
+    {
+        FAssetRegistryModule::AssetCreated(NewGraph);
+    }
+    NewGraph->MarkPackageDirty();
+    if (Package)
+    {
+        Package->MarkPackageDirty();
+    }
+    RememberPcgGraph(NewGraph);
+
+    if (TemplateGraph)
+    {
+        if (bUsedUniqueAssetPath)
+        {
+            OutMessage = FString::Printf(
+                TEXT("Created PCG graph: %s from template: %s (requested path already existed: %s)"),
+                *NewGraph->GetPathName(),
+                *ResolvedTemplatePath,
+                *RequestedObjectPath);
+        }
+        else
+        {
+            OutMessage = FString::Printf(
+                TEXT("Created PCG graph: %s from template: %s"),
+                *NewGraph->GetPathName(),
+                *ResolvedTemplatePath);
+        }
+    }
+    else
+    {
+        if (bUsedUniqueAssetPath)
+        {
+            OutMessage = FString::Printf(
+                TEXT("Created PCG graph: %s (requested path already existed: %s)"),
+                *NewGraph->GetPathName(),
+                *RequestedObjectPath);
+        }
+        else
+        {
+            OutMessage = FString::Printf(TEXT("Created PCG graph: %s"), *NewGraph->GetPathName());
+        }
+    }
+    return true;
+#else
+    (void)Params;
+    OutMessage = TEXT("PCG tools are unavailable. Enable the PCG plugin in your project, then rebuild the project.");
+    return false;
+#endif
+}
+
+bool FUEAIAgentSceneTools::PcgPlaceOnLandscape(const FUEAIAgentPcgPlaceOnLandscapeParams& Params, FString& OutMessage)
+{
+#if UE_AI_AGENT_WITH_PCG
+    if (!GEditor)
+    {
+        OutMessage = TEXT("Editor is not available.");
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        OutMessage = TEXT("Editor world is not available.");
+        return false;
+    }
+
+    FString GraphSource = Params.GraphSource.TrimStartAndEnd().ToLower();
+    if (GraphSource.IsEmpty())
+    {
+        GraphSource = Params.GraphPath.TrimStartAndEnd().IsEmpty() ? TEXT("last") : TEXT("path");
+    }
+
+    FString GraphObjectPath;
+    FString ErrorMessage;
+    UPCGGraph* Graph = nullptr;
+    if (GraphSource == TEXT("path"))
+    {
+        Graph = LoadPcgGraphByPath(Params.GraphPath, GraphObjectPath, ErrorMessage);
+    }
+    else if (GraphSource == TEXT("selected"))
+    {
+        Graph = ResolveSelectedPcgGraph(GraphObjectPath, ErrorMessage);
+    }
+    else if (GraphSource == TEXT("last"))
+    {
+        if (!GUEAIAgentLastPcgGraphObjectPath.IsEmpty())
+        {
+            Graph = LoadPcgGraphByObjectPath(GUEAIAgentLastPcgGraphObjectPath, GraphObjectPath, ErrorMessage);
+        }
+
+        if (!Graph && !Params.GraphPath.TrimStartAndEnd().IsEmpty())
+        {
+            Graph = LoadPcgGraphByPath(Params.GraphPath, GraphObjectPath, ErrorMessage);
+        }
+
+        if (!Graph)
+        {
+            Graph = ResolveSelectedPcgGraph(GraphObjectPath, ErrorMessage);
+        }
+    }
+    else
+    {
+        OutMessage = TEXT("Unsupported graphSource. Use path, last, or selected.");
+        return false;
+    }
+
+    if (!Graph)
+    {
+        if (GraphSource == TEXT("last") && ErrorMessage.IsEmpty())
+        {
+            OutMessage = TEXT("No last PCG graph is available. Create/select a PCG graph first.");
+        }
+        else
+        {
+            OutMessage = ErrorMessage.IsEmpty() ? TEXT("Could not resolve PCG graph.") : ErrorMessage;
+        }
+        return false;
+    }
+    RememberPcgGraph(Graph);
+
+    TArray<ALandscapeProxy*> TargetLandscapes;
+    if (Params.bTargetAll)
+    {
+        CollectAllLandscapeTargets(World, TargetLandscapes);
+    }
+    else
+    {
+        CollectLandscapeTargets(World, Params.ActorNames, Params.bUseSelectionIfActorNamesEmpty, TargetLandscapes);
+        if (TargetLandscapes.IsEmpty())
+        {
+            CollectAllLandscapeTargets(World, TargetLandscapes);
+        }
+    }
+
+    if (TargetLandscapes.IsEmpty())
+    {
+        OutMessage = TEXT("No target landscape actors found. Select a landscape actor or provide actorNames.");
+        return false;
+    }
+
+    const FScopedTransaction Transaction(LOCTEXT("PcgPlaceOnLandscapeTransaction", "UE AI Agent Place PCG On Landscape"));
+    int32 PlacedVolumes = 0;
+
+    for (ALandscapeProxy* Landscape : TargetLandscapes)
+    {
+        if (!Landscape)
+        {
+            continue;
+        }
+
+        FBox PlacementBounds(EForceInit::ForceInit);
+        if (Params.bUseFullArea)
+        {
+            int32 MinX = 0;
+            int32 MinY = 0;
+            int32 MaxX = 0;
+            int32 MaxY = 0;
+            if (!ComputeLandscapeFullRect(Landscape, MinX, MinY, MaxX, MaxY))
+            {
+                continue;
+            }
+            if (!ComputeLandscapeWorldBoundsFromRect(Landscape, MinX, MinY, MaxX, MaxY, PlacementBounds))
+            {
+                continue;
+            }
+        }
+        else
+        {
+            int32 MinX = 0;
+            int32 MinY = 0;
+            int32 MaxX = 0;
+            int32 MaxY = 0;
+            if (!ComputeLandscapeFullRect(Landscape, MinX, MinY, MaxX, MaxY))
+            {
+                continue;
+            }
+
+            FBox LandscapeBounds(EForceInit::ForceInit);
+            if (!ComputeLandscapeWorldBoundsFromRect(Landscape, MinX, MinY, MaxX, MaxY, LandscapeBounds))
+            {
+                continue;
+            }
+
+            const FVector LandscapeCenter = LandscapeBounds.GetCenter();
+            const FVector LandscapeExtent = LandscapeBounds.GetExtent();
+            const float HalfSizeX = Params.bHasSize
+                ? FMath::Min(LandscapeExtent.X, FMath::Max(1.0f, 0.5f * Params.Size.X))
+                : FMath::Clamp(LandscapeExtent.X * 0.35f, 500.0f, LandscapeExtent.X);
+            const float HalfSizeY = Params.bHasSize
+                ? FMath::Min(LandscapeExtent.Y, FMath::Max(1.0f, 0.5f * Params.Size.Y))
+                : FMath::Clamp(LandscapeExtent.Y * 0.35f, 500.0f, LandscapeExtent.Y);
+            const float HalfSizeZ = FMath::Max(1000.0f, LandscapeExtent.Z);
+
+            PlacementBounds = FBox(
+                LandscapeCenter - FVector(HalfSizeX, HalfSizeY, HalfSizeZ),
+                LandscapeCenter + FVector(HalfSizeX, HalfSizeY, HalfSizeZ));
+        }
+
+        if (!PlacementBounds.IsValid)
+        {
+            continue;
+        }
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.OverrideLevel = Landscape->GetLevel();
+        APCGVolume* PcgVolume = World->SpawnActor<APCGVolume>(APCGVolume::StaticClass(), PlacementBounds.GetCenter(), FRotator::ZeroRotator, SpawnParams);
+        if (!PcgVolume)
+        {
+            continue;
+        }
+
+        PcgVolume->Modify();
+
+        FVector BrushExtent = FVector(100.0f, 100.0f, 100.0f);
+        if (UBrushComponent* BrushComponent = PcgVolume->GetBrushComponent())
+        {
+            BrushComponent->UpdateBounds();
+            if (
+                BrushComponent->Bounds.BoxExtent.X > KINDA_SMALL_NUMBER &&
+                BrushComponent->Bounds.BoxExtent.Y > KINDA_SMALL_NUMBER &&
+                BrushComponent->Bounds.BoxExtent.Z > KINDA_SMALL_NUMBER)
+            {
+                BrushExtent = BrushComponent->Bounds.BoxExtent;
+            }
+        }
+
+        const FVector TargetExtent = PlacementBounds.GetExtent();
+        const FVector VolumeScale = FVector(
+            FMath::Max(0.01f, TargetExtent.X / BrushExtent.X),
+            FMath::Max(0.01f, TargetExtent.Y / BrushExtent.Y),
+            FMath::Max(0.01f, TargetExtent.Z / BrushExtent.Z));
+        PcgVolume->SetActorLocation(PlacementBounds.GetCenter());
+        PcgVolume->SetActorScale3D(VolumeScale);
+
+        UPCGComponent* PcgComponent = nullptr;
+        if (PcgVolume->PCGComponent)
+        {
+            PcgComponent = PcgVolume->PCGComponent.Get();
+        }
+        else
+        {
+            PcgComponent = PcgVolume->FindComponentByClass<UPCGComponent>();
+        }
+        if (!PcgComponent)
+        {
+            PcgVolume->Destroy();
+            continue;
+        }
+
+        PcgComponent->Modify();
+        PcgComponent->SetGraph(Graph);
+        PcgComponent->GenerateLocal(true);
+        PcgVolume->SetActorLabel(FString::Printf(TEXT("PCG_%s"), *Graph->GetName()), true);
+        ++PlacedVolumes;
+    }
+
+    if (PlacedVolumes <= 0)
+    {
+        OutMessage = TEXT("Could not place PCG on the target landscape area.");
+        return false;
+    }
+
+    const FString AreaText = Params.bUseFullArea ? TEXT("full landscape area") : TEXT("landscape center");
+    OutMessage = FString::Printf(
+        TEXT("Placed PCG graph %s on %d landscape area(s) using %s."),
+        *Graph->GetPathName(),
+        PlacedVolumes,
+        *AreaText);
+    return true;
+#else
+    (void)Params;
+    OutMessage = TEXT("PCG tools are unavailable. Enable the PCG plugin in your project, then rebuild the project.");
+    return false;
+#endif
+}
+
+bool FUEAIAgentSceneTools::PcgAddConnectCommonNodes(const FUEAIAgentPcgAddConnectCommonNodesParams& Params, FString& OutMessage)
+{
+#if UE_AI_AGENT_WITH_PCG
+    FString ObjectPath;
+    FString ErrorMessage;
+    UPCGGraph* Graph = LoadPcgGraphByPath(Params.GraphPath, ObjectPath, ErrorMessage);
+    if (!Graph)
+    {
+        OutMessage = ErrorMessage;
+        return false;
+    }
+    RememberPcgGraph(Graph);
+
+    TSet<FString> RequestedNodeTypes;
+    for (FString NodeType : Params.NodeTypes)
+    {
+        NodeType = NodeType.TrimStartAndEnd().ToLower();
+        if (!NodeType.IsEmpty())
+        {
+            RequestedNodeTypes.Add(NodeType);
+        }
+    }
+
+    if (RequestedNodeTypes.Num() <= 0)
+    {
+        RequestedNodeTypes.Add(TEXT("surfacesampler"));
+        RequestedNodeTypes.Add(TEXT("transformpoints"));
+    }
+
+    const bool bNeedSurfaceSampler = HasRequestedPcgNodeType(RequestedNodeTypes, TEXT("surfaceSampler"));
+    const bool bNeedTransformPoints = HasRequestedPcgNodeType(RequestedNodeTypes, TEXT("transformPoints"));
+    if (!bNeedSurfaceSampler && !bNeedTransformPoints)
+    {
+        OutMessage = TEXT("No supported PCG node types requested. Supported: surfaceSampler, transformPoints.");
+        return false;
+    }
+
+    Graph->Modify();
+
+    UPCGNode* SurfaceSamplerNode = bNeedSurfaceSampler
+        ? FindFirstNodeBySettingsClass(Graph, UPCGSurfaceSamplerSettings::StaticClass())
+        : nullptr;
+    int32 CreatedNodes = 0;
+    if (bNeedSurfaceSampler && !SurfaceSamplerNode)
+    {
+        UPCGSurfaceSamplerSettings* SurfaceSamplerSettings = nullptr;
+        SurfaceSamplerNode = Graph->AddNodeOfType<UPCGSurfaceSamplerSettings>(SurfaceSamplerSettings);
+        if (SurfaceSamplerNode)
+        {
+            ++CreatedNodes;
+        }
+    }
+
+    UPCGNode* TransformPointsNode = bNeedTransformPoints
+        ? FindFirstNodeBySettingsClass(Graph, UPCGTransformPointsSettings::StaticClass())
+        : nullptr;
+    if (bNeedTransformPoints && !TransformPointsNode)
+    {
+        UPCGTransformPointsSettings* TransformPointsSettings = nullptr;
+        TransformPointsNode = Graph->AddNodeOfType<UPCGTransformPointsSettings>(TransformPointsSettings);
+        if (TransformPointsNode)
+        {
+            ++CreatedNodes;
+        }
+    }
+
+    UPCGNode* InputNode = Graph->GetInputNode();
+    UPCGNode* OutputNode = Graph->GetOutputNode();
+    if (!InputNode || !OutputNode)
+    {
+        OutMessage = FString::Printf(TEXT("PCG graph is missing input/output nodes: %s"), *ObjectPath);
+        return false;
+    }
+
+    UPCGNode* FirstPipelineNode = nullptr;
+    FName FirstPipelineInputPin = PCGPinConstants::DefaultInputLabel;
+    UPCGNode* LastPipelineNode = nullptr;
+
+    if (SurfaceSamplerNode)
+    {
+        FirstPipelineNode = SurfaceSamplerNode;
+        FirstPipelineInputPin = PCGSurfaceSamplerConstants::SurfaceLabel;
+        LastPipelineNode = SurfaceSamplerNode;
+    }
+
+    if (TransformPointsNode)
+    {
+        if (!FirstPipelineNode)
+        {
+            FirstPipelineNode = TransformPointsNode;
+            FirstPipelineInputPin = PCGPinConstants::DefaultInputLabel;
+        }
+
+        if (SurfaceSamplerNode)
+        {
+            Graph->AddEdge(
+                SurfaceSamplerNode,
+                PCGPinConstants::DefaultOutputLabel,
+                TransformPointsNode,
+                PCGPinConstants::DefaultInputLabel);
+        }
+
+        LastPipelineNode = TransformPointsNode;
+    }
+
+    if (Params.bConnectFromInput && FirstPipelineNode)
+    {
+        Graph->AddEdge(InputNode, PCGPinConstants::DefaultOutputLabel, FirstPipelineNode, FirstPipelineInputPin);
+    }
+
+    if (Params.bConnectToOutput && LastPipelineNode)
+    {
+        Graph->AddEdge(LastPipelineNode, PCGPinConstants::DefaultOutputLabel, OutputNode, PCGPinConstants::DefaultInputLabel);
+    }
+
+    Graph->MarkPackageDirty();
+    if (UPackage* Package = Graph->GetPackage())
+    {
+        Package->MarkPackageDirty();
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Updated PCG graph %s. Nodes created: %d."),
+        *ObjectPath,
+        CreatedNodes);
+    return true;
+#else
+    (void)Params;
+    OutMessage = TEXT("PCG tools are unavailable. Enable the PCG plugin in your project, then rebuild the project.");
+    return false;
+#endif
+}
+
+bool FUEAIAgentSceneTools::PcgSetKeyParameters(const FUEAIAgentPcgSetKeyParametersParams& Params, FString& OutMessage)
+{
+#if UE_AI_AGENT_WITH_PCG
+    FString ObjectPath;
+    FString ErrorMessage;
+    UPCGGraph* Graph = LoadPcgGraphByPath(Params.GraphPath, ObjectPath, ErrorMessage);
+    if (!Graph)
+    {
+        OutMessage = ErrorMessage;
+        return false;
+    }
+    RememberPcgGraph(Graph);
+
+    const bool bWantsSurfaceSettings =
+        Params.bHasSurfacePointsPerSquaredMeter ||
+        Params.bHasSurfaceLooseness ||
+        Params.bHasSurfacePointExtents;
+    const bool bWantsTransformSettings =
+        Params.bHasTransformOffsetMin ||
+        Params.bHasTransformOffsetMax ||
+        Params.bHasTransformRotationMin ||
+        Params.bHasTransformRotationMax ||
+        Params.bHasTransformScaleMin ||
+        Params.bHasTransformScaleMax;
+
+    if (!bWantsSurfaceSettings && !bWantsTransformSettings)
+    {
+        OutMessage = TEXT("No PCG parameters were provided to update.");
+        return false;
+    }
+
+    Graph->Modify();
+
+    int32 UpdatedSurfaceNodes = 0;
+    int32 UpdatedTransformNodes = 0;
+
+    if (bWantsSurfaceSettings)
+    {
+        const TArray<UPCGNode*> SurfaceNodes = Graph->FindNodesWithSettings(UPCGSurfaceSamplerSettings::StaticClass());
+        for (UPCGNode* Node : SurfaceNodes)
+        {
+            if (!Node)
+            {
+                continue;
+            }
+
+            if (UPCGSurfaceSamplerSettings* Settings = Cast<UPCGSurfaceSamplerSettings>(Node->GetSettings()))
+            {
+                Settings->Modify();
+                if (Params.bHasSurfacePointsPerSquaredMeter)
+                {
+                    Settings->PointsPerSquaredMeter = FMath::Clamp(Params.SurfacePointsPerSquaredMeter, 0.0001f, 1000.0f);
+                }
+                if (Params.bHasSurfaceLooseness)
+                {
+                    Settings->Looseness = FMath::Clamp(Params.SurfaceLooseness, 0.0f, 1.0f);
+                }
+                if (Params.bHasSurfacePointExtents)
+                {
+                    Settings->PointExtents = FVector(
+                        FMath::Max(0.001f, FMath::Abs(Params.SurfacePointExtents.X)),
+                        FMath::Max(0.001f, FMath::Abs(Params.SurfacePointExtents.Y)),
+                        FMath::Max(0.001f, FMath::Abs(Params.SurfacePointExtents.Z)));
+                }
+
+                ++UpdatedSurfaceNodes;
+            }
+        }
+    }
+
+    if (bWantsTransformSettings)
+    {
+        const TArray<UPCGNode*> TransformNodes = Graph->FindNodesWithSettings(UPCGTransformPointsSettings::StaticClass());
+        for (UPCGNode* Node : TransformNodes)
+        {
+            if (!Node)
+            {
+                continue;
+            }
+
+            if (UPCGTransformPointsSettings* Settings = Cast<UPCGTransformPointsSettings>(Node->GetSettings()))
+            {
+                Settings->Modify();
+                if (Params.bHasTransformOffsetMin)
+                {
+                    Settings->OffsetMin = Params.TransformOffsetMin;
+                }
+                if (Params.bHasTransformOffsetMax)
+                {
+                    Settings->OffsetMax = Params.TransformOffsetMax;
+                }
+                if (Params.bHasTransformRotationMin)
+                {
+                    Settings->RotationMin = Params.TransformRotationMin;
+                }
+                if (Params.bHasTransformRotationMax)
+                {
+                    Settings->RotationMax = Params.TransformRotationMax;
+                }
+                if (Params.bHasTransformScaleMin)
+                {
+                    Settings->ScaleMin = FVector(
+                        FMath::Max(0.001f, Params.TransformScaleMin.X),
+                        FMath::Max(0.001f, Params.TransformScaleMin.Y),
+                        FMath::Max(0.001f, Params.TransformScaleMin.Z));
+                }
+                if (Params.bHasTransformScaleMax)
+                {
+                    Settings->ScaleMax = FVector(
+                        FMath::Max(0.001f, Params.TransformScaleMax.X),
+                        FMath::Max(0.001f, Params.TransformScaleMax.Y),
+                        FMath::Max(0.001f, Params.TransformScaleMax.Z));
+                }
+
+                ++UpdatedTransformNodes;
+            }
+        }
+    }
+
+    if (UpdatedSurfaceNodes <= 0 && UpdatedTransformNodes <= 0)
+    {
+        OutMessage = FString::Printf(
+            TEXT("No matching PCG nodes found in graph %s. Add Surface Sampler and/or Transform Points nodes first."),
+            *ObjectPath);
+        return false;
+    }
+
+    Graph->MarkPackageDirty();
+    if (UPackage* Package = Graph->GetPackage())
+    {
+        Package->MarkPackageDirty();
+    }
+
+    OutMessage = FString::Printf(
+        TEXT("Updated PCG parameters in %s. SurfaceSampler nodes: %d, TransformPoints nodes: %d."),
+        *ObjectPath,
+        UpdatedSurfaceNodes,
+        UpdatedTransformNodes);
+    return true;
+#else
+    (void)Params;
+    OutMessage = TEXT("PCG tools are unavailable. Enable the PCG plugin in your project, then rebuild the project.");
+    return false;
+#endif
 }
 
 bool FUEAIAgentSceneTools::EditorUndo(FString& OutMessage)

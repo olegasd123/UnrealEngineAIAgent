@@ -9,7 +9,7 @@ function isWriteAction(plan: PlanOutput): boolean {
 }
 
 function hasWriteIntent(prompt: string): boolean {
-  return /\b(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|undo|revert|rollback|roll back|redo|do again|reapply)\b/i.test(
+  return /\b(move|offset|translate|shift|rotate|turn|spin|scale|resize|grow|shrink|create|spawn|add|build|make|generate|delete|remove|destroy|erase|set|assign|apply|replace|duplicate|copy|clone|paint|sculpt|place|put|attach|drop|undo|revert|rollback|roll back|redo|do again|reapply)\b/i.test(
     prompt
   );
 }
@@ -55,6 +55,55 @@ function enrichLandscapeGenerateFromFallback(providerPlan: PlanOutput, fallbackP
   return changed;
 }
 
+function inferRuntimeGrassTemplateFromPrompt(prompt: string): string | undefined {
+  const lower = prompt.toLowerCase();
+  if (!/(pcg|procedural content generation)/.test(lower)) {
+    return undefined;
+  }
+  if (!/(create|make|new|build|generate)/.test(lower)) {
+    return undefined;
+  }
+
+  const hasRuntimeGrassGpuHint =
+    /(runtime\s+grass\s+gpu|runtime\s+gpu\s+grass)/.test(lower) || /tpl_showcase_runtimegrassgpu/.test(lower);
+  const hasGrassHint = /\bgrass\b/.test(lower);
+  const hasTemplateHint = /\b(template|built[\s-]*in)\b/.test(lower);
+  const hasTemplatePhraseHint = /\b(?:from|form|using)\s+(?:built[\s-]*in\s+)?template\b/.test(lower);
+
+  if (hasRuntimeGrassGpuHint || (hasGrassHint && (hasTemplateHint || hasTemplatePhraseHint))) {
+    return "/PCG/GraphTemplates/TPL_Showcase_RuntimeGrassGPU.TPL_Showcase_RuntimeGrassGPU";
+  }
+
+  return undefined;
+}
+
+function enrichPcgCreateGraphFromFallback(providerPlan: PlanOutput, fallbackPlan: PlanOutput, prompt: string): boolean {
+  const fallbackPcgCreateGraphAction = fallbackPlan.actions.find((action) => action.command === "pcg.createGraph");
+  const fallbackTemplatePath =
+    fallbackPcgCreateGraphAction?.command === "pcg.createGraph"
+      ? fallbackPcgCreateGraphAction.params.templatePath?.trim()
+      : undefined;
+  const inferredTemplatePath = fallbackTemplatePath || inferRuntimeGrassTemplateFromPrompt(prompt);
+  if (!inferredTemplatePath) {
+    return false;
+  }
+
+  let changed = false;
+  for (const action of providerPlan.actions) {
+    if (action.command !== "pcg.createGraph") {
+      continue;
+    }
+
+    const existingTemplatePath = action.params.templatePath?.trim();
+    if (!existingTemplatePath) {
+      action.params.templatePath = inferredTemplatePath;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export class PlanningLayer {
   constructor(private readonly worldStateCollector: WorldStateCollector = new WorldStateCollector()) {}
 
@@ -86,11 +135,18 @@ export class PlanningLayer {
       }
 
       if (providerPlan.actions.length > 0) {
-        const enriched = enrichLandscapeGenerateFromFallback(providerPlan, fallback);
-        if (enriched) {
+        const enrichmentNotes: string[] = [];
+        if (enrichLandscapeGenerateFromFallback(providerPlan, fallback)) {
+          enrichmentNotes.push("Filled missing landscape.generate constraints from prompt parsing.");
+        }
+        if (enrichPcgCreateGraphFromFallback(providerPlan, fallback, intent.prompt)) {
+          enrichmentNotes.push("Filled missing pcg.createGraph template from prompt parsing.");
+        }
+
+        if (enrichmentNotes.length > 0) {
           return {
             ...providerPlan,
-            steps: ["Filled missing landscape.generate constraints from prompt parsing.", ...providerPlan.steps]
+            steps: [...enrichmentNotes, ...providerPlan.steps]
           };
         }
         return providerPlan;
